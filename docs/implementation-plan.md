@@ -169,7 +169,7 @@ Then App 能在模擬器/Expo Go 中開啟並顯示首頁
 |----|------|
 | DB | users 表 migration |
 | Shared | auth.ts Zod schema (RegisterSchema, LoginSchema, UserSchema) |
-| API | POST /auth/register, POST /auth/login, GET /auth/me, PUT /auth/me |
+| API | POST /auth/register, POST /auth/login, GET /auth/me, PUT /auth/me, POST /auth/logout, POST /auth/admin-login |
 | Web | Admin login 頁面（真實表單 + cookie 設定）、Admin layout auth guard |
 | Mobile | Login 頁面 + Register 頁面 + AuthContext + SecureStore token 管理 |
 | Tests | Auth API tests (register success/duplicate/validation, login success/fail), shared schema tests |

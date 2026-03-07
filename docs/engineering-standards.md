@@ -236,14 +236,25 @@ export * from './types';
 }
 ```
 
-### C.2 嚴禁 `any`
+### C.2 Monorepo Type 相容性注意事項
+
+本專案的 `apps/web`（React 19）與 `apps/mobile`（React 18）使用不同版本的 React。pnpm 的 hoisting 行為可能導致 `@types/react` 版本衝突（React 19 的型別被提升，使 React 18 的 JSX 元件型別不相容）。
+
+**已採用的解法**：
+
+1. **根目錄 `package.json` 的 `pnpm.overrides`**：將 `@types/react` 固定為 `~18.3.0`，避免 React 19 型別被意外提升。
+2. **`apps/mobile/tsconfig.json` 的 `skipLibCheck: true`**：跳過第三方 `.d.ts` 的型別檢查，避免 Expo 生態系套件的內部型別衝突。
+
+> **注意**：新增使用不同 React 版本的 workspace 時，必須確認 `pnpm.overrides` 的 `@types/react` 版本仍適用。當所有 app 統一升級至同一 React 版本後，可移除此 override。
+
+### C.3 嚴禁 `any`
 
 - `any` 型別**嚴禁使用**，無例外
 - ESLint 規則 `@typescript-eslint/no-explicit-any: "error"` 必須啟用
 - 若遇到第三方套件型別不完整，使用 `unknown` + type guard
 - 唯一允許 `any` 的情況：第三方套件的 `.d.ts` 覆寫（必須加註 `// eslint-disable-next-line @typescript-eslint/no-explicit-any -- [具體理由]`）
 
-### C.3 Type Guard 範例
+### C.4 Type Guard 範例
 
 ```typescript
 // ✅ 正確做法
@@ -260,7 +271,7 @@ function isApiError(error: unknown): error is { code: string; message: string } 
 function handleError(error: any) { ... }
 ```
 
-### C.4 統一錯誤處理
+### C.5 統一錯誤處理
 
 ```typescript
 // packages/shared/src/constants/error-codes.ts
@@ -533,7 +544,37 @@ export async function POST(request: NextRequest) {
 
 **雙認證策略**：API middleware 必須同時支援 `Authorization: Bearer {token}`（Mobile 端）與 `Cookie: auth_token={token}`（Web Admin 端）。詳細實作見 implementation-spec L.1。兩種方式共用同一組 API endpoint，middleware 按優先順序判斷（Bearer 優先 → Cookie fallback）。**嚴禁** Web 端將 JWT 存入 `localStorage`。
 
-### F.3 CORS
+### F.3 CSRF 防護（Origin 檢查）
+
+所有 mutation 端點（POST / PUT / DELETE）**必須**在 handler 最前面呼叫 `checkOrigin(request)` 進行 Origin 白名單檢查。
+
+```typescript
+// apps/web/lib/csrf.ts
+import { NextRequest } from 'next/server';
+
+const ALLOWED_ORIGINS = [
+  process.env.NEXT_PUBLIC_APP_URL,
+  'http://localhost:3000',
+  'http://localhost:8081',
+].filter(Boolean) as string[];
+
+export function checkOrigin(request: NextRequest): boolean {
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+    return true;
+  }
+  const origin = request.headers.get('origin');
+  // Mobile apps (React Native) don't send Origin header
+  if (!origin) return true;
+  return ALLOWED_ORIGINS.includes(origin);
+}
+```
+
+- `SameSite=Strict` cookie 為第一道防線，Origin 檢查為第二道
+- Mobile 端（React Native）不帶 Origin header，故 `origin === null` 時放行
+- 新增部署 domain 時必須同步更新 `ALLOWED_ORIGINS` 清單
+- 不通過時回傳 `AUTH_FORBIDDEN`（403）
+
+### F.4 CORS
 
 ```typescript
 // apps/web/next.config.js 中設定或 middleware
@@ -547,7 +588,7 @@ const ALLOWED_ORIGINS = [
 - 非列表中的 origin **一律拒絕**
 - `Access-Control-Allow-Credentials: true`（for cookie auth）
 
-### F.4 Rate Limiting（Upstash Redis）
+### F.5 Rate Limiting（Upstash Redis）
 
 **重要**：Vercel serverless 每次請求可能在不同 instance 執行，記憶體不共享。**嚴禁**使用 in-memory Map 做 rate limit。
 
@@ -574,7 +615,7 @@ const ALLOWED_ORIGINS = [
 
 實作參考見 implementation-spec L.2 的程式碼範例。
 
-### F.5 Logging 脫敏
+### F.6 Logging 脫敏
 
 以下欄位**嚴禁**出現在任何 log output 中：
 
@@ -587,14 +628,14 @@ const ALLOWED_ORIGINS = [
 | 健康數據原始值 | measurement ID |
 | AI prompt 中的個資 | `[REDACTED]` |
 
-### F.6 Dependency 安全
+### F.7 Dependency 安全
 
 - 每週執行 `pnpm audit`
 - 啟用 GitHub Dependabot（自動建立 security update PR）
 - High/Critical 漏洞**必須**在 72 小時內修復
 - **嚴禁**安裝已知有重大安全漏洞的套件
 
-### F.7 資料庫連線規範（Prisma + Serverless）
+### F.8 資料庫連線規範（Prisma + Serverless）
 
 以下規範對齊 implementation-spec N.3，在此強調工程實作面：
 

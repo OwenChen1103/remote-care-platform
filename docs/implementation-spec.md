@@ -888,6 +888,31 @@ curl -X POST https://your-domain/api/v1/device/ingest \
 }
 ```
 
+**`POST /api/v1/auth/logout`** — 登出（清除 cookie）
+
+- 角色：公開（不需認證）
+- 用途：清除 Web Admin 端的 httpOnly `auth_token` cookie。Mobile 端由客戶端自行刪除 SecureStore 中的 token。
+- 成功回應（200）：
+```json
+{
+  "success": true,
+  "data": { "message": "已登出" }
+}
+```
+
+**`POST /api/v1/auth/admin-login`** — Admin 設定 httpOnly Cookie
+
+- 角色：公開（但需傳入有效且 role=admin 的 JWT token）
+- 用途：接收前端登入後取得的 JWT token，驗證為 admin 角色後設定 httpOnly cookie，供後續 Admin UI 路由守衛使用。
+- Request：
+```json
+{
+  "token": "jwt-token-here"
+}
+```
+- 成功回應（200）：設定 `auth_token` httpOnly cookie（SameSite=Strict, Secure=true in prod, maxAge=7d）
+- 錯誤：`VALIDATION_ERROR`（缺少 token）、`AUTH_FORBIDDEN`（非 admin 角色）、`AUTH_INVALID_CREDENTIALS`（token 無效或過期）
+
 ---
 
 #### F.3.2 被照護者（Recipients）
