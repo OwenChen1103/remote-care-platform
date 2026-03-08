@@ -5,7 +5,7 @@ const BaseMeasurementSchema = z.object({
   source: z.enum(['manual', 'device']).default('manual'),
   device_id: z.string().max(100).optional(),
   note: z.string().max(500).optional(),
-  measured_at: z.string().datetime(),
+  measured_at: z.string().datetime({ offset: true }),
 });
 
 export const BloodPressureCreateSchema = BaseMeasurementSchema.extend({
@@ -47,4 +47,12 @@ export type BloodPressureCreateInput = z.infer<typeof BloodPressureCreateSchema>
 export type BloodGlucoseCreateInput = z.infer<typeof BloodGlucoseCreateSchema>;
 export type MeasurementCreateInput = z.infer<typeof MeasurementCreateSchema>;
 export type MeasurementQuery = z.infer<typeof MeasurementQuerySchema>;
+export const MeasurementExportQuerySchema = z.object({
+  recipient_id: z.string().uuid(),
+  type: z.enum(['blood_pressure', 'blood_glucose']),
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+});
+
 export type MeasurementStatsQuery = z.infer<typeof MeasurementStatsQuerySchema>;
+export type MeasurementExportQuery = z.infer<typeof MeasurementExportQuerySchema>;
