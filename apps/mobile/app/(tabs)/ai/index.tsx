@@ -54,14 +54,14 @@ interface HistoricalReport {
 // ─── Constants ────────────────────────────────────────────────
 
 const REPORT_TYPES = [
-  { key: 'health_summary', label: '放心報' },
-  { key: 'trend_analysis', label: '趨勢解讀' },
-  { key: 'visit_prep', label: '看診問題' },
+  { key: 'health_summary', label: '安心報' },
+  { key: 'trend_analysis', label: '趨勢說明' },
+  { key: 'visit_prep', label: '看診準備' },
   { key: 'family_update', label: '家人摘要' },
 ] as const;
 
 const CHAT_TASKS = [
-  { key: 'trend_explanation', label: '趨勢解讀' },
+  { key: 'trend_explanation', label: '趨勢說明' },
   { key: 'family_update', label: '家人近況' },
   { key: 'visit_questions', label: '看診問題' },
 ] as const;
@@ -80,7 +80,7 @@ export default function AiReportScreen() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('health_summary');
-  const [mode, setMode] = useState<'report' | 'chat'>('report');
+  const [showMore, setShowMore] = useState(false);
   const [selectedTask, setSelectedTask] = useState<string>('trend_explanation');
 
   const [generating, setGenerating] = useState(false);
@@ -90,6 +90,7 @@ export default function AiReportScreen() {
 
   const [history, setHistory] = useState<HistoricalReport[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Fetch recipients
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function AiReportScreen() {
           setSelectedRecipientId(result[0].id);
         }
       } catch {
-        // Silent — recipients should already be loaded elsewhere
+        // Silent
       }
     })();
   }, [selectedRecipientId]);
@@ -115,16 +116,47 @@ export default function AiReportScreen() {
         `/ai/reports?recipient_id=${selectedRecipientId}&limit=10`,
       );
       setHistory(result);
+
+      // Auto-load latest health_summary as the current report view
+      if (!report && !chatResult) {
+        const latestSummary = result.find((r) => r.report_type === 'health_summary');
+        if (latestSummary) {
+          setReport({
+            id: latestSummary.id,
+            recipient_id: selectedRecipientId,
+            report_type: latestSummary.report_type,
+            status_label: latestSummary.status_label,
+            summary: latestSummary.summary,
+            reasons: latestSummary.reasons,
+            suggestions: latestSummary.suggestions,
+            detail: {},
+            disclaimer: latestSummary.disclaimer,
+            is_fallback: false,
+            generated_at: latestSummary.generated_at,
+          });
+        }
+      }
     } catch {
       // Non-critical
     } finally {
       setHistoryLoading(false);
+      setInitialLoading(false);
     }
-  }, [selectedRecipientId]);
+  }, [selectedRecipientId, report, chatResult]);
 
   useEffect(() => {
     void fetchHistory();
   }, [fetchHistory]);
+
+  // Reset when switching recipient
+  const handleSelectRecipient = (id: string) => {
+    setSelectedRecipientId(id);
+    setReport(null);
+    setChatResult(null);
+    setError('');
+    setShowMore(false);
+    setInitialLoading(true);
+  };
 
   // Generate report
   const handleGenerateReport = async () => {
@@ -139,16 +171,16 @@ export default function AiReportScreen() {
         report_type: selectedType,
       });
       setReport(result);
-      void fetchHistory(); // Refresh history
+      void fetchHistory();
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === 'AI_RATE_LIMITED') {
-          setError('已達到報告生成上限，請稍後再試');
+          setError('已達到更新上限，請稍後再試');
         } else {
           setError(e.message);
         }
       } else {
-        setError('生成失敗，請稍後再試');
+        setError('更新失敗，請稍後再試');
       }
     } finally {
       setGenerating(false);
@@ -171,12 +203,12 @@ export default function AiReportScreen() {
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === 'AI_RATE_LIMITED') {
-          setError('已達到 AI 對話上限，請稍後再試');
+          setError('已達到問答上限，請稍後再試');
         } else {
           setError(e.message);
         }
       } else {
-        setError('生成失敗，請稍後再試');
+        setError('更新失敗，請稍後再試');
       }
     } finally {
       setGenerating(false);
@@ -193,15 +225,17 @@ export default function AiReportScreen() {
   };
 
   const buildShareText = (): string => {
+    const recipientName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
+
     if (report) {
       const lines = [
-        `【${REPORT_TYPES.find((t) => t.key === report.report_type)?.label ?? report.report_type}】`,
+        `【${recipientName} ${REPORT_TYPES.find((t) => t.key === report.report_type)?.label ?? report.report_type}】`,
         report.summary,
         '',
-        '原因：',
+        '最近觀察：',
         ...report.reasons.map((r) => `• ${r}`),
         '',
-        '建議：',
+        '溫馨提醒：',
         ...report.suggestions.map((s) => `• ${s}`),
         '',
         report.disclaimer,
@@ -210,19 +244,19 @@ export default function AiReportScreen() {
     }
     if (chatResult) {
       const result = chatResult.result;
-      const parts: string[] = [];
-      if (result.explanation) parts.push(result.explanation as string);
-      if (result.message) parts.push(result.message as string);
-      if (result.questions) {
-        parts.push('建議問題：');
+      const parts: string[] = [`【${recipientName} 快問快答】`];
+      if (typeof result.explanation === 'string') parts.push(result.explanation);
+      if (typeof result.message === 'string') parts.push(result.message);
+      if (Array.isArray(result.questions)) {
+        parts.push('', '建議問題：');
         (result.questions as string[]).forEach((q) => parts.push(`• ${q}`));
       }
-      if (result.key_points) {
-        parts.push('重點：');
+      if (Array.isArray(result.key_points)) {
+        parts.push('', '重點：');
         (result.key_points as string[]).forEach((p) => parts.push(`• ${p}`));
       }
-      if (result.highlights) {
-        parts.push('重點：');
+      if (Array.isArray(result.highlights)) {
+        parts.push('', '重點：');
         (result.highlights as string[]).forEach((h) => parts.push(`• ${h}`));
       }
       parts.push('', chatResult.disclaimer);
@@ -231,9 +265,12 @@ export default function AiReportScreen() {
     return '';
   };
 
+  const selectedRecipientName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.pageTitle}>AI 放心報</Text>
+      {/* Page title */}
+      <Text style={styles.pageTitle}>安心報</Text>
 
       {/* Recipient selector */}
       {recipients.length > 1 && (
@@ -242,7 +279,7 @@ export default function AiReportScreen() {
             <TouchableOpacity
               key={r.id}
               style={[styles.chip, r.id === selectedRecipientId && styles.chipActive]}
-              onPress={() => setSelectedRecipientId(r.id)}
+              onPress={() => handleSelectRecipient(r.id)}
             >
               <Text style={[styles.chipText, r.id === selectedRecipientId && styles.chipTextActive]}>
                 {r.name}
@@ -252,92 +289,35 @@ export default function AiReportScreen() {
         </ScrollView>
       )}
 
-      {/* Mode toggle */}
-      <View style={styles.modeRow}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'report' && styles.modeActive]}
-          onPress={() => setMode('report')}
-        >
-          <Text style={[styles.modeText, mode === 'report' && styles.modeTextActive]}>報告</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'chat' && styles.modeActive]}
-          onPress={() => setMode('chat')}
-        >
-          <Text style={[styles.modeText, mode === 'chat' && styles.modeTextActive]}>快速問答</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Report type / Chat task selector */}
-      {mode === 'report' ? (
-        <View style={styles.typeRow}>
-          {REPORT_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.typeChip, selectedType === t.key && styles.typeChipActive]}
-              onPress={() => setSelectedType(t.key)}
-            >
-              <Text style={[styles.typeText, selectedType === t.key && styles.typeTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.typeRow}>
-          {CHAT_TASKS.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.typeChip, selectedTask === t.key && styles.typeChipActive]}
-              onPress={() => setSelectedTask(t.key)}
-            >
-              <Text style={[styles.typeText, selectedTask === t.key && styles.typeTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {/* Initial loading */}
+      {initialLoading && (
+        <View style={styles.initialLoading}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.initialLoadingText}>載入近況中...</Text>
         </View>
       )}
 
-      {/* Generate button */}
-      <TouchableOpacity
-        style={[styles.generateButton, generating && styles.generateButtonDisabled]}
-        disabled={generating || !selectedRecipientId}
-        onPress={() => void (mode === 'report' ? handleGenerateReport() : handleGenerateChat())}
-      >
-        {generating ? (
-          <View style={styles.generatingRow}>
-            <ActivityIndicator size="small" color="#fff" />
-            <Text style={styles.generateText}>AI 正在分析中...</Text>
-          </View>
-        ) : (
-          <Text style={styles.generateText}>
-            {mode === 'report' ? '生成報告' : '生成'}
-          </Text>
-        )}
-      </TouchableOpacity>
-
-      {/* Error */}
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      {/* Report result */}
-      {report && (
+      {/* Report result — auto-loaded or freshly generated */}
+      {!initialLoading && report && (
         <View style={styles.resultCard}>
-          {/* Status badge */}
-          {(() => {
-            const sc = STATUS_COLORS[report.status_label] ?? DEFAULT_STATUS;
-            return (
-              <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                <Text style={[styles.statusText, { color: sc.text }]}>{sc.label}</Text>
-              </View>
-            );
-          })()}
+          {/* Recipient name + status */}
+          <View style={styles.resultHeader}>
+            <Text style={styles.resultRecipientName}>{selectedRecipientName} 的近況</Text>
+            {(() => {
+              const sc = STATUS_COLORS[report.status_label] ?? DEFAULT_STATUS;
+              return (
+                <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                  <Text style={[styles.statusText, { color: sc.text }]}>{sc.label}</Text>
+                </View>
+              );
+            })()}
+          </View>
 
           <Text style={styles.resultSummary}>{report.summary}</Text>
 
           {report.reasons.length > 0 && (
             <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>原因</Text>
+              <Text style={styles.resultLabel}>最近觀察</Text>
               {report.reasons.map((r, i) => (
                 <Text key={i} style={styles.resultItem}>• {r}</Text>
               ))}
@@ -346,7 +326,7 @@ export default function AiReportScreen() {
 
           {report.suggestions.length > 0 && (
             <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>建議</Text>
+              <Text style={styles.resultLabel}>溫馨提醒</Text>
               {report.suggestions.map((s, i) => (
                 <Text key={i} style={styles.resultItem}>• {s}</Text>
               ))}
@@ -359,18 +339,23 @@ export default function AiReportScreen() {
 
           <Text style={styles.disclaimer}>{report.disclaimer}</Text>
 
-          <TouchableOpacity
-            style={styles.shareButton}
-            onPress={() => void handleShare(buildShareText())}
-          >
-            <Text style={styles.shareText}>分享</Text>
-          </TouchableOpacity>
+          {/* Action row */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() => void handleShare(buildShareText())}
+            >
+              <Text style={styles.shareText}>分享給家人</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
       {/* Chat result */}
-      {chatResult && (
+      {!initialLoading && chatResult && (
         <View style={styles.resultCard}>
+          <Text style={styles.resultRecipientName}>{selectedRecipientName}</Text>
+
           {typeof chatResult.result.explanation === 'string' && (
             <Text style={styles.resultSummary}>{chatResult.result.explanation}</Text>
           )}
@@ -416,19 +401,115 @@ export default function AiReportScreen() {
 
           <Text style={styles.disclaimer}>{chatResult.disclaimer}</Text>
 
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() => void handleShare(buildShareText())}
+            >
+              <Text style={styles.shareText}>分享給家人</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Empty state — no report at all */}
+      {!initialLoading && !report && !chatResult && !generating && !error && (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>尚無安心報</Text>
+          <Text style={styles.emptyDesc}>點擊下方「更新近況」，為{selectedRecipientName || '被照護者'}生成第一份安心報。</Text>
+        </View>
+      )}
+
+      {/* Error */}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {/* Update button — always visible & prominent */}
+      {!initialLoading && (
+        <TouchableOpacity
+          style={[styles.generateButton, generating && styles.generateButtonDisabled]}
+          disabled={generating || !selectedRecipientId}
+          onPress={() => void (showMore ? (selectedType !== 'health_summary' ? handleGenerateReport() : handleGenerateReport()) : handleGenerateReport())}
+        >
+          {generating ? (
+            <View style={styles.generatingRow}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.generateText}>正在整理近況...</Text>
+            </View>
+          ) : (
+            <Text style={styles.generateText}>
+              {showMore ? `生成${REPORT_TYPES.find((t) => t.key === selectedType)?.label ?? '報告'}` : '更新近況'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* "More features" expandable section */}
+      {!initialLoading && (
+        <View style={styles.moreSection}>
           <TouchableOpacity
-            style={styles.shareButton}
-            onPress={() => void handleShare(buildShareText())}
+            style={styles.moreToggle}
+            onPress={() => setShowMore(!showMore)}
           >
-            <Text style={styles.shareText}>分享</Text>
+            <Text style={styles.moreToggleText}>{showMore ? '收起更多功能' : '更多功能'}</Text>
+            <Text style={styles.moreToggleArrow}>{showMore ? '▲' : '▼'}</Text>
           </TouchableOpacity>
+
+          {showMore && (
+            <View style={styles.moreContent}>
+              {/* Report type selector */}
+              <Text style={styles.moreSectionLabel}>近況摘要</Text>
+              <View style={styles.typeRow}>
+                {REPORT_TYPES.map((t) => (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[styles.typeChip, selectedType === t.key && styles.typeChipActive]}
+                    onPress={() => { setSelectedType(t.key); setChatResult(null); }}
+                  >
+                    <Text style={[styles.typeText, selectedType === t.key && styles.typeTextActive]}>
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Chat task selector */}
+              <Text style={styles.moreSectionLabel}>快問快答</Text>
+              <View style={styles.typeRow}>
+                {CHAT_TASKS.map((t) => (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[styles.taskChip, selectedTask === t.key && styles.taskChipActive]}
+                    onPress={() => setSelectedTask(t.key)}
+                  >
+                    <Text style={[styles.typeText, selectedTask === t.key && styles.taskTextActive]}>
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={[styles.chatButton, generating && styles.generateButtonDisabled]}
+                disabled={generating || !selectedRecipientId}
+                onPress={() => void handleGenerateChat()}
+              >
+                {generating ? (
+                  <View style={styles.generatingRow}>
+                    <ActivityIndicator size="small" color="#3b82f6" />
+                    <Text style={styles.chatButtonText}>正在整理...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.chatButtonText}>快問快答</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
       {/* History */}
-      {history.length > 0 && (
+      {!initialLoading && history.length > 0 && (
         <View style={styles.historySection}>
-          <Text style={styles.historyTitle}>歷史報告</Text>
+          <Text style={styles.historyTitle}>過去的安心報</Text>
           {historyLoading ? (
             <ActivityIndicator size="small" color="#3b82f6" />
           ) : (
@@ -474,23 +555,45 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 14, color: '#374151' },
   chipTextActive: { color: '#fff', fontWeight: '600' },
 
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  modeButton: {
-    flex: 1, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: '#e5e7eb', alignItems: 'center',
-  },
-  modeActive: { backgroundColor: '#3b82f6' },
-  modeText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  modeTextActive: { color: '#fff' },
+  initialLoading: { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  initialLoadingText: { fontSize: 14, color: '#9ca3af' },
 
-  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  typeChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-    backgroundColor: '#e5e7eb',
+  resultCard: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
   },
-  typeChipActive: { backgroundColor: '#dbeafe' },
-  typeText: { fontSize: 13, color: '#374151' },
-  typeTextActive: { color: '#1d4ed8', fontWeight: '600' },
+  resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  resultRecipientName: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
+  statusText: { fontSize: 13, fontWeight: '600' },
+  resultSummary: { fontSize: 16, color: '#1f2937', lineHeight: 24, marginBottom: 12 },
+  resultSection: { marginBottom: 10 },
+  resultLabel: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 4 },
+  resultItem: { fontSize: 14, color: '#374151', lineHeight: 22 },
+  fallbackNote: { fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8 },
+
+  disclaimer: {
+    fontSize: 11, color: '#9ca3af', lineHeight: 16,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb',
+    paddingTop: 10, marginTop: 10,
+  },
+
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  shareButton: {
+    flex: 1, backgroundColor: '#dbeafe', borderRadius: 12,
+    paddingVertical: 10, alignItems: 'center',
+  },
+  shareText: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
+
+  emptyCard: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 24, marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  emptyDesc: { fontSize: 14, color: '#9ca3af', textAlign: 'center', lineHeight: 21 },
 
   generateButton: {
     backgroundColor: '#3b82f6', borderRadius: 12,
@@ -505,30 +608,35 @@ const styles = StyleSheet.create({
     padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, overflow: 'hidden',
   },
 
-  resultCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
+  moreSection: { marginBottom: 16 },
+  moreToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 6 },
+  moreToggleText: { fontSize: 14, color: '#6b7280' },
+  moreToggleArrow: { fontSize: 10, color: '#9ca3af' },
+  moreContent: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginTop: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
   },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginBottom: 10 },
-  statusText: { fontSize: 13, fontWeight: '600' },
-  resultSummary: { fontSize: 16, color: '#1f2937', lineHeight: 24, marginBottom: 12 },
-  resultSection: { marginBottom: 10 },
-  resultLabel: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 4 },
-  resultItem: { fontSize: 14, color: '#374151', lineHeight: 22 },
-  fallbackNote: { fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8 },
-
-  disclaimer: {
-    fontSize: 11, color: '#9ca3af', lineHeight: 16,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb',
-    paddingTop: 10, marginTop: 10,
+  moreSectionLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 4 },
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  typeChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+    backgroundColor: '#e5e7eb',
   },
-
-  shareButton: {
-    backgroundColor: '#dbeafe', borderRadius: 12,
-    paddingVertical: 10, alignItems: 'center', marginTop: 12,
+  typeChipActive: { backgroundColor: '#dbeafe' },
+  typeText: { fontSize: 13, color: '#374151' },
+  typeTextActive: { color: '#1d4ed8', fontWeight: '600' },
+  taskChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+    backgroundColor: '#e5e7eb',
   },
-  shareText: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
+  taskChipActive: { backgroundColor: '#f0fdf4' },
+  taskTextActive: { color: '#166534', fontWeight: '600' },
+  chatButton: {
+    backgroundColor: '#f0fdf4', borderRadius: 12, borderWidth: 1, borderColor: '#bbf7d0',
+    paddingVertical: 12, alignItems: 'center', marginTop: 4,
+  },
+  chatButtonText: { fontSize: 14, fontWeight: '600', color: '#166534' },
 
   historySection: { marginTop: 8 },
   historyTitle: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 10 },

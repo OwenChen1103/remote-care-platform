@@ -7,7 +7,8 @@ import { buildReportPrompt, buildChatPrompt } from './ai-prompts';
 import type { PromptContext } from './ai-prompts';
 
 function getClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? '', timeout: AI_LIMITS.TIMEOUT_MS });
+  const baseURL = process.env.OPENAI_BASE_URL ?? undefined;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? '', baseURL, timeout: AI_LIMITS.TIMEOUT_MS });
 }
 
 function getModel(): string {
@@ -134,7 +135,8 @@ export async function generateReport(
         output_tokens: result.output_tokens,
         is_fallback: false,
       };
-    } catch {
+    } catch (err) {
+      console.error(`[AI] generateReport attempt ${attempt + 1} failed:`, err);
       if (attempt === AI_LIMITS.MAX_RETRIES) {
         return {
           output: REPORT_FALLBACKS[type],
@@ -181,7 +183,8 @@ export async function generateChat(
         output_tokens: result.output_tokens,
         is_fallback: false,
       };
-    } catch {
+    } catch (err) {
+      console.error(`[AI] generateChat attempt ${attempt + 1} failed:`, err);
       if (attempt === AI_LIMITS.MAX_RETRIES) {
         return {
           output: CHAT_FALLBACKS[task],

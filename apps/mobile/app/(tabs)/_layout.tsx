@@ -17,12 +17,20 @@ export default function TabLayout() {
           tabBarLabel: '健康',
         }}
       />
-      <Tabs.Screen name="home/add-recipient" options={{ href: null }} />
-      <Tabs.Screen name="home/[recipientId]/index" options={{ href: null }} />
-      <Tabs.Screen name="home/[recipientId]/edit" options={{ href: null }} />
-      <Tabs.Screen name="health/add-measurement" options={{ href: null }} />
-      <Tabs.Screen name="health/trends" options={{ href: null }} />
-      <Tabs.Screen name="health/export" options={{ href: null }} />
+      <Tabs.Screen
+        name="ai/index"
+        options={{
+          title: '安心報',
+          tabBarLabel: '安心報',
+        }}
+      />
+      <Tabs.Screen name="home/add-recipient" options={{ href: null, title: '新增被照護者' }} />
+      <Tabs.Screen name="home/[recipientId]/index" options={{ href: null, title: '被照護者詳情' }} />
+      <Tabs.Screen name="home/[recipientId]/edit" options={{ href: null, title: '編輯被照護者' }} />
+      <Tabs.Screen name="health/add-measurement" options={{ href: null, title: '新增量測' }} />
+      <Tabs.Screen name="health/trends" options={{ href: null, title: '趨勢分析' }} />
+      <Tabs.Screen name="health/export" options={{ href: null, title: '匯出紀錄' }} />
+      <Tabs.Screen name="health/ai-report" options={{ href: null, title: '安心報' }} />
     </Tabs>
   );
 }
