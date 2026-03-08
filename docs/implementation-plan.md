@@ -12,7 +12,7 @@
 - [1. 總覽與排序原則](#1-總覽與排序原則)
 - [2. SOP：每次呼叫 Claude 的固定流程](#2-sop每次呼叫-claude-的固定流程)
 - [3. Change Request 規則](#3-change-request-規則)
-- [4. Slice 定義（0-8）](#4-slice-定義0-8)
+- [4. Slice 定義（0-8 + Patient-Lite TBD）](#4-slice-定義0-8--patient-lite-tbd)
 - [5. 風險總覽與降級策略](#5-風險總覽與降級策略)
 
 ---
@@ -48,6 +48,9 @@
 | 6 | Appointments 行程 | 行程 CRUD | Slice 2 |
 | 7 | Service Requests 需求單 | 需求送出 + Admin 管理 + 狀態機 | Slice 2 |
 | 8 | Providers + Admin Dashboard | 服務人員管理 + 檔案上傳 + Dashboard | Slice 7 |
+| TBD | Patient-Lite 被照護者介面 | 被照護者簡化唯讀介面 | Slice 1, 3（基礎）；Slice 4-6 完成程度影響功能範圍與排序 |
+
+> **Patient-Lite 排序說明**：此 Slice 為已確認之產品方向，建議排在 Slice 6 之後。與 Service Requests 的先後順序取決於業務展示優先級，實作前再定案。詳見 implementation-spec.md Q 節。
 
 ---
 
@@ -101,7 +104,7 @@
 
 ---
 
-## 4. Slice 定義（0-8）
+## 4. Slice 定義（0-8 + Patient-Lite TBD）
 
 ---
 
@@ -547,6 +550,43 @@ Then 全部通過（端到端閉環）
 
 ---
 
+### Slice TBD：Patient-Lite 被照護者介面
+
+> **狀態**：已確認方向，尚未排入固定編號。建議位置為 Slice 6（Appointments）之後。
+
+**目標**：被照護者本人可用簡化的行動端介面查看自身相關資料，資訊範圍與可用操作小於委託人介面。
+
+#### 預期交付物（草案，實作前須確認）
+
+| 層 | 交付 |
+|----|------|
+| DB | recipients 表可能新增 patient user 關聯欄位 |
+| Shared | 身份模型擴展（可能新增 patient role 或等效方案） |
+| API | 現有 GET endpoints 擴展 patient 存取權限 + mutation endpoints 限制 patient 唯讀 |
+| Mobile | Patient 專屬 tab layout + 首頁 + 重用現有畫面（唯讀模式） |
+| Auth | Patient 登入流程 + 帳號建立機制（邀請或其他） |
+| Tests | Patient ownership 測試 + 唯讀限制測試 |
+
+#### 前置依賴
+
+- Slice 1（Auth）：JWT + role 機制
+- Slice 3（Measurements）：量測資料 + 趨勢 API
+- Slice 4–6 的完成程度決定 Patient-Lite 能重用多少功能（AI 報告、通知、行程等）
+
+#### 待決事項
+
+見 implementation-spec.md Q 節 Patient-Lite 待決事項表。所有技術設計（schema、角色、連結方式、invite flow）須於本 Slice 正式啟動時確認，不提前實作。
+
+#### 風險點與降級方案
+
+| 風險 | 降級 |
+|------|------|
+| 帳號建立/邀請流程複雜度高 | 最小版本：Admin 手動建立 patient 帳號，不做邀請流程 |
+| Patient 可見範圍定義不明 | 先以最小唯讀子集上線，其他功能逐步開放 |
+| Recipient/User 概念混淆 | 嚴格區分 Recipient（資料記錄）與 Patient User（帳號），不合併 |
+
+---
+
 ## 5. 風險總覽與降級策略
 
 ### 全域風險
@@ -570,6 +610,7 @@ Then 全部通過（端到端閉環）
 | P1 | Slice 7 | 服務需求閉環（送出 → Admin 處理） |
 | P2 | Slice 5, 6 | 通知 + 行程（可以有但非核心 demo） |
 | P2 | Slice 8 | Providers + Dashboard（Admin 管理完善） |
+| P2+ | Patient-Lite | 已確認方向，排序待定（被照護者可查看自身資料） |
 
 ---
 
