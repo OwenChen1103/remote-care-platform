@@ -32,7 +32,7 @@ function calculateAge(dob: string): number {
 }
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,13 +74,21 @@ export default function HomeScreen() {
         <TouchableOpacity style={styles.retryButton} onPress={() => void fetchRecipients()}>
           <Text style={styles.retryText}>重試</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
+          <Text style={styles.logoutText}>登出</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.welcome}>你好，{user?.name ?? ''}！</Text>
+      <View style={styles.header}>
+        <Text style={styles.welcome}>你好，{user?.name ?? ''}！</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
+          <Text style={styles.logoutText}>登出</Text>
+        </TouchableOpacity>
+      </View>
 
       {recipients.length === 0 ? (
         <View style={styles.center}>
@@ -129,7 +137,10 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
+  header: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, paddingRight: 16 },
   welcome: { fontSize: 18, fontWeight: '600', color: '#333', padding: 16, paddingBottom: 8 },
+  logoutButton: { backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
+  logoutText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 },
   card: {
     backgroundColor: '#fff',

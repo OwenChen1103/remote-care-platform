@@ -2,7 +2,9 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
 const API_URL =
-  Constants.expoConfig?.extra?.apiUrl ?? 'http://localhost:3000';
+  process.env.EXPO_PUBLIC_API_URL ??
+  Constants.expoConfig?.extra?.apiUrl ??
+  'http://localhost:3000';
 
 export class ApiError extends Error {
   constructor(

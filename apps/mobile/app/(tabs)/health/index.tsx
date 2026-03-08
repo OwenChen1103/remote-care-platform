@@ -130,6 +130,12 @@ export default function HealthScreen() {
           >
             <Text style={styles.actionText}>看趨勢</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push('/(tabs)/health/export')}
+          >
+            <Text style={styles.actionText}>匯出</Text>
+          </TouchableOpacity>
         </View>
       )}
 
