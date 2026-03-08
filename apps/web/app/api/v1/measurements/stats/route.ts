@@ -7,6 +7,15 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 // Max measurements to load for stats (30d × 4/day × safety margin)
 const STATS_MAX_ROWS = 500;
 
+type StatRow = {
+  systolic: number | null;
+  diastolic: number | null;
+  heart_rate: number | null;
+  glucose_value: { toNumber(): number } | null;
+  is_abnormal: boolean;
+  measured_at: Date;
+};
+
 function aggregateNumbers(values: number[]) {
   if (values.length === 0) return null;
   let min = Infinity;
@@ -68,7 +77,7 @@ export async function GET(request: NextRequest) {
     fromDate.setHours(0, 0, 0, 0);
 
     // Fetch measurements in range with safety limit
-    const measurements = await prisma.measurement.findMany({
+    const measurements: StatRow[] = await prisma.measurement.findMany({
       where: {
         recipient_id,
         type,

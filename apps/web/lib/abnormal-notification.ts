@@ -22,7 +22,7 @@ export async function checkAndNotifyAbnormal(params: {
   const typeLabel = measurementType === 'blood_pressure' ? '血壓' : '血糖';
 
   // Check last N measurements of same type
-  const recentMeasurements = await prisma.measurement.findMany({
+  const recentMeasurements: { is_abnormal: boolean }[] = await prisma.measurement.findMany({
     where: {
       recipient_id: recipientId,
       type: measurementType,

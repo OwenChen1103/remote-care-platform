@@ -27,6 +27,14 @@ function safeAvg(values: number[]): number {
   return Math.round(sum / values.length);
 }
 
+type ExportRow = {
+  systolic: number | null;
+  diastolic: number | null;
+  glucose_value: { toNumber(): number } | null;
+  is_abnormal: boolean;
+  measured_at: Date;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await verifyAuth(request);
@@ -69,7 +77,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch measurements
-    const measurements = await prisma.measurement.findMany({
+    const measurements: ExportRow[] = await prisma.measurement.findMany({
       where: {
         recipient_id,
         type,
