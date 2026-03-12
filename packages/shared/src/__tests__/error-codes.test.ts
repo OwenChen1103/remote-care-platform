@@ -111,14 +111,18 @@ describe('RegisterSchema', () => {
 });
 
 describe('VALID_STATUS_TRANSITIONS', () => {
-  it('should allow submitted -> contacted', () => {
-    expect(VALID_STATUS_TRANSITIONS.submitted).toContain('contacted');
+  it('should allow submitted -> screening', () => {
+    expect(VALID_STATUS_TRANSITIONS.submitted).toContain('screening');
   });
 
-  it('should allow any status -> cancelled', () => {
+  it('should allow cancellation before completion', () => {
     expect(VALID_STATUS_TRANSITIONS.submitted).toContain('cancelled');
-    expect(VALID_STATUS_TRANSITIONS.contacted).toContain('cancelled');
+    expect(VALID_STATUS_TRANSITIONS.screening).toContain('cancelled');
+    expect(VALID_STATUS_TRANSITIONS.candidate_proposed).toContain('cancelled');
+    expect(VALID_STATUS_TRANSITIONS.caregiver_confirmed).toContain('cancelled');
+    expect(VALID_STATUS_TRANSITIONS.provider_confirmed).toContain('cancelled');
     expect(VALID_STATUS_TRANSITIONS.arranged).toContain('cancelled');
+    expect(VALID_STATUS_TRANSITIONS.in_service).toContain('cancelled');
   });
 
   it('should not allow completed to transition', () => {

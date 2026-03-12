@@ -24,6 +24,7 @@ export default function TabLayout() {
           tabBarLabel: '安心報',
         }}
       />
+      <Tabs.Screen name="home/notifications" options={{ href: null, title: '通知' }} />
       <Tabs.Screen name="home/add-recipient" options={{ href: null, title: '新增被照護者' }} />
       <Tabs.Screen name="home/[recipientId]/index" options={{ href: null, title: '被照護者詳情' }} />
       <Tabs.Screen name="home/[recipientId]/edit" options={{ href: null, title: '編輯被照護者' }} />

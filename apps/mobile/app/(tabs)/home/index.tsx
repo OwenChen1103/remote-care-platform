@@ -80,6 +80,7 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const [latestReports, setLatestReports] = useState<Record<string, LatestReport>>({});
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchRecipients = useCallback(async () => {
     setLoading(true);
@@ -124,9 +125,19 @@ export default function HomeScreen() {
     setReportsLoading(false);
   }, []);
 
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const result = await api.get<{ count: number }>('/notifications/unread-count');
+      setUnreadCount(result.count);
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
   useEffect(() => {
     void fetchRecipients();
-  }, [fetchRecipients]);
+    void fetchUnreadCount();
+  }, [fetchRecipients, fetchUnreadCount]);
 
   useEffect(() => {
     if (recipients.length > 0) {
@@ -165,9 +176,19 @@ export default function HomeScreen() {
             <Text style={styles.sectionHint}>今日家人安心報</Text>
           )}
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
-          <Text style={styles.logoutText}>登出</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/(tabs)/home/notifications')}>
+            <Text style={styles.bellIcon}>{'\uD83D\uDD14'}</Text>
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
+            <Text style={styles.logoutText}>登出</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {recipients.length === 0 ? (
@@ -273,7 +294,17 @@ const styles = StyleSheet.create({
   },
   welcome: { fontSize: 18, fontWeight: '600', color: '#1f2937', paddingHorizontal: 16, paddingTop: 8 },
   sectionHint: { fontSize: 13, color: '#6b7280', paddingHorizontal: 16, paddingTop: 2, paddingBottom: 4 },
-  logoutButton: { backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6, marginTop: 10 },
+  headerActions: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, marginTop: 10 },
+  bellButton: { position: 'relative' as const, padding: 6 },
+  bellIcon: { fontSize: 22 },
+  badge: {
+    position: 'absolute' as const, top: 0, right: 0,
+    backgroundColor: '#ef4444', borderRadius: 10,
+    minWidth: 18, height: 18, alignItems: 'center' as const, justifyContent: 'center' as const,
+    paddingHorizontal: 4,
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' as const },
+  logoutButton: { backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
   logoutText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 },
 

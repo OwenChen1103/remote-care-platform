@@ -1,11 +1,11 @@
 # 遠端照護平台 — 嚴格代碼規範與流程規範
 
-> **文件版本**：1.1.0
-> **最後更新**：2026-03-07
+> **文件版本**：1.2.0
+> **最後更新**：2026-03-12
 > **狀態**：定案（Approved）
 > **維護者**：工程團隊
 >
-> **v1.1.0 變更摘要**：Lint 門檻收緊為零 warning、Rate Limit 改用 Upstash Redis、修正 Request ID middleware 實作、新增 Prisma 連線池規範、統一 Auth 雙策略說明。
+> **v1.2.0 變更摘要**：文件全量對齊 MVP 範圍確認稿，新增四角色 RBAC 工程守則、8 服務入口治理規範、平台介入式媒合與雙向確認測試要求、Provider 等級與工作介面開發規範。
 
 ---
 
@@ -518,6 +518,33 @@ export async function POST(request: NextRequest) {
 }
 ```
 
+### E.6 四角色 RBAC 宣告規範
+
+- 所有 route handler 檔案頂部必須明確宣告允許角色（`caregiver` / `patient` / `provider` / `admin`）。
+- 若 endpoint 只允許單一角色，禁止以 `if (role !== 'admin')` 這種反向寫法隱式處理；必須白名單判斷。
+- `patient` 與 `provider` endpoint 必須搭配 ownership 檢查，不可只憑 role 放行。
+
+```typescript
+const ALLOWED_ROLES = ['provider'] as const;
+if (!ALLOWED_ROLES.includes(auth.role)) {
+  return errorResponse('AUTH_FORBIDDEN', '無權限存取此資源');
+}
+```
+
+### E.7 服務入口分類治理（8 類定案）
+
+- `service_categories.code` 為穩定識別碼，不可在程式中硬編中文名稱做邏輯判斷。
+- MVP 8 個 code（`escort_visit` ~ `functional_assessment`）必須由 seed 建立，且所有環境一致。
+- 前端排序以 API `sort_order` 為準，禁止在前端自行寫死順序。
+- 若需新增第 9 類，必須走 Change Request 並同步更新 spec + plan + tests。
+
+### E.8 媒合狀態機守門
+
+- `service_requests.status` 轉換必須集中在單一 state machine module，禁止散落於多個 handler 的 `if/else`。
+- 只有 `admin` 可操作媒合狀態（`screening`、`candidate_proposed`），只有 `provider` 可操作服務執行狀態（`in_service`、`completed`）。
+- `caregiver_confirmed` + `provider_confirmed` 成立時才可進入 `arranged`，不得人工跳過。
+- 所有狀態轉換必須寫入結構化 log（見 L.4 事件 10）。
+
 ---
 
 ## F. 安全規範
@@ -538,6 +565,7 @@ export async function POST(request: NextRequest) {
 | Web Admin | httpOnly cookie | `SameSite=Strict`、`Secure=true`（production） |
 
 - JWT payload 只包含：`userId`、`role`、`iat`、`exp`
+- `role` 僅允許：`caregiver` / `patient` / `provider` / `admin`
 - **嚴禁**在 JWT 中放入密碼、個資、健康資料
 - Token 過期時間：7 天
 - Refresh token：MVP 不做（過期重新登入即可）
@@ -713,6 +741,13 @@ export const api = new ApiClient();
   - `AuthContext`：`user`、`token`、`login()`、`logout()`
   - **嚴禁**使用 Redux、MobX 等重型狀態管理（MVP 不需要）
 
+### G.2.1 角色化導航規範（MVP 定案）
+
+- Mobile 僅允許一個登入入口；登入成功後依 `role` 導向對應 route group。
+- `caregiver`、`patient`、`provider` 的 tabs 必須物理分離（例如 `(caregiver-tabs)`、`(patient-tabs)`、`(provider-tabs)`）。
+- `patient` 介面必須是唯讀子集，不可出現新增量測、送出需求等可寫入操作。
+- `provider` 介面僅顯示分派案件與回報功能，不可存取後台管理能力。
+
 ### G.3 必備 UI 狀態
 
 每個資料取得頁面**必須**處理以下三種狀態：
@@ -805,6 +840,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 - 表格：使用 `@tanstack/react-table`（若需複雜排序/篩選）或簡單 HTML table
 - 表單：`react-hook-form` + Zod（與 Mobile 統一）
 
+### H.5 Admin 媒合操作規範
+
+- 需求單詳情頁必須完整呈現：目前狀態、候選 provider、雙向確認進度、最終指派結果。
+- 「提出候選」按鈕僅可對 `review_status='approved'` 且 `availability_status='available'` 的 provider 開放。
+- 不允許在 UI 提供非法狀態跳轉選項（例如直接從 `submitted` 跳到 `completed`）。
+- provider 等級（L1/L2/L3）必須可在列表篩選，且在案件詳情可見。
+
 ---
 
 ## I. 測試策略
@@ -825,11 +867,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 | Endpoint 群組 | 測試案例 |
 |--------------|---------|
 | Auth | 註冊成功 / email 重複 / 密碼太短 / 登入成功 / 密碼錯誤 |
-| Recipients | 建立成功 / ownership 驗證 / 超過上限 / 更新成功 |
-| Measurements | 建立 BP 成功 / 建立 BG 成功 / validation 失敗 / ownership 驗證 / 異常判斷正確 |
-| Service Requests | 建立成功 / 狀態更新合法 / 狀態更新非法 / 指派 provider / ownership 驗證 |
+| Recipients | 建立成功 / caregiver ownership / patient 綁定唯讀驗證 / 超過上限 / 更新成功 |
+| Measurements | 建立 BP 成功 / 建立 BG 成功 / validation 失敗 / caregiver ownership / patient 唯讀限制 / 異常判斷正確 |
+| Service Requests | 建立成功 / 8 類別入口可用 / 候選提案 / 雙向確認 / 狀態更新合法 / 狀態更新非法 / ownership 驗證 |
 | AI | 成功生成（mock LLM）/ fallback / 頻率限制 |
-| Providers（Admin） | CRUD / 審核 / 文件上傳 / 非 admin 拒絕 |
+| Providers（Admin） | CRUD / 審核 / level 調整 / 文件上傳 / 非 admin 拒絕 |
+| Provider Workspace | 任務列表僅回傳本人案件 / 回報進度成功 / 未指派案件拒絕 |
 
 #### 前端 Component Tests（必要）
 
@@ -838,6 +881,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 | 新增量測表單 | 正確填寫送出 / validation 錯誤顯示 / loading 狀態 |
 | 送出需求單表單 | 正確填寫送出 / 必填欄位驗證 |
 | 登入表單 | 成功登入跳轉 / 錯誤訊息顯示 |
+| Patient 摘要頁 | 僅顯示綁定本人資料 / 不出現寫入按鈕 |
+| Provider 任務詳情頁 | 狀態更新流程 / 備註送出 / loading/error 狀態 |
 
 #### Shared Package Tests（必要）
 
@@ -920,7 +965,7 @@ type 可選：
 格式：{type}({scope}): {description}
 
 type：feat | fix | refactor | docs | test | chore | ci
-scope：auth | recipient | measurement | ai | service-request | provider | admin | notification | mobile | web | shared | ci
+scope：auth | recipient | patient | measurement | ai | service-request | matching | provider | admin | notification | mobile | web | shared | ci
 
 範例：
   feat(measurement): add blood pressure CRUD endpoints
@@ -1337,7 +1382,7 @@ YYYY-MM-DD
 1. 涉及 implementation-spec A.5「嚴格排除」清單中的項目
 2. 需要新增第三方付費服務（超出已定案的技術棧）
 3. 需要超過 8 工時且無法拆分的功能
-4. 涉及新增角色（超出 `caregiver` + `admin`）
+4. 涉及新增角色（超出 `caregiver` + `patient` + `provider` + `admin`）
 5. 涉及新增通知通道（超出 in-app）
 6. 涉及新增資料類型（超出血壓/血糖）
 

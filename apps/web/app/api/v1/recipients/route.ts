@@ -18,15 +18,21 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '20')));
     const skip = (page - 1) * limit;
 
-    const where: { deleted_at: null; caregiver_id?: string } = { deleted_at: null };
+    const where: { deleted_at: null; caregiver_id?: string; patient_user_id?: string } = {
+      deleted_at: null,
+    };
 
     if (auth.role === 'caregiver') {
       where.caregiver_id = auth.userId;
+    } else if (auth.role === 'patient') {
+      where.patient_user_id = auth.userId;
     } else if (auth.role === 'admin') {
       const caregiverId = url.searchParams.get('caregiver_id');
       if (caregiverId) {
         where.caregiver_id = caregiverId;
       }
+    } else {
+      return errorResponse('AUTH_FORBIDDEN', '此角色無權讀取被照護者資料');
     }
 
     const [recipients, total] = await Promise.all([
@@ -84,12 +90,33 @@ export async function POST(request: NextRequest) {
 
     const { date_of_birth, ...rest } = parsed.data;
 
-    const recipient = await prisma.recipient.create({
-      data: {
-        ...rest,
-        date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
-        caregiver_id: auth.userId,
-      },
+    const recipient = await prisma.$transaction(async (tx) => {
+      const created = await tx.recipient.create({
+        data: {
+          ...rest,
+          date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
+          caregiver_id: auth.userId,
+        },
+      });
+
+      await tx.measurementReminder.createMany({
+        data: [
+          {
+            recipient_id: created.id,
+            reminder_type: 'morning',
+            reminder_time: new Date('1970-01-01T08:00:00Z'),
+            is_enabled: true,
+          },
+          {
+            recipient_id: created.id,
+            reminder_type: 'evening',
+            reminder_time: new Date('1970-01-01T20:00:00Z'),
+            is_enabled: true,
+          },
+        ],
+      });
+
+      return created;
     });
 
     return successResponse(formatRecipient(recipient), 201);

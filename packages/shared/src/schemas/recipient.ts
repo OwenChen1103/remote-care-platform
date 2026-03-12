@@ -15,6 +15,7 @@ export const RecipientUpdateSchema = RecipientCreateSchema.partial();
 export const RecipientResponseSchema = z.object({
   id: z.string().uuid(),
   caregiver_id: z.string().uuid(),
+  patient_user_id: z.string().uuid().nullable(),
   name: z.string(),
   date_of_birth: z.string().nullable(),
   gender: z.string().nullable(),

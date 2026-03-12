@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       return errorResponse('AUTH_INVALID_CREDENTIALS', '帳號或密碼錯誤');
     }
 
-    const token = signJwt({ userId: user.id, role: user.role as 'caregiver' | 'admin' });
+    const token = signJwt({ userId: user.id, role: user.role as 'caregiver' | 'patient' | 'provider' | 'admin' });
 
     return successResponse({
       user: {

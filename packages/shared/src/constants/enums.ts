@@ -1,5 +1,7 @@
 export const USER_ROLES = {
   CAREGIVER: 'caregiver',
+  PATIENT: 'patient',
+  PROVIDER: 'provider',
   ADMIN: 'admin',
 } as const;
 
@@ -30,8 +32,12 @@ export type GlucoseTiming = (typeof GLUCOSE_TIMINGS)[keyof typeof GLUCOSE_TIMING
 
 export const SERVICE_REQUEST_STATUSES = {
   SUBMITTED: 'submitted',
-  CONTACTED: 'contacted',
+  SCREENING: 'screening',
+  CANDIDATE_PROPOSED: 'candidate_proposed',
+  CAREGIVER_CONFIRMED: 'caregiver_confirmed',
+  PROVIDER_CONFIRMED: 'provider_confirmed',
   ARRANGED: 'arranged',
+  IN_SERVICE: 'in_service',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
 } as const;
@@ -40,9 +46,13 @@ export type ServiceRequestStatus =
   (typeof SERVICE_REQUEST_STATUSES)[keyof typeof SERVICE_REQUEST_STATUSES];
 
 export const VALID_STATUS_TRANSITIONS: Record<ServiceRequestStatus, ServiceRequestStatus[]> = {
-  submitted: ['contacted', 'cancelled'],
-  contacted: ['arranged', 'cancelled'],
-  arranged: ['completed', 'cancelled'],
+  submitted: ['screening', 'cancelled'],
+  screening: ['candidate_proposed', 'cancelled'],
+  candidate_proposed: ['caregiver_confirmed', 'screening', 'cancelled'],
+  caregiver_confirmed: ['provider_confirmed', 'screening', 'cancelled'],
+  provider_confirmed: ['arranged', 'cancelled'],
+  arranged: ['in_service', 'cancelled'],
+  in_service: ['completed', 'cancelled'],
   completed: [],
   cancelled: [],
 };
@@ -56,6 +66,37 @@ export const PROVIDER_REVIEW_STATUSES = {
 export type ProviderReviewStatus =
   (typeof PROVIDER_REVIEW_STATUSES)[keyof typeof PROVIDER_REVIEW_STATUSES];
 
+export const PROVIDER_LEVELS = {
+  L1: 'L1',
+  L2: 'L2',
+  L3: 'L3',
+} as const;
+
+export type ProviderLevel = (typeof PROVIDER_LEVELS)[keyof typeof PROVIDER_LEVELS];
+
+export const PROVIDER_AVAILABILITY_STATUSES = {
+  AVAILABLE: 'available',
+  BUSY: 'busy',
+  OFFLINE: 'offline',
+} as const;
+
+export type ProviderAvailabilityStatus =
+  (typeof PROVIDER_AVAILABILITY_STATUSES)[keyof typeof PROVIDER_AVAILABILITY_STATUSES];
+
+export const SERVICE_CATEGORY_CODES = {
+  ESCORT_VISIT: 'escort_visit',
+  PRE_VISIT_CONSULT: 'pre_visit_consult',
+  SHOPPING_ASSIST: 'shopping_assist',
+  EXERCISE_PROGRAM: 'exercise_program',
+  HOME_CLEANING: 'home_cleaning',
+  DAILY_LIVING_SUPPORT: 'daily_living_support',
+  NUTRITION_CONSULT: 'nutrition_consult',
+  FUNCTIONAL_ASSESSMENT: 'functional_assessment',
+} as const;
+
+export type ServiceCategoryCode =
+  (typeof SERVICE_CATEGORY_CODES)[keyof typeof SERVICE_CATEGORY_CODES];
+
 export const NOTIFICATION_TYPES = {
   MEASUREMENT_REMINDER: 'measurement_reminder',
   ABNORMAL_ALERT: 'abnormal_alert',
@@ -65,6 +106,13 @@ export const NOTIFICATION_TYPES = {
 } as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
+
+export const REMINDER_TYPES = {
+  MORNING: 'morning',
+  EVENING: 'evening',
+} as const;
+
+export type ReminderType = (typeof REMINDER_TYPES)[keyof typeof REMINDER_TYPES];
 
 export const AI_REPORT_TYPES = {
   HEALTH_SUMMARY: 'health_summary',

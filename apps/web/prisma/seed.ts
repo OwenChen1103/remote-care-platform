@@ -6,6 +6,8 @@ const prisma = new PrismaClient();
 async function main() {
   const adminHash = await bcrypt.hash('Admin1234!', 12);
   const demoHash = await bcrypt.hash('Demo1234!', 12);
+  const patientHash = await bcrypt.hash('Patient1234!', 12);
+  const providerHash = await bcrypt.hash('Provider1234!', 12);
 
   await prisma.user.upsert({
     where: { email: 'admin@remotecare.dev' },
@@ -32,6 +34,30 @@ async function main() {
     },
   });
 
+  const patientUser = await prisma.user.upsert({
+    where: { email: 'patient.demo@remotecare.dev' },
+    update: {},
+    create: {
+      email: 'patient.demo@remotecare.dev',
+      password_hash: patientHash,
+      name: '王奶奶（帳號）',
+      role: 'patient',
+      timezone: 'Asia/Taipei',
+    },
+  });
+
+  const providerUser = await prisma.user.upsert({
+    where: { email: 'provider.demo@remotecare.dev' },
+    update: {},
+    create: {
+      email: 'provider.demo@remotecare.dev',
+      password_hash: providerHash,
+      name: '陳照護員',
+      role: 'provider',
+      timezone: 'Asia/Taipei',
+    },
+  });
+
   const existingRecipient = await prisma.recipient.findFirst({
     where: { caregiver_id: demoUser.id, name: '王奶奶', deleted_at: null },
   });
@@ -40,6 +66,7 @@ async function main() {
     await prisma.recipient.create({
       data: {
         caregiver_id: demoUser.id,
+        patient_user_id: patientUser.id,
         name: '王奶奶',
         date_of_birth: new Date('1945-03-15'),
         gender: 'female',
@@ -48,6 +75,11 @@ async function main() {
         emergency_contact_phone: '0912345678',
         notes: '行動不便，需輪椅',
       },
+    });
+  } else if (!existingRecipient.patient_user_id) {
+    await prisma.recipient.update({
+      where: { id: existingRecipient.id },
+      data: { patient_user_id: patientUser.id },
     });
   }
 
@@ -76,10 +108,21 @@ async function main() {
 
   if (wangRecipient) {
     await seedMeasurements(wangRecipient.id);
+    await seedReminders(wangRecipient.id);
   }
   await seedMeasurements(liRecipient.id, true);
+  await seedReminders(liRecipient.id);
 
-  console.log('Seed completed: admin + demo user + recipients + 30-day measurements');
+  const serviceCategories = await seedServiceCategories();
+  const [approvedProvider] = await seedProviders(providerUser.id);
+  if (wangRecipient) {
+    await seedServiceRequests(demoUser.id, wangRecipient.id, serviceCategories, approvedProvider.id);
+    await seedNotifications(demoUser.id, wangRecipient.id, '王奶奶');
+    await seedPatientNotifications(patientUser.id, wangRecipient.id, '王奶奶');
+    await seedProviderNotifications(providerUser.id, wangRecipient.id, '王奶奶');
+  }
+
+  console.log('Seed completed: roles + recipients + measurements + reminders + service categories + providers + requests + notifications');
 }
 
 /**
@@ -230,6 +273,299 @@ function generateBg(dayOffset: number, timing: string) {
   }
   // after_meal
   return { value: 110 + (dayOffset % 15), isAbnormal: false };
+}
+
+async function seedReminders(recipientId: string) {
+  const existing = await prisma.measurementReminder.findFirst({
+    where: { recipient_id: recipientId },
+  });
+  if (existing) return;
+
+  await prisma.measurementReminder.createMany({
+    data: [
+      {
+        recipient_id: recipientId,
+        reminder_type: 'morning',
+        reminder_time: new Date('1970-01-01T08:00:00Z'),
+        is_enabled: true,
+      },
+      {
+        recipient_id: recipientId,
+        reminder_type: 'evening',
+        reminder_time: new Date('1970-01-01T20:00:00Z'),
+        is_enabled: true,
+      },
+    ],
+  });
+}
+
+async function seedNotifications(userId: string, recipientId: string, recipientName: string) {
+  const existing = await prisma.notification.count({
+    where: { user_id: userId },
+  });
+  if (existing > 0) return;
+
+  const now = new Date();
+
+  await prisma.notification.createMany({
+    data: [
+      {
+        user_id: userId,
+        type: 'measurement_reminder',
+        title: `${recipientName} 量測提醒`,
+        body: `該為 ${recipientName} 進行早上量測了。`,
+        data: { recipient_id: recipientId, reminder_type: 'morning' },
+        is_read: true,
+        created_at: new Date(now.getTime() - 3 * 60 * 60 * 1000),
+      },
+      {
+        user_id: userId,
+        type: 'measurement_reminder',
+        title: `${recipientName} 量測提醒`,
+        body: `該為 ${recipientName} 進行晚上量測了。`,
+        data: { recipient_id: recipientId, reminder_type: 'evening' },
+        is_read: true,
+        created_at: new Date(now.getTime() - 15 * 60 * 60 * 1000),
+      },
+      {
+        user_id: userId,
+        type: 'abnormal_alert',
+        title: `${recipientName} 血壓連續異常`,
+        body: `${recipientName} 近期血壓有多次異常紀錄，建議關注或安排就醫。`,
+        data: { recipient_id: recipientId, measurement_type: 'blood_pressure' },
+        is_read: false,
+        created_at: new Date(now.getTime() - 1 * 60 * 60 * 1000),
+      },
+      {
+        user_id: userId,
+        type: 'measurement_reminder',
+        title: `${recipientName} 量測提醒`,
+        body: `該為 ${recipientName} 進行早上量測了。`,
+        data: { recipient_id: recipientId, reminder_type: 'morning' },
+        is_read: false,
+        created_at: new Date(now.getTime() - 10 * 60 * 1000),
+      },
+      {
+        user_id: userId,
+        type: 'abnormal_alert',
+        title: `${recipientName} 血糖連續異常`,
+        body: `${recipientName} 近期血糖有多次異常紀錄，建議關注或安排就醫。`,
+        data: { recipient_id: recipientId, measurement_type: 'blood_glucose' },
+        is_read: false,
+        created_at: new Date(now.getTime() - 5 * 60 * 1000),
+      },
+    ],
+  });
+}
+
+async function seedPatientNotifications(userId: string, recipientId: string, recipientName: string) {
+  const existing = await prisma.notification.count({ where: { user_id: userId } });
+  if (existing > 0) return;
+
+  const now = new Date();
+  await prisma.notification.createMany({
+    data: [
+      {
+        user_id: userId,
+        type: 'appointment_reminder',
+        title: `${recipientName} 近期行程提醒`,
+        body: '您在三天內有門診安排，請留意時間。',
+        data: { recipient_id: recipientId },
+        is_read: false,
+        created_at: new Date(now.getTime() - 30 * 60 * 1000),
+      },
+      {
+        user_id: userId,
+        type: 'service_request_update',
+        title: `${recipientName} 服務進度更新`,
+        body: '平台已為您安排服務人員，請查看詳情。',
+        data: { recipient_id: recipientId },
+        is_read: false,
+        created_at: new Date(now.getTime() - 10 * 60 * 1000),
+      },
+    ],
+  });
+}
+
+async function seedProviderNotifications(userId: string, recipientId: string, recipientName: string) {
+  const existing = await prisma.notification.count({ where: { user_id: userId } });
+  if (existing > 0) return;
+
+  await prisma.notification.create({
+    data: {
+      user_id: userId,
+      type: 'service_request_update',
+      title: '新案件指派通知',
+      body: `您有新的 ${recipientName} 服務案件待確認。`,
+      data: { recipient_id: recipientId },
+      is_read: false,
+    },
+  });
+}
+
+type SeedServiceCategory = { id: string; code: string; name: string };
+
+function requireServiceCategory(categories: SeedServiceCategory[], code: string): SeedServiceCategory {
+  const category = categories.find((item) => item.code === code);
+  if (!category) {
+    throw new Error(`Missing service category: ${code}`);
+  }
+  return category;
+}
+
+async function seedServiceCategories(): Promise<SeedServiceCategory[]> {
+  const categories = [
+    { code: 'escort_visit', name: '陪診師', description: '陪同就醫與流程協助', sort_order: 1 },
+    { code: 'pre_visit_consult', name: '診前諮詢', description: '就醫前需求評估與準備建議', sort_order: 2 },
+    { code: 'shopping_assist', name: '購物服務', description: '代購或陪同採買協助', sort_order: 3 },
+    { code: 'exercise_program', name: '運動項目', description: '居家運動陪伴與安排', sort_order: 4 },
+    { code: 'home_cleaning', name: '打掃清潔', description: '居家清潔服務需求', sort_order: 5 },
+    { code: 'daily_living_support', name: '生活輔助', description: '日常生活協助服務', sort_order: 6 },
+    { code: 'nutrition_consult', name: '營養表諮詢', description: '營養建議與飲食諮詢', sort_order: 7 },
+    { code: 'functional_assessment', name: '身體功能檢測', description: '身體功能評估需求', sort_order: 8 },
+  ];
+
+  for (const category of categories) {
+    await prisma.serviceCategory.upsert({
+      where: { code: category.code },
+      update: {
+        name: category.name,
+        description: category.description,
+        sort_order: category.sort_order,
+        is_active: true,
+      },
+      create: category,
+    });
+  }
+
+  return prisma.serviceCategory.findMany({
+    where: { code: { in: categories.map((c) => c.code) } },
+    orderBy: { sort_order: 'asc' },
+    select: { id: true, code: true, name: true },
+  });
+}
+
+async function seedProviders(providerUserId: string) {
+  const providerA = await prisma.provider.upsert({
+    where: { user_id: providerUserId },
+    update: {},
+    create: {
+      user_id: providerUserId,
+      name: '陳照護員',
+      phone: '0922333444',
+      email: 'provider.demo@remotecare.dev',
+      level: 'L2',
+      specialties: ['陪診', '生活輔助'],
+      certifications: ['照顧服務員證照'],
+      experience_years: 5,
+      service_areas: ['台北市大安區', '台北市信義區'],
+      availability_status: 'available',
+      review_status: 'approved',
+      admin_note: '示範帳號',
+    },
+  });
+
+  const existingProviderB = await prisma.provider.findFirst({
+    where: { email: 'pending.provider@remotecare.dev' },
+  });
+
+  const providerB = existingProviderB
+    ? await prisma.provider.update({
+        where: { id: existingProviderB.id },
+        data: {
+          name: '林候選服務員',
+          phone: '0933555666',
+          level: 'L1',
+          specialties: ['居家清潔'],
+          certifications: ['基礎照護訓練'],
+          experience_years: 2,
+          service_areas: ['台北市中山區'],
+          availability_status: 'busy',
+          review_status: 'pending',
+        },
+      })
+    : await prisma.provider.create({
+        data: {
+          name: '林候選服務員',
+          phone: '0933555666',
+          email: 'pending.provider@remotecare.dev',
+          level: 'L1',
+          specialties: ['居家清潔'],
+          certifications: ['基礎照護訓練'],
+          experience_years: 2,
+          service_areas: ['台北市中山區'],
+          availability_status: 'busy',
+          review_status: 'pending',
+        },
+      });
+
+  return [providerA, providerB] as const;
+}
+
+async function seedServiceRequests(
+  caregiverId: string,
+  recipientId: string,
+  categories: SeedServiceCategory[],
+  providerId: string,
+) {
+  const existing = await prisma.serviceRequest.count({ where: { caregiver_id: caregiverId, recipient_id: recipientId } });
+  if (existing > 0) return;
+
+  const escortCategory = requireServiceCategory(categories, 'escort_visit');
+  const consultCategory = requireServiceCategory(categories, 'pre_visit_consult');
+  const nutritionCategory = requireServiceCategory(categories, 'nutrition_consult');
+
+  const now = new Date();
+  const in3Days = new Date(now);
+  in3Days.setDate(in3Days.getDate() + 3);
+
+  const in7Days = new Date(now);
+  in7Days.setDate(in7Days.getDate() + 7);
+
+  const in14Days = new Date(now);
+  in14Days.setDate(in14Days.getDate() + 14);
+
+  await prisma.serviceRequest.createMany({
+    data: [
+      {
+        caregiver_id: caregiverId,
+        recipient_id: recipientId,
+        category_id: escortCategory.id,
+        status: 'submitted',
+        preferred_date: in3Days,
+        preferred_time_slot: 'morning',
+        location: '台北市大安區復興南路一段 100 號',
+        description: '需陪同回診，長輩行動不便。',
+      },
+      {
+        caregiver_id: caregiverId,
+        recipient_id: recipientId,
+        category_id: consultCategory.id,
+        status: 'candidate_proposed',
+        preferred_date: in7Days,
+        preferred_time_slot: 'afternoon',
+        location: '台北市信義區松高路 1 號',
+        description: '診前諮詢需求，希望先確認注意事項。',
+        candidate_provider_id: providerId,
+        admin_note: '已提出候選服務人員。',
+      },
+      {
+        caregiver_id: caregiverId,
+        recipient_id: recipientId,
+        category_id: nutritionCategory.id,
+        status: 'arranged',
+        preferred_date: in14Days,
+        preferred_time_slot: 'evening',
+        location: '台北市中山區民權東路二段 50 號',
+        description: '營養諮詢與飲食調整建議。',
+        candidate_provider_id: providerId,
+        assigned_provider_id: providerId,
+        caregiver_confirmed_at: now,
+        provider_confirmed_at: now,
+        admin_note: '雙方已確認，安排完成。',
+      },
+    ],
+  });
 }
 
 main()

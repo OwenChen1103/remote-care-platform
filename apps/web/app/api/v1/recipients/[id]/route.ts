@@ -30,6 +30,14 @@ export async function GET(
       return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
     }
 
+    if (auth.role === 'patient' && recipient.patient_user_id !== auth.userId) {
+      return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
+    }
+
+    if (!['caregiver', 'patient', 'admin'].includes(auth.role)) {
+      return errorResponse('AUTH_FORBIDDEN', '此角色無權存取被照護者');
+    }
+
     return successResponse(formatRecipient(recipient));
   } catch {
     return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
@@ -64,8 +72,11 @@ export async function PUT(
       return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
     }
 
-    const body: unknown = await request.json();
+    if (!['caregiver', 'admin'].includes(auth.role)) {
+      return errorResponse('AUTH_FORBIDDEN', '僅委託人或管理員可更新被照護者');
+    }
 
+    const body: unknown = await request.json();
     const parsed = RecipientUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return errorResponse(
@@ -76,7 +87,6 @@ export async function PUT(
     }
 
     const { date_of_birth, ...rest } = parsed.data;
-
     const updateData: Record<string, unknown> = { ...rest };
     if (date_of_birth !== undefined) {
       updateData.date_of_birth = date_of_birth ? new Date(date_of_birth) : null;

@@ -19,9 +19,11 @@ model User {
   created_at    DateTime @default(now()) @db.Timestamptz
   updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz
 
-  recipients      Recipient[]
-  service_requests ServiceRequest[]
-  notifications   Notification[]
+  caregiver_recipients Recipient[]      @relation("CaregiverRecipients")
+  patient_recipient    Recipient?       @relation("PatientRecipient")
+  provider_profile     Provider?        @relation("ProviderUser")
+  service_requests     ServiceRequest[]
+  notifications        Notification[]
 
   @@map("users")
 }
@@ -29,6 +31,7 @@ model User {
 model Recipient {
   id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   caregiver_id             String    @db.Uuid
+  patient_user_id          String?   @unique @db.Uuid
   name                     String    @db.VarChar(100)
   date_of_birth            DateTime? @db.Date
   gender                   String?   @db.VarChar(10)
@@ -40,7 +43,8 @@ model Recipient {
   created_at               DateTime  @default(now()) @db.Timestamptz
   updated_at               DateTime  @default(now()) @updatedAt @db.Timestamptz
 
-  caregiver             User                 @relation(fields: [caregiver_id], references: [id])
+  caregiver             User                 @relation("CaregiverRecipients", fields: [caregiver_id], references: [id])
+  patient_user          User?                @relation("PatientRecipient", fields: [patient_user_id], references: [id])
   measurements          Measurement[]
   ai_reports            AiReport[]
   appointments          Appointment[]
@@ -118,11 +122,13 @@ model Appointment {
 
 model ServiceCategory {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(40)
   name        String   @unique @db.VarChar(100)
   description String?  @db.Text
   is_active   Boolean  @default(true)
   sort_order  Int      @default(0)
   created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz
 
   service_requests ServiceRequest[]
 
@@ -139,7 +145,11 @@ model ServiceRequest {
   preferred_time_slot  String?   @db.VarChar(20)
   location             String    @db.VarChar(500)
   description          String    @db.Text
+  candidate_provider_id String?  @db.Uuid
   assigned_provider_id String?   @db.Uuid
+  caregiver_confirmed_at DateTime? @db.Timestamptz
+  provider_confirmed_at  DateTime? @db.Timestamptz
+  provider_note          String?   @db.Text
   admin_note           String?   @db.Text
   created_at           DateTime  @default(now()) @db.Timestamptz
   updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz
@@ -147,7 +157,8 @@ model ServiceRequest {
   caregiver         User             @relation(fields: [caregiver_id], references: [id])
   recipient         Recipient        @relation(fields: [recipient_id], references: [id])
   category          ServiceCategory  @relation(fields: [category_id], references: [id])
-  assigned_provider Provider?        @relation(fields: [assigned_provider_id], references: [id])
+  candidate_provider Provider?       @relation("CandidateProviderRequests", fields: [candidate_provider_id], references: [id])
+  assigned_provider  Provider?       @relation("AssignedProviderRequests", fields: [assigned_provider_id], references: [id])
 
   @@index([caregiver_id, status])
   @@index([status, created_at(sort: Desc)])
@@ -156,21 +167,26 @@ model ServiceRequest {
 
 model Provider {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String?   @unique @db.Uuid
   name             String    @db.VarChar(100)
   phone            String?   @db.VarChar(20)
   email            String?   @db.VarChar(255)
+  level            String    @default("L1") @db.VarChar(10)
   specialties      Json      @default("[]")
   certifications   Json      @default("[]")
   experience_years Int?
   service_areas    Json      @default("[]")
+  availability_status String @default("available") @db.VarChar(20)
   review_status    String    @default("pending") @db.VarChar(20)
   admin_note       String?   @db.Text
   deleted_at       DateTime? @db.Timestamptz
   created_at       DateTime  @default(now()) @db.Timestamptz
   updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz
 
+  user             User?              @relation("ProviderUser", fields: [user_id], references: [id])
   documents        ProviderDocument[]
-  service_requests ServiceRequest[]
+  candidate_requests ServiceRequest[] @relation("CandidateProviderRequests")
+  assigned_requests  ServiceRequest[] @relation("AssignedProviderRequests")
 
   @@index([review_status])
   @@map("providers")

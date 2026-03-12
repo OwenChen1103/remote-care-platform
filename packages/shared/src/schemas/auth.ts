@@ -28,7 +28,7 @@ export const UserResponseSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   name: z.string(),
-  role: z.enum(['caregiver', 'admin']),
+  role: z.enum(['caregiver', 'patient', 'provider', 'admin']),
   phone: z.string().nullable(),
   timezone: z.string(),
   created_at: z.string(),
