@@ -1,5 +1,33 @@
 import { z } from 'zod';
 
+// ── Service Category Schemas ──
+
+export const ServiceCategoryUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  sort_order: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+});
+
+export type ServiceCategoryUpdateInput = z.infer<typeof ServiceCategoryUpdateSchema>;
+
+// ── Service Request Schemas ──
+
+export const ServiceRequestListQuerySchema = z.object({
+  status: z.string().optional(),
+  category_id: z.string().uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type ServiceRequestListQuery = z.infer<typeof ServiceRequestListQuerySchema>;
+
+export const ServiceRequestCancelSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+
+export type ServiceRequestCancelInput = z.infer<typeof ServiceRequestCancelSchema>;
+
 export const ServiceRequestCreateSchema = z.object({
   recipient_id: z.string().uuid(),
   category_id: z.string().uuid(),
@@ -11,6 +39,7 @@ export const ServiceRequestCreateSchema = z.object({
 
 export const ServiceRequestStatusUpdateSchema = z.object({
   status: z.enum([
+    'submitted',
     'screening',
     'candidate_proposed',
     'caregiver_confirmed',
