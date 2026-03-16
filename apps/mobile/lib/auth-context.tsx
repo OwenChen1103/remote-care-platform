@@ -16,7 +16,7 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { email: string; password: string; name: string; phone?: string }) => Promise<void>;
+  register: (data: { email: string; password: string; name: string; phone?: string; role?: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (regData: { email: string; password: string; name: string; phone?: string }) => {
+    async (regData: { email: string; password: string; name: string; phone?: string; role?: string }) => {
       const data = await api.post<LoginResponse>('/auth/register', regData);
       await SecureStore.setItemAsync('auth_token', data.token);
       setToken(data.token);
