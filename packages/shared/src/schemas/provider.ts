@@ -20,6 +20,17 @@ export const ProviderReviewSchema = z.object({
   admin_note: z.string().optional(),
 });
 
+// Self-service: providers can update these fields only (not level, review_status, email, name)
+export const ProviderSelfUpdateSchema = z.object({
+  phone: z.string().max(20).optional(),
+  specialties: z.array(z.string()).optional(),
+  certifications: z.array(z.string()).optional(),
+  experience_years: z.number().int().min(0).optional(),
+  service_areas: z.array(z.string()).optional(),
+  availability_status: z.enum(['available', 'busy', 'offline']).optional(),
+});
+
 export type ProviderCreateInput = z.infer<typeof ProviderCreateSchema>;
 export type ProviderUpdateInput = z.infer<typeof ProviderUpdateSchema>;
 export type ProviderReviewInput = z.infer<typeof ProviderReviewSchema>;
+export type ProviderSelfUpdateInput = z.infer<typeof ProviderSelfUpdateSchema>;
