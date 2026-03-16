@@ -33,6 +33,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="services/new-request" options={{ href: null, title: '新增服務需求' }} />
       <Tabs.Screen name="services/[requestId]" options={{ href: null, title: '需求詳情' }} />
+      <Tabs.Screen name="services/provider-confirm" options={{ href: null, title: '確認接案' }} />
       <Tabs.Screen name="home/notifications" options={{ href: null, title: '通知' }} />
       <Tabs.Screen name="home/add-recipient" options={{ href: null, title: '新增被照護者' }} />
       <Tabs.Screen name="home/[recipientId]/index" options={{ href: null, title: '被照護者詳情' }} />

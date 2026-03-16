@@ -5,6 +5,9 @@ import {
   ServiceRequestCancelSchema,
   ServiceCategoryUpdateSchema,
   ServiceRequestListQuerySchema,
+  ServiceRequestProposeCandidateSchema,
+  ServiceRequestCaregiverConfirmSchema,
+  ServiceRequestProviderConfirmSchema,
 } from '../src/schemas/service-request';
 
 describe('ServiceRequestCreateSchema', () => {
@@ -127,5 +130,84 @@ describe('ServiceRequestListQuerySchema', () => {
     if (result.success) {
       expect(result.data.page).toBe(3);
     }
+  });
+});
+
+describe('ServiceRequestProposeCandidateSchema', () => {
+  it('accepts valid input', () => {
+    expect(
+      ServiceRequestProposeCandidateSchema.safeParse({
+        provider_id: '00000000-0000-4000-a000-000000000041',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts optional admin_note', () => {
+    expect(
+      ServiceRequestProposeCandidateSchema.safeParse({
+        provider_id: '00000000-0000-4000-a000-000000000041',
+        admin_note: '候選人具陪診經驗',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects invalid uuid', () => {
+    expect(
+      ServiceRequestProposeCandidateSchema.safeParse({
+        provider_id: 'not-uuid',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('ServiceRequestCaregiverConfirmSchema', () => {
+  it('accepts confirm=true', () => {
+    expect(
+      ServiceRequestCaregiverConfirmSchema.safeParse({ confirm: true }).success,
+    ).toBe(true);
+  });
+
+  it('accepts confirm=false with note', () => {
+    expect(
+      ServiceRequestCaregiverConfirmSchema.safeParse({ confirm: false, note: '時間不合' }).success,
+    ).toBe(true);
+  });
+
+  it('rejects missing confirm', () => {
+    expect(
+      ServiceRequestCaregiverConfirmSchema.safeParse({}).success,
+    ).toBe(false);
+  });
+
+  it('rejects note over 500 chars', () => {
+    expect(
+      ServiceRequestCaregiverConfirmSchema.safeParse({ confirm: true, note: 'x'.repeat(501) }).success,
+    ).toBe(false);
+  });
+});
+
+describe('ServiceRequestProviderConfirmSchema', () => {
+  it('accepts confirm=true with provider_note', () => {
+    expect(
+      ServiceRequestProviderConfirmSchema.safeParse({
+        confirm: true,
+        provider_note: '可於當日上午到場',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts confirm=false', () => {
+    expect(
+      ServiceRequestProviderConfirmSchema.safeParse({ confirm: false }).success,
+    ).toBe(true);
+  });
+
+  it('rejects provider_note over 1000 chars', () => {
+    expect(
+      ServiceRequestProviderConfirmSchema.safeParse({
+        confirm: true,
+        provider_note: 'x'.repeat(1001),
+      }).success,
+    ).toBe(false);
   });
 });
