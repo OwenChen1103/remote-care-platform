@@ -133,3 +133,96 @@ describe('GET /api/v1/provider/tasks/[id]', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('PUT /api/v1/provider/tasks/[id]/progress', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should transition arranged → in_service', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1', status: 'arranged', assigned_provider_id: 'prov-1', provider_note: null,
+    });
+    mockPrisma.serviceRequest.update.mockResolvedValue({
+      id: 'sr-1', status: 'in_service', provider_note: '已抵達',
+      category: { id: 'c1', code: 'escort_visit', name: '陪同就醫' },
+      recipient: { id: 'r1', name: '李奶奶' },
+    });
+
+    const { PUT } = await import('../app/api/v1/provider/tasks/[id]/progress/route');
+    const request = createTaskRequest('PUT', '/api/v1/provider/tasks/sr-1/progress', {
+      status: 'in_service', provider_note: '已抵達',
+    });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'sr-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(200);
+    expect(json.data.status).toBe('in_service');
+  });
+
+  it('should transition in_service → completed', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1', status: 'in_service', assigned_provider_id: 'prov-1', provider_note: '已抵達',
+    });
+    mockPrisma.serviceRequest.update.mockResolvedValue({
+      id: 'sr-1', status: 'completed', provider_note: '服務完成',
+      category: { id: 'c1', code: 'escort_visit', name: '陪同就醫' },
+      recipient: { id: 'r1', name: '李奶奶' },
+    });
+
+    const { PUT } = await import('../app/api/v1/provider/tasks/[id]/progress/route');
+    const request = createTaskRequest('PUT', '/api/v1/provider/tasks/sr-1/progress', {
+      status: 'completed', provider_note: '服務完成',
+    });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'sr-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(200);
+    expect(json.data.status).toBe('completed');
+  });
+
+  it('should reject invalid transition (arranged → completed)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1', status: 'arranged', assigned_provider_id: 'prov-1',
+    });
+
+    const { PUT } = await import('../app/api/v1/provider/tasks/[id]/progress/route');
+    const request = createTaskRequest('PUT', '/api/v1/provider/tasks/sr-1/progress', { status: 'completed' });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'sr-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('INVALID_STATE_TRANSITION');
+  });
+
+  it('should reject if not the assigned provider', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1', status: 'arranged', assigned_provider_id: 'prov-other',
+    });
+
+    const { PUT } = await import('../app/api/v1/provider/tasks/[id]/progress/route');
+    const request = createTaskRequest('PUT', '/api/v1/provider/tasks/sr-1/progress', { status: 'in_service' });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'sr-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(403);
+    expect(json.error.code).toBe('RESOURCE_OWNERSHIP_DENIED');
+  });
+
+  it('should reject completed → in_service (backwards)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1', status: 'completed', assigned_provider_id: 'prov-1',
+    });
+
+    const { PUT } = await import('../app/api/v1/provider/tasks/[id]/progress/route');
+    const request = createTaskRequest('PUT', '/api/v1/provider/tasks/sr-1/progress', { status: 'in_service' });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'sr-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('INVALID_STATE_TRANSITION');
+  });
+});
