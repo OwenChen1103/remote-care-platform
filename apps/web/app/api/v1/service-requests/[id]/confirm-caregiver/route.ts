@@ -1,17 +1,9 @@
 import { NextRequest } from 'next/server';
-import { ServiceRequestStatusUpdateSchema } from '@remote-care/shared';
+import { ServiceRequestCaregiverConfirmSchema } from '@remote-care/shared';
 import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
-
-// Slice 7 + Slice 8: admin status transitions whitelist
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  submitted: ['screening'],
-  screening: ['submitted'],
-  candidate_proposed: ['screening'],
-  caregiver_confirmed: ['screening'],
-};
 
 export async function PUT(
   request: NextRequest,
@@ -26,14 +18,14 @@ export async function PUT(
     if (!auth) {
       return errorResponse('AUTH_REQUIRED', '請先登入');
     }
-    if (auth.role !== 'admin') {
-      return errorResponse('AUTH_FORBIDDEN', '僅管理員可更新需求狀態');
+    if (auth.role !== 'caregiver') {
+      return errorResponse('AUTH_FORBIDDEN', '僅委託人可確認候選服務人員');
     }
 
     const { id } = await params;
     const body: unknown = await request.json();
 
-    const parsed = ServiceRequestStatusUpdateSchema.safeParse(body);
+    const parsed = ServiceRequestCaregiverConfirmSchema.safeParse(body);
     if (!parsed.success) {
       return errorResponse(
         'VALIDATION_ERROR',
@@ -47,23 +39,42 @@ export async function PUT(
       return errorResponse('RESOURCE_NOT_FOUND', '找不到此服務需求');
     }
 
-    const allowedNext = ALLOWED_TRANSITIONS[serviceRequest.status];
-    if (!allowedNext || !allowedNext.includes(parsed.data.status)) {
+    // Ownership check
+    if (serviceRequest.caregiver_id !== auth.userId) {
+      return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此服務需求');
+    }
+
+    if (serviceRequest.status !== 'candidate_proposed') {
       return errorResponse(
         'INVALID_STATE_TRANSITION',
-        `無法從「${serviceRequest.status}」轉換至「${parsed.data.status}」`,
+        `目前狀態「${serviceRequest.status}」無法執行確認操作`,
       );
     }
 
+    const updateData = parsed.data.confirm
+      ? {
+          status: 'caregiver_confirmed' as const,
+          caregiver_confirmed_at: new Date(),
+          admin_note: parsed.data.note
+            ? `${serviceRequest.admin_note ? serviceRequest.admin_note + '\n' : ''}委託人備註：${parsed.data.note}`
+            : serviceRequest.admin_note,
+        }
+      : {
+          status: 'screening' as const,
+          candidate_provider_id: null,
+          caregiver_confirmed_at: null,
+          admin_note: parsed.data.note
+            ? `${serviceRequest.admin_note ? serviceRequest.admin_note + '\n' : ''}委託人拒絕候選：${parsed.data.note}`
+            : serviceRequest.admin_note,
+        };
+
     const updated = await prisma.serviceRequest.update({
       where: { id },
-      data: {
-        status: parsed.data.status,
-        admin_note: parsed.data.admin_note ?? serviceRequest.admin_note,
-      },
+      data: updateData,
       include: {
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
+        candidate_provider: { select: { id: true, name: true } },
       },
     });
 

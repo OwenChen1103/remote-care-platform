@@ -14,12 +14,21 @@ interface ServiceRequestDetail {
   description: string;
   admin_note: string | null;
   provider_note: string | null;
+  caregiver_confirmed_at: string | null;
+  provider_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
   category: { id: string; code: string; name: string };
   recipient: { id: string; name: string };
   assigned_provider: { id: string; name: string; phone: string | null } | null;
   candidate_provider: { id: string; name: string } | null;
+}
+
+interface ProviderOption {
+  id: string;
+  name: string;
+  level: string;
+  phone: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -48,6 +57,9 @@ export default function AdminServiceRequestDetailPage() {
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState(false);
   const [adminNote, setAdminNote] = useState('');
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [proposing, setProposing] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -68,9 +80,25 @@ export default function AdminServiceRequestDetailPage() {
     }
   }, [id]);
 
+  const fetchProviders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/providers?review_status=approved&limit=50');
+      const json = (await res.json()) as { success: boolean; data: ProviderOption[] };
+      if (json.success) {
+        setProviders(json.data ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     void fetchDetail();
   }, [fetchDetail]);
+
+  useEffect(() => {
+    if (request?.status === 'screening') {
+      void fetchProviders();
+    }
+  }, [request?.status, fetchProviders]);
 
   const updateStatus = async (newStatus: string) => {
     setUpdating(true);
@@ -114,6 +142,32 @@ export default function AdminServiceRequestDetailPage() {
     }
   };
 
+  const proposeCandidate = async () => {
+    if (!selectedProviderId) return;
+    setProposing(true);
+    try {
+      const res = await fetch(`/api/v1/service-requests/${id}/propose-candidate`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: selectedProviderId,
+          admin_note: adminNote || undefined,
+        }),
+      });
+      const json = (await res.json()) as { success: boolean; error?: { message: string } };
+      if (json.success) {
+        await fetchDetail();
+        setSelectedProviderId('');
+      } else {
+        setError(json.error?.message ?? '提出候選失敗');
+      }
+    } catch {
+      setError('網路錯誤');
+    } finally {
+      setProposing(false);
+    }
+  };
+
   if (loading) return <div className="p-6 text-gray-500">載入中...</div>;
   if (error && !request) {
     return (
@@ -135,6 +189,9 @@ export default function AdminServiceRequestDetailPage() {
   // Actions available based on current status
   const canScreening = request.status === 'submitted';
   const canReturnToSubmitted = request.status === 'screening';
+  const canPropose = request.status === 'screening';
+  const canReturnFromCandidate = request.status === 'candidate_proposed';
+  const canReturnFromConfirmed = request.status === 'caregiver_confirmed';
   const canCancel = !['completed', 'cancelled'].includes(request.status);
 
   return (
@@ -208,6 +265,65 @@ export default function AdminServiceRequestDetailPage() {
             </div>
           )}
 
+          {request.candidate_provider && (
+            <div className="rounded-lg border border-gray-200 bg-white p-6">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">候選服務人員</h2>
+              <dl className="space-y-2 text-sm">
+                <div>
+                  <dt className="text-gray-500">姓名</dt>
+                  <dd className="text-gray-900">{request.candidate_provider.name}</dd>
+                </div>
+              </dl>
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className={request.caregiver_confirmed_at ? 'text-green-600' : 'text-gray-400'}>
+                    {request.caregiver_confirmed_at ? '\u2713' : '\u25CB'} 委託人確認
+                  </span>
+                  {request.caregiver_confirmed_at && (
+                    <span className="text-xs text-gray-400">
+                      {new Date(request.caregiver_confirmed_at).toLocaleString('zh-TW')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={request.provider_confirmed_at ? 'text-green-600' : 'text-gray-400'}>
+                    {request.provider_confirmed_at ? '\u2713' : '\u25CB'} 服務人員確認
+                  </span>
+                  {request.provider_confirmed_at && (
+                    <span className="text-xs text-gray-400">
+                      {new Date(request.provider_confirmed_at).toLocaleString('zh-TW')}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {canPropose && (
+            <div className="rounded-lg border border-gray-200 bg-white p-6">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">提出候選服務人員</h2>
+              <select
+                value={selectedProviderId}
+                onChange={(e) => setSelectedProviderId(e.target.value)}
+                className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">&mdash; 選擇服務人員 &mdash;</option>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}（{p.level}）{p.phone ? ` ${p.phone}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={!selectedProviderId || proposing}
+                onClick={() => void proposeCandidate()}
+                className="rounded bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+              >
+                {proposing ? '提出中...' : '提出候選'}
+              </button>
+            </div>
+          )}
+
           <div className="rounded-lg border border-gray-200 bg-white p-6">
             <h2 className="mb-4 text-lg font-semibold text-gray-900">狀態操作</h2>
             <div className="mb-4">
@@ -239,6 +355,24 @@ export default function AdminServiceRequestDetailPage() {
                   退回重審
                 </button>
               )}
+              {canReturnFromCandidate && (
+                <button
+                  disabled={updating}
+                  onClick={() => void updateStatus('screening')}
+                  className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                >
+                  退回審核
+                </button>
+              )}
+              {canReturnFromConfirmed && (
+                <button
+                  disabled={updating}
+                  onClick={() => void updateStatus('screening')}
+                  className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                >
+                  退回審核
+                </button>
+              )}
               {canCancel && (
                 <button
                   disabled={updating}
@@ -248,7 +382,7 @@ export default function AdminServiceRequestDetailPage() {
                   取消需求
                 </button>
               )}
-              {!canScreening && !canReturnToSubmitted && !canCancel && (
+              {!canScreening && !canReturnToSubmitted && !canReturnFromCandidate && !canReturnFromConfirmed && !canCancel && (
                 <p className="text-sm text-gray-500">此狀態無可用操作</p>
               )}
             </div>

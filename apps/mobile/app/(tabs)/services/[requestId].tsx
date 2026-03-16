@@ -25,6 +25,7 @@ interface ServiceRequestDetail {
   category: { id: string; code: string; name: string };
   recipient: { id: string; name: string };
   assigned_provider: { id: string; name: string; phone: string | null } | null;
+  candidate_provider: { id: string; name: string } | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -62,6 +63,7 @@ export default function ServiceRequestDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -97,6 +99,32 @@ export default function ServiceRequestDetailScreen() {
             else Alert.alert('錯誤', '取消失敗');
           } finally {
             setCancelling(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleCaregiverConfirm = (confirm: boolean) => {
+    const title = confirm ? '確認候選服務人員' : '拒絕候選服務人員';
+    const message = confirm
+      ? `確定同意「${request?.candidate_provider?.name}」為您服務嗎？`
+      : '確定拒絕候選人嗎？系統將重新為您媒合。';
+    Alert.alert(title, message, [
+      { text: '返回', style: 'cancel' },
+      {
+        text: confirm ? '確認同意' : '確定拒絕',
+        style: confirm ? 'default' : 'destructive',
+        onPress: async () => {
+          setConfirming(true);
+          try {
+            await api.put(`/service-requests/${requestId}/confirm-caregiver`, { confirm });
+            await fetchDetail();
+          } catch (e) {
+            if (e instanceof ApiError) Alert.alert('錯誤', e.message);
+            else Alert.alert('錯誤', '操作失敗');
+          } finally {
+            setConfirming(false);
           }
         },
       },
@@ -167,6 +195,40 @@ export default function ServiceRequestDetailScreen() {
           {request.assigned_provider.phone && (
             <InfoRow label="電話" value={request.assigned_provider.phone} />
           )}
+        </View>
+      )}
+
+      {/* Candidate Provider - confirm/reject (caregiver) */}
+      {request.candidate_provider && request.status === 'candidate_proposed' && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>候選服務人員</Text>
+          <InfoRow label="姓名" value={request.candidate_provider.name} />
+          <View style={styles.confirmButtons}>
+            <TouchableOpacity
+              style={[styles.confirmButton, confirming && styles.cancelButtonDisabled]}
+              onPress={() => handleCaregiverConfirm(true)}
+              disabled={confirming}
+            >
+              <Text style={styles.confirmButtonText}>
+                {confirming ? '處理中...' : '同意候選'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rejectButton, confirming && styles.cancelButtonDisabled]}
+              onPress={() => handleCaregiverConfirm(false)}
+              disabled={confirming}
+            >
+              <Text style={styles.rejectButtonText}>拒絕候選</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Candidate Provider info (after confirmation, non-actionable) */}
+      {request.candidate_provider && request.status !== 'candidate_proposed' && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>候選服務人員</Text>
+          <InfoRow label="姓名" value={request.candidate_provider.name} />
         </View>
       )}
 
@@ -248,4 +310,25 @@ const styles = StyleSheet.create({
   },
   cancelButtonDisabled: { opacity: 0.6 },
   cancelButtonText: { color: '#DC2626', fontSize: 15, fontWeight: '600' },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmButtonText: { color: '#15803D', fontSize: 15, fontWeight: '600' },
+  rejectButton: {
+    flex: 1,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  rejectButtonText: { color: '#DC2626', fontSize: 15, fontWeight: '600' },
 });
