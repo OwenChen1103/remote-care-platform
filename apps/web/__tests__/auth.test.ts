@@ -11,6 +11,10 @@ const { mockPrisma, mockBcrypt } = vi.hoisted(() => {
       create: vi.fn(),
       update: vi.fn(),
     },
+    provider: {
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(),
   };
   const mockBcrypt = {
     hash: vi.fn().mockResolvedValue('$2a$12$hashedpassword'),
@@ -114,6 +118,68 @@ describe('POST /api/v1/auth/register', () => {
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.details.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Register — Role Selection ──────────────────────────────
+
+describe('POST /api/v1/auth/register — role selection', () => {
+  it('should register as patient with role=patient', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue({ ...mockUser, role: 'patient' });
+
+    const request = createRequest('POST', { ...validRegisterData, role: 'patient' });
+    const response = await registerHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.data.user.role).toBe('patient');
+    expect(mockPrisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ role: 'patient' }),
+      }),
+    );
+  });
+
+  it('should register as provider and auto-create pending provider profile', async () => {
+    const providerUser = { ...mockUser, role: 'provider', name: '新服務人員' };
+
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      return fn({
+        user: { create: vi.fn().mockResolvedValue(providerUser) },
+        provider: { create: vi.fn().mockResolvedValue({ id: '660e8400-e29b-41d4-a716-446655440000' }) },
+      });
+    });
+
+    const request = createRequest('POST', { ...validRegisterData, role: 'provider' });
+    const response = await registerHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.data.user.role).toBe('provider');
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('should reject role=admin', async () => {
+    const request = createRequest('POST', { ...validRegisterData, role: 'admin' });
+    const response = await registerHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should default to caregiver when no role specified', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(mockUser);
+
+    const request = createRequest('POST', validRegisterData);
+    const response = await registerHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.data.user.role).toBe('caregiver');
   });
 });
 

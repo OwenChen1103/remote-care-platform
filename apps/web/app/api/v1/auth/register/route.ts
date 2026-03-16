@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, password, name, phone, timezone } = parsed.data;
+    const { email, password, name, phone, timezone, role } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -32,11 +32,33 @@ export async function POST(request: NextRequest) {
 
     const password_hash = await bcrypt.hash(password, 12);
 
-    const user = await prisma.user.create({
-      data: { email, password_hash, name, phone, timezone },
-    });
+    let user;
 
-    const token = signJwt({ userId: user.id, role: 'caregiver' });
+    if (role === 'provider') {
+      const result = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: { email, password_hash, name, phone, timezone, role },
+        });
+        await tx.provider.create({
+          data: {
+            user_id: created.id,
+            name,
+            phone,
+            email,
+            review_status: 'pending',
+            availability_status: 'available',
+          },
+        });
+        return created;
+      });
+      user = result;
+    } else {
+      user = await prisma.user.create({
+        data: { email, password_hash, name, phone, timezone, role },
+      });
+    }
+
+    const token = signJwt({ userId: user.id, role: user.role });
 
     return successResponse(
       {
