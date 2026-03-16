@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
-import { errorResponse, paginatedResponse } from '@/lib/api-response';
+import { ProviderCreateSchema } from '@remote-care/shared';
+import { errorResponse, paginatedResponse, successResponse } from '@/lib/api-response';
+import { checkOrigin } from '@/lib/csrf';
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +46,36 @@ export async function GET(request: NextRequest) {
     ]);
 
     return paginatedResponse(providers, { page, limit, total });
+  } catch {
+    return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    if (!checkOrigin(request)) {
+      return errorResponse('AUTH_FORBIDDEN', '不允許的來源');
+    }
+    const auth = await verifyAuth(request);
+    if (!auth) {
+      return errorResponse('AUTH_REQUIRED', '請先登入');
+    }
+    if (auth.role !== 'admin') {
+      return errorResponse('AUTH_FORBIDDEN', '僅管理員可新增服務人員');
+    }
+    const body: unknown = await request.json();
+    const parsed = ProviderCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(
+        'VALIDATION_ERROR',
+        '輸入資料驗證失敗',
+        parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      );
+    }
+    const provider = await prisma.provider.create({
+      data: parsed.data,
+    });
+    return successResponse(provider, 201);
   } catch {
     return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
   }
