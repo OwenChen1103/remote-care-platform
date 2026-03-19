@@ -11,6 +11,7 @@ export const RegisterSchema = z.object({
   name: z.string().min(1, '姓名為必填').max(100, '姓名不得超過 100 字'),
   phone: z.string().max(20).optional(),
   timezone: z.string().default('Asia/Taipei'),
+  role: z.enum(['caregiver', 'patient', 'provider']).default('caregiver'),
 });
 
 export const LoginSchema = z.object({

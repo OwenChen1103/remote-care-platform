@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Text,
+  View,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -12,6 +13,12 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuth, ApiError } from '@/lib/auth-context';
 
+const ROLE_OPTIONS = [
+  { key: 'caregiver' as const, label: '委託人（家屬）', desc: '為家人安排照護服務' },
+  { key: 'patient' as const, label: '被照護者', desc: '查看自己的健康資料' },
+  { key: 'provider' as const, label: '服務人員', desc: '提供照護服務（需審核）' },
+];
+
 export default function RegisterScreen() {
   const router = useRouter();
   const { register } = useAuth();
@@ -20,6 +27,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [role, setRole] = useState<'caregiver' | 'patient' | 'provider'>('caregiver');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -41,7 +49,7 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      await register({ email, password, name, phone: phone || undefined });
+      await register({ email, password, name, phone: phone || undefined, role });
       router.replace('/(tabs)/home');
     } catch (err) {
       if (err instanceof ApiError) {
@@ -61,6 +69,24 @@ export default function RegisterScreen() {
     >
       <ScrollView contentContainerStyle={styles.inner}>
         <Text style={styles.title}>建立帳號</Text>
+
+        <Text style={styles.sectionLabel}>選擇身份</Text>
+        <View style={styles.roleRow}>
+          {ROLE_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.roleCard, role === opt.key && styles.roleCardActive]}
+              onPress={() => setRole(opt.key)}
+            >
+              <Text style={[styles.roleLabel, role === opt.key && styles.roleLabelActive]}>
+                {opt.label}
+              </Text>
+              <Text style={[styles.roleDesc, role === opt.key && styles.roleDescActive]}>
+                {opt.desc}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -157,4 +183,21 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   link: { color: '#3b82f6', textAlign: 'center', fontSize: 14 },
+  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  roleRow: { gap: 8, marginBottom: 16 },
+  roleCard: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    padding: 12,
+  },
+  roleCardActive: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#eff6ff',
+  },
+  roleLabel: { fontSize: 15, fontWeight: '600', color: '#374151' },
+  roleLabelActive: { color: '#1d4ed8' },
+  roleDesc: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  roleDescActive: { color: '#3b82f6' },
 });
