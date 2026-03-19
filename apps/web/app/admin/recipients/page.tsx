@@ -33,7 +33,7 @@ export default function AdminRecipientsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/v1/recipients?page=${p}&limit=${limit}`);
+      const res = await fetch(`/api/v1/admin/recipients?page=${p}&limit=${limit}`);
       const json = (await res.json()) as PaginatedResponse;
       if (json.success) {
         setRecipients(json.data);
