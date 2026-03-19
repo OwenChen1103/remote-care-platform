@@ -120,9 +120,11 @@ async function main() {
     await seedNotifications(demoUser.id, wangRecipient.id, '王奶奶');
     await seedPatientNotifications(patientUser.id, wangRecipient.id, '王奶奶');
     await seedProviderNotifications(providerUser.id, wangRecipient.id, '王奶奶');
+    await seedAppointments(wangRecipient.id);
+    await seedAiReport(wangRecipient.id);
   }
 
-  console.log('Seed completed: roles + recipients + measurements + reminders + service categories + providers + requests + notifications');
+  console.log('Seed completed: roles + recipients + measurements + reminders + service categories + providers + requests + notifications + appointments + ai-report');
 }
 
 /**
@@ -565,6 +567,75 @@ async function seedServiceRequests(
         admin_note: '雙方已確認，安排完成。',
       },
     ],
+  });
+}
+
+async function seedAppointments(recipientId: string) {
+  const existing = await prisma.appointment.count({
+    where: { recipient_id: recipientId },
+  });
+  if (existing > 0) return;
+
+  const now = new Date();
+  const in7Days = new Date(now);
+  in7Days.setDate(in7Days.getDate() + 7);
+  in7Days.setHours(10, 0, 0, 0);
+
+  const in14Days = new Date(now);
+  in14Days.setDate(in14Days.getDate() + 14);
+  in14Days.setHours(14, 30, 0, 0);
+
+  await prisma.appointment.createMany({
+    data: [
+      {
+        recipient_id: recipientId,
+        title: '心臟內科回診',
+        hospital_name: '台大醫院',
+        department: '心臟內科',
+        doctor_name: '林醫師',
+        appointment_date: in7Days,
+        note: '攜帶血壓紀錄本及藥袋',
+      },
+      {
+        recipient_id: recipientId,
+        title: '新陳代謝科回診',
+        hospital_name: '國泰醫院',
+        department: '新陳代謝科',
+        doctor_name: '陳醫師',
+        appointment_date: in14Days,
+        note: '需空腹抽血，前一晚 10 點後禁食',
+      },
+    ],
+  });
+}
+
+async function seedAiReport(recipientId: string) {
+  const existing = await prisma.aiReport.count({
+    where: { recipient_id: recipientId },
+  });
+  if (existing > 0) return;
+
+  await prisma.aiReport.create({
+    data: {
+      recipient_id: recipientId,
+      report_type: 'weekly',
+      status_label: '需留意',
+      summary: '過去一週血壓偏高趨勢明顯，收縮壓多次超過 140 mmHg，血糖控制尚可但空腹血糖略有上升趨勢。建議密切關注血壓變化並諮詢醫師是否需調整用藥。',
+      reasons: JSON.stringify([
+        '近 7 日收縮壓平均 135 mmHg，有 3 次超過 140 mmHg',
+        '舒張壓平均 82 mmHg，屬正常偏高範圍',
+        '空腹血糖平均 95 mg/dL，較前週上升 5 mg/dL',
+      ]),
+      suggestions: JSON.stringify([
+        '建議每日固定時間量測血壓，早晚各一次',
+        '下次回診時攜帶血壓紀錄供醫師參考',
+        '注意飲食中鈉的攝取，減少加工食品',
+        '維持適度運動，如每日步行 30 分鐘',
+      ]),
+      model: 'seed-data',
+      input_tokens: 0,
+      output_tokens: 0,
+    },
   });
 }
 
