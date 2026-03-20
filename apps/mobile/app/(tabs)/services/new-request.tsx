@@ -7,10 +7,13 @@ import {
   TextInput,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { TIME_SLOT_DISPLAY } from '@remote-care/shared';
+
+// ─── Types ────────────────────────────────────────────────────
 
 interface Recipient {
   id: string;
@@ -25,11 +28,13 @@ interface ServiceCategory {
   sort_order: number;
 }
 
-const TIME_SLOTS = [
-  { value: 'morning', label: '上午' },
-  { value: 'afternoon', label: '下午' },
-  { value: 'evening', label: '晚上' },
-];
+// ─── Derived Constants ────────────────────────────────────────
+
+const TIME_SLOT_OPTIONS = Object.entries(TIME_SLOT_DISPLAY).map(
+  ([value, config]) => ({ value, label: config.label }),
+);
+
+// ─── Component ────────────────────────────────────────────────
 
 export default function NewServiceRequestScreen() {
   const router = useRouter();
@@ -70,8 +75,9 @@ export default function NewServiceRequestScreen() {
   }, [fetchData]);
 
   const handleSubmit = async () => {
+    // Inline validation — sets error, does not use Alert
     if (!recipientId || !categoryId || !preferredDate || !location || !description) {
-      Alert.alert('提示', '請填寫所有必填欄位');
+      setError('請填寫所有必填欄位');
       return;
     }
 
@@ -86,9 +92,8 @@ export default function NewServiceRequestScreen() {
         location,
         description,
       });
-      Alert.alert('成功', '服務需求已送出', [
-        { text: '確定', onPress: () => router.back() },
-      ]);
+      // Success — navigate back immediately; the updated list is the confirmation
+      router.back();
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
       else setError('送出失敗，請稍後再試');
@@ -97,12 +102,22 @@ export default function NewServiceRequestScreen() {
     }
   };
 
+  // ─── Loading ──────────────────────────────────────────────
+
   if (loading) {
-    return <ActivityIndicator style={styles.loader} size="large" color="#2563EB" />;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>載入中...</Text>
+      </View>
+    );
   }
+
+  // ─── Main Form ────────────────────────────────────────────
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Error banner */}
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
@@ -112,43 +127,50 @@ export default function NewServiceRequestScreen() {
       {/* Recipient Selection */}
       <Text style={styles.label}>被照護者 *</Text>
       <View style={styles.chipRow}>
-        {recipients.map((r) => (
-          <TouchableOpacity
-            key={r.id}
-            style={[styles.chip, recipientId === r.id && styles.chipActive]}
-            onPress={() => setRecipientId(r.id)}
-          >
-            <Text style={[styles.chipText, recipientId === r.id && styles.chipTextActive]}>
-              {r.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {recipients.map((r) => {
+          const isActive = recipientId === r.id;
+          return (
+            <TouchableOpacity
+              key={r.id}
+              style={[styles.chip, isActive && styles.chipActive]}
+              onPress={() => setRecipientId(r.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`選擇 ${r.name}`}
+            >
+              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                {r.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Category Selection */}
       <Text style={styles.label}>服務類別 *</Text>
       <View style={styles.categoryGrid}>
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[styles.categoryCard, categoryId === cat.id && styles.categoryCardActive]}
-            onPress={() => setCategoryId(cat.id)}
-          >
-            <Text
-              style={[
-                styles.categoryName,
-                categoryId === cat.id && styles.categoryNameActive,
-              ]}
+        {categories.map((cat) => {
+          const isActive = categoryId === cat.id;
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              style={[styles.categoryCard, isActive && styles.categoryCardActive]}
+              onPress={() => setCategoryId(cat.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`選擇 ${cat.name}`}
             >
-              {cat.name}
-            </Text>
-            {cat.description && (
-              <Text style={styles.categoryDesc} numberOfLines={2}>
-                {cat.description}
+              <Text style={[styles.categoryName, isActive && styles.categoryNameActive]}>
+                {cat.name}
               </Text>
-            )}
-          </TouchableOpacity>
-        ))}
+              {cat.description && (
+                <Text style={styles.categoryDesc} numberOfLines={2}>
+                  {cat.description}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Preferred Date */}
@@ -158,23 +180,30 @@ export default function NewServiceRequestScreen() {
         value={preferredDate}
         onChangeText={setPreferredDate}
         placeholder="2026-04-01"
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.textDisabled}
+        accessibilityLabel="期望日期"
       />
 
       {/* Time Slot */}
       <Text style={styles.label}>時段（選填）</Text>
       <View style={styles.chipRow}>
-        {TIME_SLOTS.map((slot) => (
-          <TouchableOpacity
-            key={slot.value}
-            style={[styles.chip, timeSlot === slot.value && styles.chipActive]}
-            onPress={() => setTimeSlot(timeSlot === slot.value ? '' : slot.value)}
-          >
-            <Text style={[styles.chipText, timeSlot === slot.value && styles.chipTextActive]}>
-              {slot.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {TIME_SLOT_OPTIONS.map((slot) => {
+          const isActive = timeSlot === slot.value;
+          return (
+            <TouchableOpacity
+              key={slot.value}
+              style={[styles.chip, isActive && styles.chipActive]}
+              onPress={() => setTimeSlot(timeSlot === slot.value ? '' : slot.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={slot.label}
+            >
+              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                {slot.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Location */}
@@ -184,7 +213,8 @@ export default function NewServiceRequestScreen() {
         value={location}
         onChangeText={setLocation}
         placeholder="台北市信義區..."
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.textDisabled}
+        accessibilityLabel="服務地點"
       />
 
       {/* Description */}
@@ -194,16 +224,20 @@ export default function NewServiceRequestScreen() {
         value={description}
         onChangeText={setDescription}
         placeholder="請描述您的服務需求..."
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.textDisabled}
         multiline
         numberOfLines={4}
         textAlignVertical="top"
+        accessibilityLabel="需求描述"
       />
 
+      {/* Submit */}
       <TouchableOpacity
         style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
         onPress={() => void handleSubmit()}
         disabled={submitting}
+        accessibilityRole="button"
+        accessibilityLabel={submitting ? '送出中' : '送出服務需求'}
       >
         <Text style={styles.submitButtonText}>{submitting ? '送出中...' : '送出需求'}</Text>
       </TouchableOpacity>
@@ -211,70 +245,141 @@ export default function NewServiceRequestScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  content: { padding: 16, paddingBottom: 40 },
-  loader: { flex: 1, justifyContent: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bgScreen,
+  },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.sm,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.bgScreen,
+  },
+  loadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+
+  // ─── Error ────────────────────────────────────────────────
   errorBox: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
   },
-  errorText: { color: '#DC2626', fontSize: 14 },
+  errorText: {
+    color: colors.danger,
+    fontSize: typography.bodyMd.fontSize,
+    textAlign: 'center',
+  },
+
+  // ─── Labels ───────────────────────────────────────────────
   label: {
-    fontSize: 14,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-    marginTop: 16,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
   },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  // ─── Chips (Recipient + Time Slot) ────────────────────────
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   chip: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg - spacing.xxs,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.bgSurface,
   },
-  chipActive: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
-  chipText: { fontSize: 14, color: '#6B7280' },
-  chipTextActive: { color: '#2563EB', fontWeight: '500' },
+  chipActive: {
+    borderColor: colors.primaryText,
+    backgroundColor: colors.primaryLight,
+  },
+  chipText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textTertiary,
+  },
+  chipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
+
+  // ─── Category Grid ────────────────────────────────────────
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   categoryCard: {
-    width: '48%' as unknown as number,
+    flexBasis: '48%',
+    flexGrow: 1,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.borderDefault,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.bgSurface,
   },
-  categoryCardActive: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
-  categoryName: { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 4 },
-  categoryNameActive: { color: '#2563EB' },
-  categoryDesc: { fontSize: 12, color: '#9CA3AF' },
+  categoryCardActive: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: colors.primaryLight,
+  },
+  categoryName: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xxs,
+  },
+  categoryNameActive: {
+    color: colors.primaryText,
+  },
+  categoryDesc: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textDisabled,
+  },
+
+  // ─── Text Inputs ──────────────────────────────────────────
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.bgSurface,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: '#111827',
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
   },
-  textArea: { minHeight: 100 },
+  textArea: {
+    minHeight: 100,
+  },
+
+  // ─── Submit ───────────────────────────────────────────────
   submitButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing['2xl'],
   },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: colors.white,
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '600',
+  },
 });

@@ -13,3 +13,4 @@ export * from './schemas/appointment';
 export * from './constants/error-codes';
 export * from './constants/enums';
 export * from './constants/thresholds';
+export * from './constants/status-display';

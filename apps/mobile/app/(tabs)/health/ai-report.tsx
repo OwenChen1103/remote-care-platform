@@ -11,6 +11,11 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { Card } from '@/components/ui/Card';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -51,7 +56,7 @@ interface HistoricalReport {
   generated_at: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────
+// ─── Constants (B-05 specific labels) ─────────────────────────
 
 const REPORT_TYPES = [
   { key: 'health_summary', label: '放心報' },
@@ -66,14 +71,6 @@ const CHAT_TASKS = [
   { key: 'visit_questions', label: '看診問題' },
 ] as const;
 
-const DEFAULT_STATUS = { bg: '#dcfce7', text: '#166534', label: '穩定' };
-
-const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  stable: DEFAULT_STATUS,
-  attention: { bg: '#fef9c3', text: '#854d0e', label: '需注意' },
-  consult_doctor: { bg: '#fee2e2', text: '#991b1b', label: '建議就醫' },
-};
-
 // ─── Component ────────────────────────────────────────────────
 
 export default function AiReportScreen() {
@@ -87,6 +84,8 @@ export default function AiReportScreen() {
   const [report, setReport] = useState<ReportResult | null>(null);
   const [chatResult, setChatResult] = useState<ChatResult | null>(null);
   const [error, setError] = useState('');
+  const [rateLimited, setRateLimited] = useState(false);
+  const [lastFailedAction, setLastFailedAction] = useState<'report' | 'chat' | null>(null);
 
   const [history, setHistory] = useState<HistoricalReport[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -131,6 +130,8 @@ export default function AiReportScreen() {
     if (!selectedRecipientId) return;
     setGenerating(true);
     setError('');
+    setRateLimited(false);
+    setLastFailedAction(null);
     setReport(null);
     setChatResult(null);
     try {
@@ -139,16 +140,18 @@ export default function AiReportScreen() {
         report_type: selectedType,
       });
       setReport(result);
-      void fetchHistory(); // Refresh history
+      void fetchHistory();
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === 'AI_RATE_LIMITED') {
-          setError('已達到報告生成上限，請稍後再試');
+          setRateLimited(true);
         } else {
           setError(e.message);
+          setLastFailedAction('report');
         }
       } else {
         setError('生成失敗，請稍後再試');
+        setLastFailedAction('report');
       }
     } finally {
       setGenerating(false);
@@ -160,6 +163,8 @@ export default function AiReportScreen() {
     if (!selectedRecipientId) return;
     setGenerating(true);
     setError('');
+    setRateLimited(false);
+    setLastFailedAction(null);
     setReport(null);
     setChatResult(null);
     try {
@@ -171,12 +176,14 @@ export default function AiReportScreen() {
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === 'AI_RATE_LIMITED') {
-          setError('已達到 AI 對話上限，請稍後再試');
+          setRateLimited(true);
         } else {
           setError(e.message);
+          setLastFailedAction('chat');
         }
       } else {
         setError('生成失敗，請稍後再試');
+        setLastFailedAction('chat');
       }
     } finally {
       setGenerating(false);
@@ -211,17 +218,17 @@ export default function AiReportScreen() {
     if (chatResult) {
       const result = chatResult.result;
       const parts: string[] = [];
-      if (result.explanation) parts.push(result.explanation as string);
-      if (result.message) parts.push(result.message as string);
-      if (result.questions) {
+      if (typeof result.explanation === 'string') parts.push(result.explanation);
+      if (typeof result.message === 'string') parts.push(result.message);
+      if (Array.isArray(result.questions)) {
         parts.push('建議問題：');
         (result.questions as string[]).forEach((q) => parts.push(`• ${q}`));
       }
-      if (result.key_points) {
+      if (Array.isArray(result.key_points)) {
         parts.push('重點：');
         (result.key_points as string[]).forEach((p) => parts.push(`• ${p}`));
       }
-      if (result.highlights) {
+      if (Array.isArray(result.highlights)) {
         parts.push('重點：');
         (result.highlights as string[]).forEach((h) => parts.push(`• ${h}`));
       }
@@ -231,24 +238,38 @@ export default function AiReportScreen() {
     return '';
   };
 
+  // ─── Render ──────────────────────────────────────────────────
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Page title */}
       <Text style={styles.pageTitle}>AI 放心報</Text>
 
       {/* Recipient selector */}
       {recipients.length > 1 && (
-        <ScrollView horizontal style={styles.selectorRow} contentContainerStyle={styles.selectorContent}>
-          {recipients.map((r) => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.chip, r.id === selectedRecipientId && styles.chipActive]}
-              onPress={() => setSelectedRecipientId(r.id)}
-            >
-              <Text style={[styles.chipText, r.id === selectedRecipientId && styles.chipTextActive]}>
-                {r.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.selectorRow}
+          contentContainerStyle={styles.selectorContent}
+        >
+          {recipients.map((r) => {
+            const isActive = r.id === selectedRecipientId;
+            return (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.chip, isActive && styles.chipActive]}
+                onPress={() => setSelectedRecipientId(r.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`選擇 ${r.name}`}
+              >
+                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                  {r.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
 
@@ -257,12 +278,16 @@ export default function AiReportScreen() {
         <TouchableOpacity
           style={[styles.modeButton, mode === 'report' && styles.modeActive]}
           onPress={() => setMode('report')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'report' }}
         >
           <Text style={[styles.modeText, mode === 'report' && styles.modeTextActive]}>報告</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeButton, mode === 'chat' && styles.modeActive]}
           onPress={() => setMode('chat')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'chat' }}
         >
           <Text style={[styles.modeText, mode === 'chat' && styles.modeTextActive]}>快速問答</Text>
         </TouchableOpacity>
@@ -271,31 +296,41 @@ export default function AiReportScreen() {
       {/* Report type / Chat task selector */}
       {mode === 'report' ? (
         <View style={styles.typeRow}>
-          {REPORT_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.typeChip, selectedType === t.key && styles.typeChipActive]}
-              onPress={() => setSelectedType(t.key)}
-            >
-              <Text style={[styles.typeText, selectedType === t.key && styles.typeTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {REPORT_TYPES.map((t) => {
+            const isActive = selectedType === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.typeChip, isActive && styles.typeChipActive]}
+                onPress={() => setSelectedType(t.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ) : (
         <View style={styles.typeRow}>
-          {CHAT_TASKS.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.typeChip, selectedTask === t.key && styles.typeChipActive]}
-              onPress={() => setSelectedTask(t.key)}
-            >
-              <Text style={[styles.typeText, selectedTask === t.key && styles.typeTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {CHAT_TASKS.map((t) => {
+            const isActive = selectedTask === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.typeChip, isActive && styles.typeChipActive]}
+                onPress={() => setSelectedTask(t.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 
@@ -304,10 +339,12 @@ export default function AiReportScreen() {
         style={[styles.generateButton, generating && styles.generateButtonDisabled]}
         disabled={generating || !selectedRecipientId}
         onPress={() => void (mode === 'report' ? handleGenerateReport() : handleGenerateChat())}
+        accessibilityRole="button"
+        accessibilityLabel={generating ? 'AI 正在分析中' : (mode === 'report' ? '生成報告' : '生成')}
       >
         {generating ? (
           <View style={styles.generatingRow}>
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
             <Text style={styles.generateText}>AI 正在分析中...</Text>
           </View>
         ) : (
@@ -317,95 +354,121 @@ export default function AiReportScreen() {
         )}
       </TouchableOpacity>
 
-      {/* Error */}
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {/* Rate limit — info banner, NOT error styling */}
+      {rateLimited && (
+        <View style={styles.rateLimitBanner}>
+          <Text style={styles.rateLimitText}>
+            {mode === 'report' ? '已達到報告生成上限，請稍後再試' : '已達到 AI 對話上限，請稍後再試'}
+          </Text>
+        </View>
+      )}
+
+      {/* Error — with retry */}
+      {error ? (
+        <View style={styles.errorContainer}>
+          <ErrorState
+            message={error}
+            onRetry={() => void (lastFailedAction === 'chat' ? handleGenerateChat() : handleGenerateReport())}
+          />
+        </View>
+      ) : null}
+
+      {/* Empty state */}
+      {!report && !chatResult && !generating && !error && !rateLimited && (
+        <EmptyState
+          title="尚無報告"
+          description="選擇報告類型後，點擊「生成報告」開始。"
+        />
+      )}
 
       {/* Report result */}
       {report && (
-        <View style={styles.resultCard}>
-          {/* Status badge */}
-          {(() => {
-            const sc = STATUS_COLORS[report.status_label] ?? DEFAULT_STATUS;
-            return (
-              <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                <Text style={[styles.statusText, { color: sc.text }]}>{sc.label}</Text>
-              </View>
-            );
-          })()}
+        <Card style={styles.reportCard}>
+          {/* Status pill */}
+          <View style={styles.reportStatusRow}>
+            <StatusPill status={report.status_label} type="aiHealth" />
+          </View>
 
-          <Text style={styles.resultSummary}>{report.summary}</Text>
+          {/* Summary */}
+          <Text style={styles.reportSummary}>{report.summary}</Text>
 
+          {/* Reasons */}
           {report.reasons.length > 0 && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>原因</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>原因</Text>
               {report.reasons.map((r, i) => (
-                <Text key={i} style={styles.resultItem}>• {r}</Text>
+                <Text key={i} style={styles.reportItem}>• {r}</Text>
               ))}
             </View>
           )}
 
+          {/* Suggestions */}
           {report.suggestions.length > 0 && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>建議</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>建議</Text>
               {report.suggestions.map((s, i) => (
-                <Text key={i} style={styles.resultItem}>• {s}</Text>
+                <Text key={i} style={styles.reportItem}>• {s}</Text>
               ))}
             </View>
           )}
 
+          {/* Fallback note */}
           {report.is_fallback && (
             <Text style={styles.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>
           )}
 
+          {/* Disclaimer — always visible, non-dismissible */}
           <Text style={styles.disclaimer}>{report.disclaimer}</Text>
 
+          {/* Share */}
           <TouchableOpacity
             style={styles.shareButton}
             onPress={() => void handleShare(buildShareText())}
+            accessibilityLabel="分享報告"
           >
             <Text style={styles.shareText}>分享</Text>
           </TouchableOpacity>
-        </View>
+        </Card>
       )}
 
       {/* Chat result */}
       {chatResult && (
-        <View style={styles.resultCard}>
+        <Card style={styles.reportCard}>
           {typeof chatResult.result.explanation === 'string' && (
-            <Text style={styles.resultSummary}>{chatResult.result.explanation}</Text>
+            <Text style={styles.reportSummary}>{chatResult.result.explanation}</Text>
           )}
           {typeof chatResult.result.message === 'string' && (
-            <Text style={styles.resultSummary}>{chatResult.result.message}</Text>
+            <Text style={styles.reportSummary}>{chatResult.result.message}</Text>
           )}
           {Array.isArray(chatResult.result.key_points) && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>重點</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>重點</Text>
               {(chatResult.result.key_points as string[]).map((p, i) => (
-                <Text key={i} style={styles.resultItem}>• {p}</Text>
+                <Text key={i} style={styles.reportItem}>• {p}</Text>
               ))}
             </View>
           )}
           {Array.isArray(chatResult.result.highlights) && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>重點</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>重點</Text>
               {(chatResult.result.highlights as string[]).map((h, i) => (
-                <Text key={i} style={styles.resultItem}>• {h}</Text>
+                <Text key={i} style={styles.reportItem}>• {h}</Text>
               ))}
             </View>
           )}
           {Array.isArray(chatResult.result.questions) && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>建議問題</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>建議問題</Text>
               {(chatResult.result.questions as string[]).map((q, i) => (
-                <Text key={i} style={styles.resultItem}>• {q}</Text>
+                <Text key={i} style={styles.reportItem}>• {q}</Text>
               ))}
             </View>
           )}
           {Array.isArray(chatResult.result.reminders) && (
-            <View style={styles.resultSection}>
-              <Text style={styles.resultLabel}>提醒</Text>
+            <View style={styles.reportSection}>
+              <Text style={styles.reportSectionLabel}>提醒</Text>
               {(chatResult.result.reminders as string[]).map((r, i) => (
-                <Text key={i} style={styles.resultItem}>• {r}</Text>
+                <Text key={i} style={styles.reportItem}>• {r}</Text>
               ))}
             </View>
           )}
@@ -419,10 +482,11 @@ export default function AiReportScreen() {
           <TouchableOpacity
             style={styles.shareButton}
             onPress={() => void handleShare(buildShareText())}
+            accessibilityLabel="分享問答結果"
           >
             <Text style={styles.shareText}>分享</Text>
           </TouchableOpacity>
-        </View>
+        </Card>
       )}
 
       {/* History */}
@@ -430,29 +494,24 @@ export default function AiReportScreen() {
         <View style={styles.historySection}>
           <Text style={styles.historyTitle}>歷史報告</Text>
           {historyLoading ? (
-            <ActivityIndicator size="small" color="#3b82f6" />
+            <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            history.map((h) => {
-              const sc = STATUS_COLORS[h.status_label] ?? DEFAULT_STATUS;
-              return (
-                <View key={h.id} style={styles.historyCard}>
-                  <View style={styles.historyHeader}>
-                    <Text style={styles.historyType}>
-                      {REPORT_TYPES.find((t) => t.key === h.report_type)?.label ?? h.report_type}
-                    </Text>
-                    <View style={[styles.historyBadge, { backgroundColor: sc.bg }]}>
-                      <Text style={[styles.historyBadgeText, { color: sc.text }]}>{sc.label}</Text>
-                    </View>
-                    <Text style={styles.historyDate}>
-                      {new Date(h.generated_at).toLocaleDateString('zh-TW')}
-                    </Text>
-                  </View>
-                  <Text style={styles.historySummary} numberOfLines={2}>
-                    {h.summary}
+            history.map((h) => (
+              <Card key={h.id} style={styles.historyCard}>
+                <View style={styles.historyHeader}>
+                  <Text style={styles.historyType}>
+                    {REPORT_TYPES.find((t) => t.key === h.report_type)?.label ?? h.report_type}
+                  </Text>
+                  <StatusPill status={h.status_label} type="aiHealth" />
+                  <Text style={styles.historyDate}>
+                    {new Date(h.generated_at).toLocaleDateString('zh-TW')}
                   </Text>
                 </View>
-              );
-            })
+                <Text style={styles.historySummary} numberOfLines={2}>
+                  {h.summary}
+                </Text>
+              </Card>
+            ))
           )}
         </View>
       )}
@@ -463,84 +522,231 @@ export default function AiReportScreen() {
 // ─── Styles ───────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16, paddingBottom: 40 },
-  pageTitle: { fontSize: 22, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bgScreen,
+  },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.sm,
+  },
+  pageTitle: {
+    fontSize: typography.headingXl.fontSize,
+    fontWeight: typography.headingXl.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
 
-  selectorRow: { maxHeight: 44, marginBottom: 12 },
-  selectorContent: { gap: 8 },
-  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#e5e7eb' },
-  chipActive: { backgroundColor: '#3b82f6' },
-  chipText: { fontSize: 14, color: '#374151' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
+  // ─── Recipient Selector ───────────────────────────────────
+  selectorRow: {
+    maxHeight: 44,
+    marginBottom: spacing.md,
+  },
+  selectorContent: {
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgSurfaceAlt,
+  },
+  chipActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  chipText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textSecondary,
+  },
+  chipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
 
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  // ─── Mode Toggle ──────────────────────────────────────────
+  modeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   modeButton: {
-    flex: 1, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: '#e5e7eb', alignItems: 'center',
+    flex: 1,
+    paddingVertical: spacing.sm + spacing.xxs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgSurfaceAlt,
+    alignItems: 'center',
   },
-  modeActive: { backgroundColor: '#3b82f6' },
-  modeText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  modeTextActive: { color: '#fff' },
+  modeActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  modeText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  modeTextActive: {
+    color: colors.primaryText,
+  },
 
-  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  // ─── Type / Task Chips ────────────────────────────────────
+  typeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
   typeChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-    backgroundColor: '#e5e7eb',
+    paddingHorizontal: spacing.lg - spacing.xxs,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSurfaceAlt,
   },
-  typeChipActive: { backgroundColor: '#dbeafe' },
-  typeText: { fontSize: 13, color: '#374151' },
-  typeTextActive: { color: '#1d4ed8', fontWeight: '600' },
+  typeChipActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  typeChipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  typeChipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
 
+  // ─── Generate Button ──────────────────────────────────────
   generateButton: {
-    backgroundColor: '#3b82f6', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginBottom: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg - spacing.xxs,
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  generateButtonDisabled: { opacity: 0.6 },
-  generateText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  generatingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-
-  errorText: {
-    fontSize: 14, color: '#dc2626', backgroundColor: '#fef2f2',
-    padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, overflow: 'hidden',
+  generateButtonDisabled: {
+    opacity: 0.6,
+  },
+  generateText: {
+    color: colors.white,
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '600',
+  },
+  generatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 
-  resultCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
+  // ─── Rate Limit Banner ────────────────────────────────────
+  rateLimitBanner: {
+    backgroundColor: colors.infoLight,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    alignItems: 'center',
   },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginBottom: 10 },
-  statusText: { fontSize: 13, fontWeight: '600' },
-  resultSummary: { fontSize: 16, color: '#1f2937', lineHeight: 24, marginBottom: 12 },
-  resultSection: { marginBottom: 10 },
-  resultLabel: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 4 },
-  resultItem: { fontSize: 14, color: '#374151', lineHeight: 22 },
-  fallbackNote: { fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginBottom: 8 },
+  rateLimitText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.primaryText,
+    textAlign: 'center',
+  },
 
+  // ─── Error ────────────────────────────────────────────────
+  errorContainer: {
+    marginBottom: spacing.md,
+  },
+
+  // ─── Report Card ──────────────────────────────────────────
+  reportCard: {
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  reportStatusRow: {
+    marginBottom: spacing.sm + spacing.xxs,
+  },
+  reportSummary: {
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.textPrimary,
+    lineHeight: typography.bodyLg.fontSize * 1.5,
+    marginBottom: spacing.md,
+  },
+  reportSection: {
+    marginBottom: spacing.sm + spacing.xxs,
+  },
+  reportSectionLabel: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    marginBottom: spacing.xs,
+  },
+  reportItem: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textSecondary,
+    lineHeight: typography.bodyMd.fontSize * 1.5 + 1,
+  },
+  fallbackNote: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textDisabled,
+    fontStyle: 'italic',
+    marginBottom: spacing.sm,
+  },
+
+  // ─── Disclaimer ───────────────────────────────────────────
   disclaimer: {
-    fontSize: 11, color: '#9ca3af', lineHeight: 16,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb',
-    paddingTop: 10, marginTop: 10,
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    lineHeight: typography.captionSm.fontSize * 1.45,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderDefault,
+    paddingTop: spacing.sm + spacing.xxs,
+    marginTop: spacing.sm + spacing.xxs,
   },
 
+  // ─── Share Button ─────────────────────────────────────────
   shareButton: {
-    backgroundColor: '#dbeafe', borderRadius: 12,
-    paddingVertical: 10, alignItems: 'center', marginTop: 12,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + spacing.xxs,
+    alignItems: 'center',
+    marginTop: spacing.md,
   },
-  shareText: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
+  shareText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
 
-  historySection: { marginTop: 8 },
-  historyTitle: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 10 },
-  historyCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 2, elevation: 1,
+  // ─── History Section ──────────────────────────────────────
+  historySection: {
+    marginTop: spacing.sm,
   },
-  historyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  historyType: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  historyBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  historyBadgeText: { fontSize: 11, fontWeight: '600' },
-  historyDate: { fontSize: 12, color: '#9ca3af', marginLeft: 'auto' },
-  historySummary: { fontSize: 13, color: '#6b7280', lineHeight: 20 },
+  historyTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: typography.headingSm.fontWeight,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm + spacing.xxs,
+  },
+  historyCard: {
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  historyType: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  historyDate: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textDisabled,
+    marginLeft: 'auto',
+  },
+  historySummary: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    lineHeight: typography.bodySm.fontSize * 1.5 + 1,
+  },
 });

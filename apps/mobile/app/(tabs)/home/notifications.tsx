@@ -8,8 +8,14 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing } from '@/lib/theme';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { NOTIFICATION_TYPE_DISPLAY } from '@remote-care/shared';
+
+// ─── Types ────────────────────────────────────────────────────
 
 interface Notification {
   id: string;
@@ -21,13 +27,7 @@ interface Notification {
   created_at: string;
 }
 
-const TYPE_ICON: Record<string, string> = {
-  measurement_reminder: '\u23F0',
-  abnormal_alert: '\u26A0\uFE0F',
-  appointment_reminder: '\uD83D\uDCC5',
-  service_request_update: '\uD83D\uDCE6',
-  ai_report_ready: '\uD83D\uDCCA',
-};
+// ─── Helpers ──────────────────────────────────────────────────
 
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr);
@@ -44,8 +44,13 @@ function formatTime(dateStr: string): string {
   return d.toLocaleDateString('zh-TW');
 }
 
+function getTypeIcon(type: string): string {
+  return NOTIFICATION_TYPE_DISPLAY[type]?.icon ?? '🔔';
+}
+
+// ─── Component ────────────────────────────────────────────────
+
 export default function NotificationsScreen() {
-  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -103,37 +108,48 @@ export default function NotificationsScreen() {
 
   const hasUnread = notifications.some((n) => !n.is_read);
 
+  // ─── Loading ──────────────────────────────────────────────
+
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>載入中...</Text>
       </View>
     );
   }
+
+  // ─── Error ────────────────────────────────────────────────
 
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => void loadInitial()}>
-          <Text style={styles.retryText}>重試</Text>
-        </TouchableOpacity>
+        <ErrorState message={error} onRetry={() => void loadInitial()} />
       </View>
     );
   }
 
+  // ─── Main Render ──────────────────────────────────────────
+
   return (
     <View style={styles.container}>
+      {/* Mark all as read bar */}
       {hasUnread && (
-        <TouchableOpacity style={styles.markAllBar} onPress={() => void markAllRead()}>
+        <TouchableOpacity
+          style={styles.markAllBar}
+          onPress={() => void markAllRead()}
+          accessibilityLabel="全部標為已讀"
+        >
           <Text style={styles.markAllText}>全部標為已讀</Text>
         </TouchableOpacity>
       )}
 
+      {/* Notification list or empty state */}
       {notifications.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyText}>尚無通知</Text>
-        </View>
+        <EmptyState
+          title="尚無通知"
+          description="當有新的量測提醒、異常通知或服務更新時，會在這裡顯示。"
+        />
       ) : (
         <FlatList
           data={notifications}
@@ -143,16 +159,22 @@ export default function NotificationsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
           }
           renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.card, !item.is_read && styles.cardUnread]}
-              onPress={() => {
-                if (!item.is_read) void markAsRead(item.id);
-              }}
+            <Card
+              style={[styles.notificationCard, !item.is_read && styles.notificationCardUnread]}
+              onPress={!item.is_read ? () => void markAsRead(item.id) : undefined}
             >
-              <Text style={styles.icon}>{TYPE_ICON[item.type] ?? '\uD83D\uDD14'}</Text>
+              {/* Icon */}
+              <View style={styles.iconContainer}>
+                <Text style={styles.icon}>{getTypeIcon(item.type)}</Text>
+              </View>
+
+              {/* Content */}
               <View style={styles.cardContent}>
                 <View style={styles.cardHeader}>
-                  <Text style={[styles.cardTitle, !item.is_read && styles.cardTitleUnread]}>
+                  <Text
+                    style={[styles.cardTitle, !item.is_read && styles.cardTitleUnread]}
+                    numberOfLines={1}
+                  >
                     {item.title}
                   </Text>
                   <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
@@ -161,76 +183,119 @@ export default function NotificationsScreen() {
                   {item.body}
                 </Text>
               </View>
+
+              {/* Unread dot */}
               {!item.is_read && <View style={styles.unreadDot} />}
-            </TouchableOpacity>
+            </Card>
           )}
         />
       )}
-
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Text style={styles.backText}>返回</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  list: { padding: 16 },
-
-  markAllBar: {
-    backgroundColor: '#eff6ff',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#dbeafe',
+  container: {
+    flex: 1,
+    backgroundColor: colors.bgScreen,
   },
-  markAllText: { color: '#3b82f6', fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.bgScreen,
+  },
+  loadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+  list: {
+    padding: spacing.lg,
+  },
 
-  card: {
+  // ─── Mark All Bar ─────────────────────────────────────────
+  markAllBar: {
+    backgroundColor: colors.primaryLight,
+    paddingVertical: spacing.sm + spacing.xxs,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderDefault,
+  },
+  markAllText: {
+    color: colors.primaryText,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
+
+  // ─── Notification Card ────────────────────────────────────
+  notificationCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    padding: spacing.lg - spacing.xxs,
+    marginBottom: spacing.sm,
   },
-  cardUnread: { backgroundColor: '#f0f7ff' },
-  icon: { fontSize: 22, marginRight: 12, marginTop: 2 },
-  cardContent: { flex: 1 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardTitle: { fontSize: 15, fontWeight: '500', color: '#374151', flex: 1 },
-  cardTitleUnread: { fontWeight: '700', color: '#1f2937' },
-  cardTime: { fontSize: 12, color: '#9ca3af', marginLeft: 8 },
-  cardBody: { fontSize: 13, color: '#6b7280', lineHeight: 19 },
+  notificationCardUnread: {
+    backgroundColor: colors.infoLight,
+  },
+
+  // ─── Icon ─────────────────────────────────────────────────
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bgSurfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+    marginTop: spacing.xxs,
+  },
+  icon: {
+    fontSize: 18,
+  },
+
+  // ─── Content ──────────────────────────────────────────────
+  cardContent: {
+    flex: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  cardTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  cardTitleUnread: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  cardTime: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textDisabled,
+    marginLeft: spacing.sm,
+  },
+  cardBody: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    lineHeight: typography.bodySm.fontSize * 1.5,
+  },
+
+  // ─── Unread Dot ───────────────────────────────────────────
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#3b82f6',
-    marginLeft: 8,
-    marginTop: 6,
+    backgroundColor: colors.primary,
+    marginLeft: spacing.sm,
+    marginTop: spacing.sm,
   },
-
-  emptyText: { fontSize: 16, color: '#9ca3af' },
-  errorText: { fontSize: 14, color: '#dc2626', marginBottom: 12 },
-  retryButton: { backgroundColor: '#3b82f6', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10 },
-  retryText: { color: '#fff', fontWeight: '600' },
-
-  backButton: {
-    position: 'absolute',
-    left: 16,
-    bottom: 20,
-    backgroundColor: '#6b7280',
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  backText: { color: '#fff', fontWeight: '600' },
 });

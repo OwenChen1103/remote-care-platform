@@ -10,6 +10,11 @@ import {
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { Card } from '@/components/ui/Card';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -42,14 +47,6 @@ function calculateAge(dob: string): number {
   return age;
 }
 
-const STATUS_DISPLAY: Record<string, { dot: string; bg: string; label: string }> = {
-  stable: { dot: '#22c55e', bg: '#f0fdf4', label: '狀況穩定' },
-  attention: { dot: '#eab308', bg: '#fefce8', label: '需注意' },
-  consult_doctor: { dot: '#ef4444', bg: '#fef2f2', label: '建議就醫' },
-};
-
-const DEFAULT_STATUS_DISPLAY = { dot: '#22c55e', bg: '#f0fdf4', label: '狀況穩定' };
-
 function formatReportDate(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
@@ -69,6 +66,13 @@ function formatReportDate(dateStr: string): string {
   if (diffDays < 7) return `${diffDays} 天前`;
   return d.toLocaleDateString('zh-TW');
 }
+
+/** Map AI status_label to a left-border accent color */
+const AI_STATUS_ACCENT: Record<string, string> = {
+  stable: colors.success,
+  attention: colors.warning,
+  consult_doctor: colors.danger,
+};
 
 // ─── Component ────────────────────────────────────────────────
 
@@ -145,30 +149,38 @@ export default function HomeScreen() {
     }
   }, [recipients, fetchLatestReports]);
 
+  // ─── Loading State ────────────────────────────────────────────
+
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>載入中...</Text>
       </View>
     );
   }
 
+  // ─── Error State ──────────────────────────────────────────────
+
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => void fetchRecipients()}>
-          <Text style={styles.retryText}>重試</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
+        <ErrorState message={error} onRetry={() => void fetchRecipients()} />
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
+        >
           <Text style={styles.logoutText}>登出</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ─── Main Render ──────────────────────────────────────────────
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.welcome}>你好，{user?.name ?? ''}！</Text>
@@ -177,7 +189,11 @@ export default function HomeScreen() {
           )}
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.bellButton} onPress={() => router.push('/(tabs)/home/notifications')}>
+          <TouchableOpacity
+            style={styles.bellButton}
+            onPress={() => router.push('/(tabs)/home/notifications')}
+            accessibilityLabel={`通知${unreadCount > 0 ? `，${unreadCount} 則未讀` : ''}`}
+          >
             <Text style={styles.bellIcon}>{'\uD83D\uDD14'}</Text>
             {unreadCount > 0 && (
               <View style={styles.badge}>
@@ -185,16 +201,23 @@ export default function HomeScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutButton} onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
+          >
             <Text style={styles.logoutText}>登出</Text>
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Recipient List or Empty State */}
       {recipients.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyText}>尚無被照護者，請點擊右下角新增。</Text>
-        </View>
+        <EmptyState
+          title="尚無被照護者"
+          description="新增您的家人或照護對象，即可開始記錄健康數據與追蹤狀況。"
+          actionLabel="新增被照護者"
+          onAction={() => router.push('/(tabs)/home/add-recipient')}
+        />
       ) : (
         <FlatList
           data={recipients}
@@ -202,24 +225,32 @@ export default function HomeScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const report = latestReports[item.id];
-            const status = report
-              ? (STATUS_DISPLAY[report.status_label] ?? DEFAULT_STATUS_DISPLAY)
-              : null;
+            const accentColor = report
+              ? (AI_STATUS_ACCENT[report.status_label] ?? colors.success)
+              : colors.borderDefault;
 
             return (
-              <View style={styles.card}>
-                {/* Header: name + age → tap to recipient detail */}
+              <Card style={[styles.recipientCard, { borderLeftColor: accentColor }]}>
+                {/* Header: name + age + AI status → tap to detail */}
                 <TouchableOpacity
                   style={styles.cardHeaderTouchable}
                   onPress={() => router.push(`/(tabs)/home/${item.id}`)}
+                  accessibilityLabel={`查看 ${item.name} 的詳細資料`}
                 >
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.cardName}>{item.name}</Text>
-                    {item.date_of_birth && (
-                      <Text style={styles.cardAge}>{calculateAge(item.date_of_birth)} 歲</Text>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.cardNameGroup}>
+                      <Text style={styles.cardName}>{item.name}</Text>
+                      {item.date_of_birth && (
+                        <Text style={styles.cardAge}>{calculateAge(item.date_of_birth)} 歲</Text>
+                      )}
+                    </View>
+                    {report && (
+                      <StatusPill status={report.status_label} type="aiHealth" />
                     )}
-                    <Text style={styles.cardDetailArrow}>›</Text>
+                    {!report && !reportsLoading && null}
                   </View>
+
+                  {/* Medical tags */}
                   {item.medical_tags.length > 0 && (
                     <View style={styles.tagsRow}>
                       {item.medical_tags.map((tag) => (
@@ -234,22 +265,19 @@ export default function HomeScreen() {
                 {/* Divider */}
                 <View style={styles.cardDivider} />
 
-                {/* AI summary section */}
+                {/* AI Summary Section */}
                 {reportsLoading && !report ? (
                   <View style={styles.summaryLoading}>
-                    <ActivityIndicator size="small" color="#9ca3af" />
+                    <ActivityIndicator size="small" color={colors.textDisabled} />
                     <Text style={styles.summaryLoadingText}>載入近況中...</Text>
                   </View>
-                ) : report && status ? (
+                ) : report ? (
                   <TouchableOpacity
                     style={styles.summarySection}
                     onPress={() => router.push('/(tabs)/ai')}
+                    accessibilityLabel={`查看 ${item.name} 的安心報`}
                   >
-                    <View style={[styles.statusRow, { backgroundColor: status.bg }]}>
-                      <View style={[styles.statusDot, { backgroundColor: status.dot }]} />
-                      <Text style={[styles.statusLabel, { color: status.dot }]}>{status.label}</Text>
-                      <Text style={styles.reportDate}>{formatReportDate(report.generated_at)}</Text>
-                    </View>
+                    <Text style={styles.reportDate}>{formatReportDate(report.generated_at)}</Text>
                     <Text style={styles.summaryText} numberOfLines={2}>
                       {report.summary}
                     </Text>
@@ -264,15 +292,18 @@ export default function HomeScreen() {
                     <Text style={styles.viewDetail}>前往查看 ›</Text>
                   </TouchableOpacity>
                 )}
-              </View>
+              </Card>
             );
           }}
         />
       )}
 
+      {/* FAB */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/(tabs)/home/add-recipient')}
+        accessibilityLabel="新增被照護者"
+        accessibilityRole="button"
       >
         <Text style={styles.fabText}>＋</Text>
       </TouchableOpacity>
@@ -283,89 +314,204 @@ export default function HomeScreen() {
 // ─── Styles ───────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bgScreen,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.bgScreen,
+  },
+  loadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+
+  // ─── Header ───────────────────────────────────────────────
   header: {
-    flexDirection: 'row' as const,
-    alignItems: 'flex-start' as const,
-    justifyContent: 'space-between' as const,
-    paddingRight: 16,
-    paddingTop: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingRight: spacing.lg,
+    paddingTop: spacing.sm,
   },
-  welcome: { fontSize: 18, fontWeight: '600', color: '#1f2937', paddingHorizontal: 16, paddingTop: 8 },
-  sectionHint: { fontSize: 13, color: '#6b7280', paddingHorizontal: 16, paddingTop: 2, paddingBottom: 4 },
-  headerActions: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8, marginTop: 10 },
-  bellButton: { position: 'relative' as const, padding: 6 },
-  bellIcon: { fontSize: 22 },
+  welcome: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: typography.headingLg.fontWeight,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  sectionHint: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxs,
+    paddingBottom: spacing.xs,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  bellButton: {
+    position: 'relative',
+    padding: spacing.sm,
+  },
+  bellIcon: {
+    fontSize: 22,
+  },
   badge: {
-    position: 'absolute' as const, top: 0, right: 0,
-    backgroundColor: '#ef4444', borderRadius: 10,
-    minWidth: 18, height: 18, alignItems: 'center' as const, justifyContent: 'center' as const,
-    paddingHorizontal: 4,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: colors.danger,
+    borderRadius: radius.full,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
   },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' as const },
-  logoutButton: { backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
-  logoutText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  list: { padding: 16, paddingTop: 8 },
-
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    overflow: 'hidden',
+  badgeText: {
+    color: colors.white,
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
   },
-  cardHeaderTouchable: { padding: 16, paddingBottom: 12 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center' },
-  cardName: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
-  cardAge: { fontSize: 14, color: '#6b7280', marginLeft: 8 },
-  cardDetailArrow: { fontSize: 18, color: '#9ca3af', marginLeft: 'auto' },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  tag: { backgroundColor: '#dbeafe', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
-  tagText: { fontSize: 12, color: '#1d4ed8' },
-
-  cardDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e5e7eb', marginHorizontal: 16 },
-
-  summarySection: { padding: 16, paddingTop: 0 },
-  statusRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 8, marginHorizontal: -16,
-    marginBottom: 8,
+  logoutButton: {
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  statusLabel: { fontSize: 14, fontWeight: '700' },
-  reportDate: { fontSize: 11, color: '#9ca3af', marginLeft: 'auto' },
-  summaryText: { fontSize: 14, color: '#4b5563', lineHeight: 21 },
-  viewDetail: { fontSize: 13, color: '#3b82f6', fontWeight: '500', marginTop: 8 },
+  logoutText: {
+    color: colors.textTertiary,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '500',
+  },
 
-  summaryLoading: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 12, gap: 8 },
-  summaryLoadingText: { fontSize: 13, color: '#9ca3af' },
+  // ─── List ─────────────────────────────────────────────────
+  list: {
+    padding: spacing.lg,
+    paddingTop: spacing.sm,
+  },
 
-  noReportText: { fontSize: 14, color: '#9ca3af', marginBottom: 4 },
+  // ─── Recipient Card ───────────────────────────────────────
+  recipientCard: {
+    marginBottom: spacing.md,
+    padding: 0,          // override Card default padding — inner sections handle their own
+    overflow: 'hidden',  // allow left-border accent to clip
+    borderLeftWidth: 4,
+  },
+  cardHeaderTouchable: {
+    padding: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cardNameGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  cardName: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: typography.headingMd.fontWeight,
+    color: colors.textPrimary,
+  },
+  cardAge: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textTertiary,
+    marginLeft: spacing.sm,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  tag: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  tagText: {
+    fontSize: typography.caption.fontSize,
+    color: colors.primaryText,
+  },
 
-  emptyText: { fontSize: 16, color: '#9ca3af', textAlign: 'center' },
-  errorText: { fontSize: 14, color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, overflow: 'hidden' },
-  retryButton: { backgroundColor: '#3b82f6', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10 },
-  retryText: { color: '#fff', fontWeight: '600' },
+  // ─── Divider ──────────────────────────────────────────────
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.borderDefault,
+    marginHorizontal: spacing.lg,
+  },
+
+  // ─── Summary Section ─────────────────────────────────────
+  summarySection: {
+    padding: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  reportDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.xs,
+  },
+  summaryText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textSecondary,
+    lineHeight: typography.bodyMd.fontSize * 1.5,
+  },
+  viewDetail: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.primary,
+    fontWeight: '500',
+    marginTop: spacing.sm,
+  },
+  summaryLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+    paddingTop: spacing.md,
+    gap: spacing.sm,
+  },
+  summaryLoadingText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textDisabled,
+  },
+  noReportText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.xs,
+  },
+
+  // ─── FAB ──────────────────────────────────────────────────
   fab: {
     position: 'absolute',
-    right: 20,
-    bottom: 20,
+    right: spacing.xl,
+    bottom: spacing.xl,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    ...shadows.high,
   },
-  fabText: { fontSize: 28, color: '#fff', lineHeight: 32 },
+  fabText: {
+    fontSize: 28,
+    color: colors.white,
+    lineHeight: 32,
+  },
 });

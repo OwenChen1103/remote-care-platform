@@ -10,9 +10,19 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { GLUCOSE_TIMING_DISPLAY } from '@remote-care/shared';
+
+// ─── Types ────────────────────────────────────────────────────
 
 type MeasurementType = 'blood_pressure' | 'blood_glucose';
 type GlucoseTiming = 'before_meal' | 'after_meal' | 'fasting' | 'random';
+
+const TIMING_OPTIONS: { value: GlucoseTiming; label: string }[] = Object.entries(
+  GLUCOSE_TIMING_DISPLAY,
+).map(([value, config]) => ({ value: value as GlucoseTiming, label: config.label }));
+
+// ─── Component ────────────────────────────────────────────────
 
 export default function AddMeasurementScreen() {
   const { recipientId, type: initialType } = useLocalSearchParams<{
@@ -91,13 +101,13 @@ export default function AddMeasurementScreen() {
       const result = await api.post<{ is_abnormal: boolean }>('/measurements', body);
 
       if (result.is_abnormal) {
-        Alert.alert('提醒', '此次量測數值偏高或偏低，建議留意', [
-          { text: '確定', onPress: () => router.back() },
+        // Health advisory — user should acknowledge before leaving
+        Alert.alert('量測提醒', '此次量測數值超出一般參考範圍，建議留意。', [
+          { text: '知道了', onPress: () => router.back() },
         ]);
       } else {
-        Alert.alert('成功', '量測紀錄已儲存', [
-          { text: '確定', onPress: () => router.back() },
-        ]);
+        // Normal success — navigate back immediately
+        router.back();
       }
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
@@ -116,6 +126,8 @@ export default function AddMeasurementScreen() {
         <TouchableOpacity
           style={[styles.toggleButton, type === 'blood_pressure' && styles.toggleActive]}
           onPress={() => setType('blood_pressure')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: type === 'blood_pressure' }}
         >
           <Text style={[styles.toggleText, type === 'blood_pressure' && styles.toggleTextActive]}>
             血壓
@@ -124,6 +136,8 @@ export default function AddMeasurementScreen() {
         <TouchableOpacity
           style={[styles.toggleButton, type === 'blood_glucose' && styles.toggleActive]}
           onPress={() => setType('blood_glucose')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: type === 'blood_glucose' }}
         >
           <Text style={[styles.toggleText, type === 'blood_glucose' && styles.toggleTextActive]}>
             血糖
@@ -131,8 +145,10 @@ export default function AddMeasurementScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Validation error */}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      {/* Blood Pressure fields */}
       {type === 'blood_pressure' ? (
         <>
           <Text style={styles.label}>收縮壓 (mmHg) *</Text>
@@ -142,6 +158,8 @@ export default function AddMeasurementScreen() {
             onChangeText={setSystolic}
             keyboardType="numeric"
             placeholder="40-300"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="收縮壓"
           />
 
           <Text style={styles.label}>舒張壓 (mmHg) *</Text>
@@ -151,6 +169,8 @@ export default function AddMeasurementScreen() {
             onChangeText={setDiastolic}
             keyboardType="numeric"
             placeholder="20-200"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="舒張壓"
           />
 
           <Text style={styles.label}>心率 (bpm)</Text>
@@ -160,10 +180,13 @@ export default function AddMeasurementScreen() {
             onChangeText={setHeartRate}
             keyboardType="numeric"
             placeholder="30-250（選填）"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="心率"
           />
         </>
       ) : (
         <>
+          {/* Blood Glucose fields */}
           <Text style={styles.label}>血糖值 (mg/dL) *</Text>
           <TextInput
             style={styles.input}
@@ -171,30 +194,34 @@ export default function AddMeasurementScreen() {
             onChangeText={setGlucoseValue}
             keyboardType="numeric"
             placeholder="10-800"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="血糖值"
           />
 
           <Text style={styles.label}>量測時機 *</Text>
           <View style={styles.timingRow}>
-            {([
-              ['fasting', '空腹'],
-              ['before_meal', '餐前'],
-              ['after_meal', '餐後'],
-              ['random', '隨機'],
-            ] as const).map(([value, label]) => (
-              <TouchableOpacity
-                key={value}
-                style={[styles.timingButton, glucoseTiming === value && styles.timingActive]}
-                onPress={() => setGlucoseTiming(value)}
-              >
-                <Text style={[styles.timingText, glucoseTiming === value && styles.timingTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TIMING_OPTIONS.map(({ value, label }) => {
+              const isActive = glucoseTiming === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.timingButton, isActive && styles.timingActive]}
+                  onPress={() => setGlucoseTiming(value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={label}
+                >
+                  <Text style={[styles.timingText, isActive && styles.timingTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </>
       )}
 
+      {/* Note */}
       <Text style={styles.label}>備註</Text>
       <TextInput
         style={[styles.input, styles.textArea]}
@@ -203,12 +230,17 @@ export default function AddMeasurementScreen() {
         multiline
         numberOfLines={2}
         placeholder="選填"
+        placeholderTextColor={colors.textDisabled}
+        accessibilityLabel="備註"
       />
 
+      {/* Submit */}
       <TouchableOpacity
         style={[styles.submitButton, saving && styles.submitDisabled]}
         onPress={() => void handleSubmit()}
         disabled={saving}
+        accessibilityRole="button"
+        accessibilityLabel={saving ? '儲存中' : '儲存量測紀錄'}
       >
         <Text style={styles.submitText}>{saving ? '儲存中...' : '儲存'}</Text>
       </TouchableOpacity>
@@ -216,51 +248,124 @@ export default function AddMeasurementScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
-  toggleRow: { flexDirection: 'row', marginBottom: 16, gap: 8 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bgScreen,
+  },
+  content: {
+    padding: spacing.lg,
+  },
+  title: {
+    fontSize: typography.headingXl.fontSize,
+    fontWeight: typography.headingXl.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+
+  // ─── Type Toggle ──────────────────────────────────────────
+  toggleRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
   toggleButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#e5e7eb',
+    paddingVertical: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgSurfaceAlt,
     alignItems: 'center',
   },
-  toggleActive: { backgroundColor: '#3b82f6' },
-  toggleText: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  toggleTextActive: { color: '#fff' },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 14 },
+  toggleActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  toggleText: {
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  toggleTextActive: {
+    color: colors.primaryText,
+  },
+
+  // ─── Form Fields ──────────────────────────────────────────
+  label: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
+  },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.bgSurface,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.textPrimary,
   },
-  textArea: { height: 60, textAlignVertical: 'top' },
-  timingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  textArea: {
+    height: 60,
+    textAlignVertical: 'top',
+  },
+
+  // ─── Timing Selector ─────────────────────────────────────
+  timingRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   timingButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + spacing.xxs,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#fff',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
   },
-  timingActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  timingText: { color: '#374151', fontWeight: '500' },
-  timingTextActive: { color: '#fff' },
-  error: { color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, fontSize: 14, overflow: 'hidden' },
+  timingActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryText,
+  },
+  timingText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  timingTextActive: {
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
+
+  // ─── Error ────────────────────────────────────────────────
+  error: {
+    color: colors.danger,
+    backgroundColor: colors.dangerLight,
+    padding: spacing.md,
+    borderRadius: radius.sm,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    fontSize: typography.bodyMd.fontSize,
+    overflow: 'hidden',
+  },
+
+  // ─── Submit ───────────────────────────────────────────────
   submitButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    padding: spacing.lg,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing['2xl'],
   },
-  submitDisabled: { opacity: 0.5 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  submitDisabled: {
+    opacity: 0.5,
+  },
+  submitText: {
+    color: colors.white,
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '600',
+  },
 });
