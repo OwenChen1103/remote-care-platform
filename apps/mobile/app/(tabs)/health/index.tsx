@@ -6,10 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -38,6 +39,23 @@ interface Measurement {
 function formatTiming(timing: string | null): string {
   if (!timing) return '';
   return GLUCOSE_TIMING_DISPLAY[timing]?.label ?? '';
+}
+
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `今天 ${hh}:${mm}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return '昨天';
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) return `${diffDays} 天前`;
+  return d.toLocaleDateString('zh-TW');
 }
 
 // ─── Component ────────────────────────────────────────────────
@@ -91,7 +109,11 @@ export default function HealthScreen() {
 
   const selectedName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
 
-  // ─── Fatal Error (no recipients loaded) ─────────────────────
+  // Derive latest readings from already-loaded data (no extra API call)
+  const latestBP = measurements.find((m) => m.type === 'blood_pressure');
+  const latestBG = measurements.find((m) => m.type === 'blood_glucose');
+
+  // ─── Fatal Error ──────────────────────────────────────────────
 
   if (error && recipients.length === 0) {
     return (
@@ -105,70 +127,132 @@ export default function HealthScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Recipient selector */}
-      {recipients.length > 1 && (
-        <FlatList
-          horizontal
-          data={recipients}
-          keyExtractor={(item) => item.id}
-          showsHorizontalScrollIndicator={false}
-          style={styles.selectorList}
-          contentContainerStyle={styles.selectorContent}
-          renderItem={({ item }) => {
-            const isActive = item.id === selectedRecipientId;
-            return (
-              <TouchableOpacity
-                style={[styles.selectorChip, isActive && styles.selectorChipActive]}
-                onPress={() => setSelectedRecipientId(item.id)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`選擇 ${item.name}`}
-              >
-                <Text style={[styles.selectorText, isActive && styles.selectorTextActive]}>
-                  {item.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      )}
+      {/* ── Header Zone ──────────────────────────────────────── */}
+      <View style={styles.headerZone}>
+        {/* Recipient selector */}
+        {recipients.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.selectorList}
+            contentContainerStyle={styles.selectorContent}
+          >
+            {recipients.map((r) => {
+              const isActive = r.id === selectedRecipientId;
+              return (
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.selectorChip, isActive && styles.selectorChipActive]}
+                  onPress={() => setSelectedRecipientId(r.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={`選擇 ${r.name}`}
+                >
+                  <Text style={[styles.selectorText, isActive && styles.selectorTextActive]}>
+                    {r.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
 
-      {/* Section title */}
-      {selectedName ? (
-        <Text style={styles.title}>{selectedName} 的健康紀錄</Text>
-      ) : null}
+        {/* Title */}
+        {selectedName ? (
+          <Text style={styles.title}>{selectedName} 的健康紀錄</Text>
+        ) : null}
 
-      {/* Quick actions */}
-      {selectedRecipientId && (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${selectedRecipientId}&type=blood_pressure`)}
-          >
-            <Text style={styles.actionText}>記錄血壓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${selectedRecipientId}&type=blood_glucose`)}
-          >
-            <Text style={styles.actionText}>記錄血糖</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push(`/(tabs)/health/trends?recipientId=${selectedRecipientId}`)}
-          >
-            <Text style={styles.actionText}>看趨勢</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push('/(tabs)/health/export')}
-          >
-            <Text style={styles.actionText}>匯出</Text>
-          </TouchableOpacity>
+        {/* Primary actions — record BP / BG */}
+        {selectedRecipientId && (
+          <View style={styles.primaryActions}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${selectedRecipientId}&type=blood_pressure`)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.primaryButtonIcon}>
+                <View style={styles.bpIcon}>
+                  <View style={styles.bpIconBar} />
+                  <View style={[styles.bpIconBar, styles.bpIconBarShort]} />
+                </View>
+              </View>
+              <Text style={styles.primaryButtonText}>記錄血壓</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${selectedRecipientId}&type=blood_glucose`)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.primaryButtonIcon}>
+                <View style={styles.bgIcon} />
+              </View>
+              <Text style={styles.primaryButtonText}>記錄血糖</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Secondary actions — trends / export */}
+        {selectedRecipientId && (
+          <View style={styles.secondaryActions}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push(`/(tabs)/health/trends?recipientId=${selectedRecipientId}`)}
+            >
+              <Text style={styles.secondaryButtonText}>趨勢分析</Text>
+              <Text style={styles.secondaryArrow}>→</Text>
+            </TouchableOpacity>
+            <View style={styles.secondaryDivider} />
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push('/(tabs)/health/export')}
+            >
+              <Text style={styles.secondaryButtonText}>匯出紀錄</Text>
+              <Text style={styles.secondaryArrow}>→</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* ── Latest Reading Summary ────────────────────────────── */}
+      {!loading && measurements.length > 0 && (
+        <View style={styles.summaryStrip}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>最近血壓</Text>
+            {latestBP ? (
+              <Text style={[
+                styles.summaryValue,
+                latestBP.is_abnormal && styles.summaryValueAlert,
+              ]}>
+                {latestBP.systolic}/{latestBP.diastolic}
+              </Text>
+            ) : (
+              <Text style={styles.summaryValueEmpty}>—</Text>
+            )}
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>最近血糖</Text>
+            {latestBG ? (
+              <Text style={[
+                styles.summaryValue,
+                latestBG.is_abnormal && styles.summaryValueAlert,
+              ]}>
+                {latestBG.glucose_value}
+              </Text>
+            ) : (
+              <Text style={styles.summaryValueEmpty}>—</Text>
+            )}
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>總筆數</Text>
+            <Text style={styles.summaryValue}>{measurements.length}</Text>
+          </View>
         </View>
       )}
 
-      {/* Measurement list */}
+      {/* ── Measurement List ─────────────────────────────────── */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -190,36 +274,56 @@ export default function HealthScreen() {
           data={measurements}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <Card
-              style={[
+          ListHeaderComponent={
+            <Text style={styles.listSectionLabel}>近期紀錄</Text>
+          }
+          renderItem={({ item }) => {
+            const isBP = item.type === 'blood_pressure';
+
+            return (
+              <Card style={[
                 styles.measurementCard,
-                { borderLeftColor: item.is_abnormal ? colors.danger : colors.primary },
-              ]}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardType}>
-                  {item.type === 'blood_pressure' ? '血壓' : '血糖'}
-                </Text>
-                {item.is_abnormal && (
-                  <View style={styles.abnormalBadge}>
-                    <Text style={styles.abnormalText}>需留意</Text>
+                item.is_abnormal && styles.measurementCardAlert,
+              ]}>
+                <View style={styles.cardTop}>
+                  {/* Left: type indicator + value */}
+                  <View style={styles.cardMain}>
+                    <View style={styles.cardTypeRow}>
+                      <View style={[
+                        styles.typeDot,
+                        { backgroundColor: item.is_abnormal ? colors.danger : colors.primary },
+                      ]} />
+                      <Text style={styles.cardType}>
+                        {isBP ? '血壓' : '血糖'}
+                      </Text>
+                      {item.is_abnormal && (
+                        <View style={styles.alertTag}>
+                          <Text style={styles.alertTagText}>需留意</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[
+                      styles.cardValue,
+                      item.is_abnormal && styles.cardValueAlert,
+                    ]}>
+                      {isBP
+                        ? `${item.systolic}/${item.diastolic}`
+                        : `${item.glucose_value}`}
+                      <Text style={styles.cardUnit}> {isBP ? 'mmHg' : 'mg/dL'}</Text>
+                    </Text>
                   </View>
-                )}
-              </View>
-              <Text style={styles.cardValue}>
-                {item.type === 'blood_pressure'
-                  ? `${item.systolic}/${item.diastolic} mmHg`
-                  : `${item.glucose_value} mg/dL`}
-              </Text>
-              {item.type === 'blood_glucose' && item.glucose_timing && (
-                <Text style={styles.cardTiming}>{formatTiming(item.glucose_timing)}</Text>
-              )}
-              <Text style={styles.cardTime}>
-                {new Date(item.measured_at).toLocaleString('zh-TW')}
-              </Text>
-            </Card>
-          )}
+
+                  {/* Right: meta */}
+                  <View style={styles.cardMeta}>
+                    <Text style={styles.cardTime}>{formatTime(item.measured_at)}</Text>
+                    {!isBP && item.glucose_timing && (
+                      <Text style={styles.cardTiming}>{formatTiming(item.glucose_timing)}</Text>
+                    )}
+                  </View>
+                </View>
+              </Card>
+            );
+          }}
         />
       )}
     </View>
@@ -248,109 +352,266 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
 
+  // ─── Header Zone ──────────────────────────────────────────
+  headerZone: {
+    backgroundColor: colors.bgSurface,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    ...shadows.low,
+  },
+
   // ─── Title ────────────────────────────────────────────────
   title: {
-    fontSize: typography.headingLg.fontSize,
-    fontWeight: typography.headingLg.fontWeight,
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
     color: colors.textPrimary,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
 
   // ─── Recipient Selector ───────────────────────────────────
   selectorList: {
-    maxHeight: 50,
+    maxHeight: 44,
+    marginHorizontal: -spacing.lg,
   },
   selectorContent: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
     gap: spacing.sm,
   },
   selectorChip: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md + spacing.xxs,
     paddingVertical: spacing.sm,
-    borderRadius: radius.lg,
+    borderRadius: radius.sm,
     backgroundColor: colors.bgSurfaceAlt,
   },
   selectorChipActive: {
     backgroundColor: colors.primaryLight,
   },
   selectorText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textSecondary,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
   },
   selectorTextActive: {
     color: colors.primaryText,
     fontWeight: '600',
   },
 
-  // ─── Quick Actions ────────────────────────────────────────
-  actionsRow: {
+  // ─── Primary Actions ─────────────────────────────────────
+  primaryActions: {
     flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
     gap: spacing.sm,
   },
-  actionButton: {
+  primaryButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.primaryLight,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
-  actionText: {
+  primaryButtonIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.bgSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
     color: colors.primaryText,
   },
 
+  // Custom BP icon (two horizontal bars)
+  bpIcon: {
+    gap: spacing.xxs,
+    alignItems: 'center',
+  },
+  bpIconBar: {
+    width: 12,
+    height: 2.5,
+    borderRadius: 1,
+    backgroundColor: colors.primaryText,
+  },
+  bpIconBarShort: {
+    width: 8,
+  },
+
+  // Custom BG icon (small circle)
+  bgIcon: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.primaryText,
+  },
+
+  // ─── Secondary Actions ────────────────────────────────────
+  secondaryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm + spacing.xxs,
+  },
+  secondaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  secondaryButtonText: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+  secondaryArrow: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textDisabled,
+  },
+  secondaryDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: colors.borderDefault,
+  },
+
+  // ─── Summary Strip ────────────────────────────────────────
+  summaryStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+  },
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textDisabled,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: spacing.xxs,
+  },
+  summaryValue: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  summaryValueAlert: {
+    color: colors.warning,
+  },
+  summaryValueEmpty: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '400',
+    color: colors.textDisabled,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: colors.borderDefault,
+  },
+
   // ─── Measurement List ─────────────────────────────────────
   list: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  listSectionLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textDisabled,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
 
   // ─── Measurement Card ─────────────────────────────────────
   measurementCard: {
     marginBottom: spacing.sm,
-    padding: spacing.lg,
-    borderLeftWidth: 4,
-    overflow: 'hidden',
+    padding: spacing.md + spacing.xxs,
   },
-  cardHeader: {
+  measurementCardAlert: {
+    borderColor: colors.dangerLight,
+    backgroundColor: '#FEFAFA',
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  cardMain: {
+    flex: 1,
+  },
+  cardTypeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
     marginBottom: spacing.xs,
   },
-  cardType: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  typeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  abnormalBadge: {
-    marginLeft: spacing.sm,
+  cardType: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '500',
+    color: colors.textTertiary,
+  },
+  alertTag: {
     backgroundColor: colors.dangerLight,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radius.sm,
+    paddingVertical: 1,
+    borderRadius: radius.full,
   },
-  abnormalText: {
-    fontSize: typography.caption.fontSize,
+  alertTagText: {
+    fontSize: 10,
     fontWeight: '600',
     color: colors.danger,
   },
   cardValue: {
-    fontSize: typography.headingMd.fontSize,
+    fontSize: typography.headingLg.fontSize,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  cardValueAlert: {
+    color: colors.danger,
+  },
+  cardUnit: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '400',
+    color: colors.textTertiary,
+  },
+
+  // ─── Card Meta (right side) ───────────────────────────────
+  cardMeta: {
+    alignItems: 'flex-end',
+    paddingTop: spacing.xxs,
+  },
+  cardTime: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
     marginBottom: spacing.xxs,
   },
   cardTiming: {
-    fontSize: typography.bodySm.fontSize,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
-    marginBottom: spacing.xxs,
-  },
-  cardTime: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textTertiary,
+    fontWeight: '500',
   },
 });

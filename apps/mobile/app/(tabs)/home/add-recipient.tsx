@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+
+// ─── Component ────────────────────────────────────────────────
 
 export default function AddRecipientScreen() {
   const router = useRouter();
@@ -44,7 +46,7 @@ export default function AddRecipientScreen() {
       if (notes.trim()) data.notes = notes.trim();
 
       await api.post('/recipients', data);
-      Alert.alert('成功', '已新增被照護者', [{ text: '確定', onPress: () => router.back() }]);
+      router.back();
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.message);
@@ -57,110 +59,210 @@ export default function AddRecipientScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>新增被照護者</Text>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <Text style={styles.label}>姓名 *</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="例：王奶奶" />
-
-      <Text style={styles.label}>生日</Text>
-      <TextInput
-        style={styles.input}
-        value={dateOfBirth}
-        onChangeText={setDateOfBirth}
-        placeholder="YYYY-MM-DD"
-      />
-
-      <Text style={styles.label}>性別</Text>
-      <View style={styles.genderRow}>
-        {(['male', 'female', 'other'] as const).map((g) => (
-          <TouchableOpacity
-            key={g}
-            style={[styles.genderButton, gender === g && styles.genderActive]}
-            onPress={() => setGender(g)}
-          >
-            <Text style={[styles.genderText, gender === g && styles.genderTextActive]}>
-              {g === 'male' ? '男' : g === 'female' ? '女' : '其他'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+    <ScrollView style={styles.container}>
+      {/* ── Header Zone ──────────────────────────────────────── */}
+      <View style={styles.headerZone}>
+        <Text style={styles.title}>新增被照護者</Text>
+        <Text style={styles.subtitle}>填寫基本資料，即可開始記錄健康數據。</Text>
       </View>
 
-      <Text style={styles.label}>疾病標籤（以逗號分隔）</Text>
-      <TextInput
-        style={styles.input}
-        value={medicalTags}
-        onChangeText={setMedicalTags}
-        placeholder="例：高血壓,糖尿病"
-      />
+      <View style={styles.content}>
+        {/* Error */}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
 
-      <Text style={styles.label}>緊急聯絡人姓名</Text>
-      <TextInput style={styles.input} value={emergencyName} onChangeText={setEmergencyName} />
+        {/* ── Section: Basic Info ─────────────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>基本資料</Text>
 
-      <Text style={styles.label}>緊急聯絡人電話</Text>
-      <TextInput
-        style={styles.input}
-        value={emergencyPhone}
-        onChangeText={setEmergencyPhone}
-        keyboardType="phone-pad"
-      />
+          <Text style={styles.label}>姓名 *</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="例：王奶奶"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="姓名"
+          />
 
-      <Text style={styles.label}>備註</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={3}
-      />
+          <Text style={styles.label}>生日</Text>
+          <TextInput
+            style={styles.input}
+            value={dateOfBirth}
+            onChangeText={setDateOfBirth}
+            placeholder="YYYY-MM-DD（選填）"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="生日"
+          />
 
-      <TouchableOpacity
-        style={[styles.submitButton, loading && styles.submitDisabled]}
-        onPress={() => void handleSubmit()}
-        disabled={loading}
-      >
-        <Text style={styles.submitText}>{loading ? '新增中...' : '新增'}</Text>
-      </TouchableOpacity>
+          <Text style={styles.label}>性別</Text>
+          <View style={styles.chipRow}>
+            {([
+              { value: 'male' as const, label: '男' },
+              { value: 'female' as const, label: '女' },
+              { value: 'other' as const, label: '其他' },
+            ]).map(({ value, label }) => {
+              const active = gender === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => setGender(value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── Section: Medical Info ───────────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>健康資訊</Text>
+
+          <Text style={styles.label}>疾病標籤</Text>
+          <TextInput
+            style={styles.input}
+            value={medicalTags}
+            onChangeText={setMedicalTags}
+            placeholder="例：高血壓,糖尿病（以逗號分隔）"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="疾病標籤"
+          />
+        </View>
+
+        {/* ── Section: Emergency Contact ──────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>緊急聯絡人</Text>
+
+          <Text style={styles.label}>姓名</Text>
+          <TextInput
+            style={styles.input}
+            value={emergencyName}
+            onChangeText={setEmergencyName}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="緊急聯絡人姓名"
+          />
+
+          <Text style={styles.label}>電話</Text>
+          <TextInput
+            style={styles.input}
+            value={emergencyPhone}
+            onChangeText={setEmergencyPhone}
+            keyboardType="phone-pad"
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="緊急聯絡人電話"
+          />
+        </View>
+
+        {/* ── Section: Notes ──────────────────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>備註</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            numberOfLines={3}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+            textAlignVertical="top"
+            accessibilityLabel="備註"
+          />
+        </View>
+
+        {/* Submit */}
+        <TouchableOpacity
+          style={[styles.submitButton, loading && styles.submitDisabled]}
+          onPress={() => void handleSubmit()}
+          disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={loading ? '新增中' : '新增被照護者'}
+        >
+          <Text style={styles.submitText}>{loading ? '新增中...' : '新增'}</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 14 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  headerZone: {
+    backgroundColor: colors.bgSurface,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    ...shadows.low,
+  },
+  title: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary },
+  subtitle: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginTop: spacing.xs },
+  content: { padding: spacing.lg },
+
+  // ─── Error ────────────────────────────────────────────────
+  errorBox: {
+    backgroundColor: colors.dangerLight, borderRadius: radius.sm,
+    padding: spacing.md, marginBottom: spacing.lg,
+  },
+  errorText: { color: colors.danger, fontSize: typography.bodyMd.fontSize, textAlign: 'center' },
+
+  // ─── Form Card (section grouping) ─────────────────────────
+  formCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.low,
+  },
+  sectionLabel: {
+    fontSize: 10, fontWeight: '500', color: colors.textDisabled,
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.md,
+  },
+
+  // ─── Form Fields ──────────────────────────────────────────
+  label: {
+    fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textSecondary,
+    marginBottom: spacing.sm, marginTop: spacing.md,
+  },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    backgroundColor: colors.bgScreen, borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.sm, padding: spacing.md, fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
   },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  genderRow: { flexDirection: 'row', gap: 8 },
-  genderButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#fff',
+  textArea: { minHeight: 80, textAlignVertical: 'top' },
+
+  // ─── Chips (Gender) ───────────────────────────────────────
+  chipRow: { flexDirection: 'row', gap: spacing.sm },
+  chip: {
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + spacing.xxs,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
   },
-  genderActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  genderText: { color: '#374151', fontWeight: '500' },
-  genderTextActive: { color: '#fff' },
-  error: { color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, fontSize: 14, overflow: 'hidden' },
+  chipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryText },
+  chipText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '500' },
+  chipTextActive: { color: colors.primaryText, fontWeight: '600' },
+
+  // ─── Submit ───────────────────────────────────────────────
   submitButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 24,
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
+    marginTop: spacing.sm,
   },
   submitDisabled: { opacity: 0.5 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },
 });

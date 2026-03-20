@@ -67,12 +67,24 @@ function formatReportDate(dateStr: string): string {
   return d.toLocaleDateString('zh-TW');
 }
 
-/** Map AI status_label to a left-border accent color */
-const AI_STATUS_ACCENT: Record<string, string> = {
+/** Map AI status to a very subtle tint for card header zone */
+const STATUS_TINT: Record<string, string> = {
+  stable: '#F7FEF9',       // whisper green
+  attention: '#FFFDF5',    // whisper amber
+  consult_doctor: '#FEF8F8', // whisper red
+};
+
+/** Map AI status to accent color for the status indicator dot */
+const STATUS_DOT: Record<string, string> = {
   stable: colors.success,
   attention: colors.warning,
   consult_doctor: colors.danger,
 };
+
+/** Get the first character of a name for the avatar */
+function getInitial(name: string): string {
+  return name.charAt(0);
+}
 
 // ─── Component ────────────────────────────────────────────────
 
@@ -103,7 +115,6 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Fetch latest health_summary for each recipient (parallel, lightweight)
   const fetchLatestReports = useCallback(async (recipientList: Recipient[]) => {
     if (recipientList.length === 0) return;
     setReportsLoading(true);
@@ -120,7 +131,7 @@ export default function HomeScreen() {
             results[r.id] = first;
           }
         } catch {
-          // Non-critical — card will show "尚未生成" state
+          // Non-critical
         }
       }),
     );
@@ -167,7 +178,7 @@ export default function HomeScreen() {
       <View style={styles.center}>
         <ErrorState message={error} onRetry={() => void fetchRecipients()} />
         <TouchableOpacity
-          style={styles.logoutButton}
+          style={styles.logoutButtonStandalone}
           onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
         >
           <Text style={styles.logoutText}>登出</Text>
@@ -176,41 +187,89 @@ export default function HomeScreen() {
     );
   }
 
+  const firstName = user?.name?.charAt(0) ?? '';
+
   // ─── Main Render ──────────────────────────────────────────────
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcome}>你好，{user?.name ?? ''}！</Text>
-          {recipients.length > 0 && (
-            <Text style={styles.sectionHint}>今日家人安心報</Text>
-          )}
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.bellButton}
-            onPress={() => router.push('/(tabs)/home/notifications')}
-            accessibilityLabel={`通知${unreadCount > 0 ? `，${unreadCount} 則未讀` : ''}`}
-          >
-            <Text style={styles.bellIcon}>{'\uD83D\uDD14'}</Text>
-            {unreadCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+      {/* ── Elevated Header Zone ─────────────────────────────── */}
+      <View style={styles.headerZone}>
+        <View style={styles.headerTop}>
+          <View style={styles.headerLeft}>
+            {/* User avatar initial */}
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{firstName}</Text>
+            </View>
+            <View>
+              <Text style={styles.welcome}>你好，{user?.name ?? ''}！</Text>
+              {recipients.length > 0 && (
+                <Text style={styles.sectionHint}>今日家人安心報</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.headerRight}>
+            {/* Bell — custom drawn, no emoji */}
+            <TouchableOpacity
+              style={styles.bellButton}
+              onPress={() => router.push('/(tabs)/home/notifications')}
+              accessibilityLabel={`通知${unreadCount > 0 ? `，${unreadCount} 則未讀` : ''}`}
+            >
+              <View style={styles.bellIcon}>
+                {/* Bell body */}
+                <View style={styles.bellBody} />
+                {/* Bell clapper */}
+                <View style={styles.bellClapper} />
               </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
-          >
-            <Text style={styles.logoutText}>登出</Text>
-          </TouchableOpacity>
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Logout */}
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
+            >
+              <Text style={styles.logoutText}>登出</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Quick stats strip */}
+        {recipients.length > 0 && (
+          <View style={styles.statsStrip}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{recipients.length}</Text>
+              <Text style={styles.statLabel}>位照護對象</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>
+                {Object.values(latestReports).filter((r) => r.status_label === 'stable').length}
+              </Text>
+              <Text style={styles.statLabel}>狀況穩定</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[
+                styles.statNumber,
+                Object.values(latestReports).some((r) => r.status_label !== 'stable')
+                  ? { color: colors.warning }
+                  : undefined,
+              ]}>
+                {Object.values(latestReports).filter((r) => r.status_label !== 'stable').length}
+              </Text>
+              <Text style={styles.statLabel}>需留意</Text>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Recipient List or Empty State */}
+      {/* ── Recipient List or Empty State ────────────────────── */}
       {recipients.length === 0 ? (
         <EmptyState
           title="尚無被照護者"
@@ -225,29 +284,38 @@ export default function HomeScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const report = latestReports[item.id];
-            const accentColor = report
-              ? (AI_STATUS_ACCENT[report.status_label] ?? colors.success)
-              : colors.borderDefault;
+            const statusKey = report?.status_label ?? '';
+            const headerTint = STATUS_TINT[statusKey] ?? colors.bgSurfaceAlt;
+            const dotColor = STATUS_DOT[statusKey] ?? colors.textDisabled;
 
             return (
-              <Card style={[styles.recipientCard, { borderLeftColor: accentColor }]}>
-                {/* Header: name + age + AI status → tap to detail */}
+              <Card style={styles.recipientCard}>
+                {/* ── Card Header Zone (tinted) ─────────────── */}
                 <TouchableOpacity
-                  style={styles.cardHeaderTouchable}
+                  style={[styles.cardHeaderZone, { backgroundColor: headerTint }]}
                   onPress={() => router.push(`/(tabs)/home/${item.id}`)}
                   accessibilityLabel={`查看 ${item.name} 的詳細資料`}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.cardNameGroup}>
-                      <Text style={styles.cardName}>{item.name}</Text>
-                      {item.date_of_birth && (
-                        <Text style={styles.cardAge}>{calculateAge(item.date_of_birth)} 歲</Text>
-                      )}
+                  {/* Name row with avatar + status */}
+                  <View style={styles.cardNameRow}>
+                    <View style={styles.cardIdentity}>
+                      {/* Recipient avatar */}
+                      <View style={[styles.recipientAvatar, { borderColor: dotColor }]}>
+                        <Text style={[styles.recipientAvatarText, { color: dotColor }]}>
+                          {getInitial(item.name)}
+                        </Text>
+                      </View>
+                      <View style={styles.nameBlock}>
+                        <Text style={styles.cardName}>{item.name}</Text>
+                        {item.date_of_birth && (
+                          <Text style={styles.cardAge}>{calculateAge(item.date_of_birth)} 歲</Text>
+                        )}
+                      </View>
                     </View>
                     {report && (
                       <StatusPill status={report.status_label} type="aiHealth" />
                     )}
-                    {!report && !reportsLoading && null}
                   </View>
 
                   {/* Medical tags */}
@@ -262,10 +330,7 @@ export default function HomeScreen() {
                   )}
                 </TouchableOpacity>
 
-                {/* Divider */}
-                <View style={styles.cardDivider} />
-
-                {/* AI Summary Section */}
+                {/* ── AI Summary Zone ───────────────────────── */}
                 {reportsLoading && !report ? (
                   <View style={styles.summaryLoading}>
                     <ActivityIndicator size="small" color={colors.textDisabled} />
@@ -273,23 +338,34 @@ export default function HomeScreen() {
                   </View>
                 ) : report ? (
                   <TouchableOpacity
-                    style={styles.summarySection}
+                    style={styles.summaryZone}
                     onPress={() => router.push('/(tabs)/ai')}
                     accessibilityLabel={`查看 ${item.name} 的安心報`}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.reportDate}>{formatReportDate(report.generated_at)}</Text>
+                    <View style={styles.summaryHeader}>
+                      <Text style={styles.summaryLabel}>AI 近況摘要</Text>
+                      <Text style={styles.reportDate}>{formatReportDate(report.generated_at)}</Text>
+                    </View>
                     <Text style={styles.summaryText} numberOfLines={2}>
                       {report.summary}
                     </Text>
-                    <Text style={styles.viewDetail}>查看安心報 ›</Text>
+                    <View style={styles.viewReportButton}>
+                      <Text style={styles.viewReportText}>查看安心報</Text>
+                      <Text style={styles.viewReportArrow}>→</Text>
+                    </View>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={styles.summarySection}
+                    style={styles.summaryZone}
                     onPress={() => router.push('/(tabs)/ai')}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.noReportText}>尚未生成安心報</Text>
-                    <Text style={styles.viewDetail}>前往查看 ›</Text>
+                    <View style={styles.viewReportButton}>
+                      <Text style={styles.viewReportText}>前往查看</Text>
+                      <Text style={styles.viewReportArrow}>→</Text>
+                    </View>
                   </TouchableOpacity>
                 )}
               </Card>
@@ -298,14 +374,16 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* FAB */}
+      {/* ── FAB ──────────────────────────────────────────────── */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/(tabs)/home/add-recipient')}
         accessibilityLabel="新增被照護者"
         accessibilityRole="button"
+        activeOpacity={0.85}
       >
-        <Text style={styles.fabText}>＋</Text>
+        <Text style={styles.fabPlus}>＋</Text>
+        <Text style={styles.fabLabel}>新增</Text>
       </TouchableOpacity>
     </View>
   );
@@ -331,45 +409,86 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
 
-  // ─── Header ───────────────────────────────────────────────
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingRight: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  welcome: {
-    fontSize: typography.headingLg.fontSize,
-    fontWeight: typography.headingLg.fontWeight,
-    color: colors.textPrimary,
+  // ─── Header Zone ──────────────────────────────────────────
+  headerZone: {
+    backgroundColor: colors.bgSurface,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    ...shadows.low,
   },
-  sectionHint: {
-    fontSize: typography.bodySm.fontSize,
-    color: colors.textTertiary,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xxs,
-    paddingBottom: spacing.xs,
-  },
-  headerActions: {
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    justifyContent: 'space-between',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  avatarText: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  welcome: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: typography.headingMd.fontWeight,
+    color: colors.textPrimary,
+  },
+  sectionHint: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   bellButton: {
     position: 'relative',
     padding: spacing.sm,
+    borderRadius: radius.sm,
   },
   bellIcon: {
-    fontSize: 22,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+  },
+  bellBody: {
+    width: 14,
+    height: 12,
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+    backgroundColor: colors.textTertiary,
+  },
+  bellClapper: {
+    width: 6,
+    height: 3,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    backgroundColor: colors.textTertiary,
+    marginTop: 1,
   },
   badge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: spacing.xxs,
+    right: spacing.xxs,
     backgroundColor: colors.danger,
     borderRadius: radius.full,
     minWidth: 18,
@@ -377,107 +496,197 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xs,
+    borderWidth: 2,
+    borderColor: colors.bgSurface,
   },
   badgeText: {
     color: colors.white,
-    fontSize: typography.captionSm.fontSize,
+    fontSize: 10,
     fontWeight: '700',
   },
   logoutButton: {
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  logoutButtonStandalone: {
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.bgSurface,
+    marginTop: spacing.lg,
   },
   logoutText: {
-    color: colors.textTertiary,
-    fontSize: typography.bodySm.fontSize,
+    color: colors.textDisabled,
+    fontSize: typography.caption.fontSize,
     fontWeight: '500',
+  },
+
+  // ─── Stats Strip ──────────────────────────────────────────
+  statsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+  },
+  statItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  statNumber: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+  },
+  statDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: colors.borderDefault,
   },
 
   // ─── List ─────────────────────────────────────────────────
   list: {
     padding: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.lg,
+    paddingBottom: 90,
   },
 
   // ─── Recipient Card ───────────────────────────────────────
   recipientCard: {
-    marginBottom: spacing.md,
-    padding: 0,          // override Card default padding — inner sections handle their own
-    overflow: 'hidden',  // allow left-border accent to clip
-    borderLeftWidth: 4,
+    marginBottom: spacing.lg,
+    padding: 0,
+    overflow: 'hidden',
+    borderRadius: radius.lg,
   },
-  cardHeaderTouchable: {
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
+
+  // ── Card Header Zone (tinted) ─────────────────────────────
+  cardHeaderZone: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm + spacing.xxs,
   },
-  cardHeaderRow: {
+  cardNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cardNameGroup: {
+  cardIdentity: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
+  recipientAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    backgroundColor: colors.bgSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm + spacing.xxs,
+  },
+  recipientAvatarText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+  },
+  nameBlock: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
   cardName: {
     fontSize: typography.headingMd.fontSize,
-    fontWeight: typography.headingMd.fontWeight,
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   cardAge: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: typography.bodySm.fontSize,
     color: colors.textTertiary,
-    marginLeft: spacing.sm,
   },
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
+    marginLeft: 30 + spacing.sm + spacing.xxs, // align with name (after avatar)
   },
   tag: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + spacing.xxs,
+    paddingVertical: spacing.xxs + 1,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
   },
   tagText: {
-    fontSize: typography.caption.fontSize,
-    color: colors.primaryText,
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '500',
+    color: colors.textTertiary,
   },
 
-  // ─── Divider ──────────────────────────────────────────────
-  cardDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.borderDefault,
-    marginHorizontal: spacing.lg,
-  },
-
-  // ─── Summary Section ─────────────────────────────────────
-  summarySection: {
-    padding: spacing.lg,
+  // ── Summary Zone ──────────────────────────────────────────
+  summaryZone: {
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.bgSurface,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: spacing.sm,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textDisabled,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   reportDate: {
-    fontSize: typography.captionSm.fontSize,
+    fontSize: 10,
     color: colors.textDisabled,
-    marginBottom: spacing.xs,
+    fontWeight: '400',
   },
   summaryText: {
     fontSize: typography.bodyMd.fontSize,
     color: colors.textSecondary,
-    lineHeight: typography.bodyMd.fontSize * 1.5,
+    lineHeight: typography.bodyMd.fontSize * 1.6,
   },
-  viewDetail: {
+  viewReportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: spacing.md,
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    gap: spacing.xs,
+  },
+  viewReportText: {
     fontSize: typography.bodySm.fontSize,
-    color: colors.primary,
-    fontWeight: '500',
-    marginTop: spacing.sm,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+  viewReportArrow: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.primaryText,
   },
   summaryLoading: {
     flexDirection: 'row',
@@ -485,6 +694,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingTop: spacing.md,
     gap: spacing.sm,
+    backgroundColor: colors.bgSurface,
   },
   summaryLoadingText: {
     fontSize: typography.bodySm.fontSize,
@@ -499,19 +709,25 @@ const styles = StyleSheet.create({
   // ─── FAB ──────────────────────────────────────────────────
   fab: {
     position: 'absolute',
-    right: spacing.xl,
-    bottom: spacing.xl,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
+    right: spacing.lg,
+    bottom: spacing['2xl'] + spacing.sm,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md + spacing.xxs,
+    paddingVertical: spacing.sm + spacing.xxs,
+    borderRadius: spacing['2xl'],
+    gap: spacing.xs,
     ...shadows.high,
   },
-  fabText: {
-    fontSize: 28,
+  fabPlus: {
+    fontSize: typography.headingSm.fontSize,
     color: colors.white,
-    lineHeight: 32,
+    fontWeight: '600',
+  },
+  fabLabel: {
+    fontSize: typography.caption.fontSize,
+    color: colors.white,
+    fontWeight: '600',
   },
 });

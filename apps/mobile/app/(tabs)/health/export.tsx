@@ -11,6 +11,10 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { Card } from '@/components/ui/Card';
+
+// ─── Types ────────────────────────────────────────────────────
 
 interface Recipient {
   id: string;
@@ -18,6 +22,8 @@ interface Recipient {
 }
 
 type MeasurementType = 'blood_pressure' | 'blood_glucose';
+
+// ─── Component ────────────────────────────────────────────────
 
 export default function ExportScreen() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -44,7 +50,6 @@ export default function ExportScreen() {
 
   useEffect(() => {
     void fetchRecipients();
-    // Default date range: last 7 days
     const now = new Date();
     const from = new Date(now);
     from.setDate(from.getDate() - 7);
@@ -57,11 +62,9 @@ export default function ExportScreen() {
       setError('請選擇被照護者與日期範圍');
       return;
     }
-
     setLoading(true);
     setError('');
     setText('');
-
     try {
       const result = await api.get<{ text: string }>(
         `/measurements/export?recipient_id=${selectedRecipientId}&type=${type}&from=${fromDate}T00:00:00Z&to=${toDate}T23:59:59Z`,
@@ -84,131 +87,222 @@ export default function ExportScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>匯出分享</Text>
-
-      {/* Recipient selector */}
-      {recipients.length > 0 && (
-        <View style={styles.chipRow}>
-          {recipients.map((r) => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.chip, r.id === selectedRecipientId && styles.chipActive]}
-              onPress={() => setSelectedRecipientId(r.id)}
-            >
-              <Text style={[styles.chipText, r.id === selectedRecipientId && styles.chipTextActive]}>
-                {r.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Type selector */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[styles.toggleButton, type === 'blood_pressure' && styles.toggleActive]}
-          onPress={() => setType('blood_pressure')}
-        >
-          <Text style={[styles.toggleText, type === 'blood_pressure' && styles.toggleTextActive]}>血壓</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleButton, type === 'blood_glucose' && styles.toggleActive]}
-          onPress={() => setType('blood_glucose')}
-        >
-          <Text style={[styles.toggleText, type === 'blood_glucose' && styles.toggleTextActive]}>血糖</Text>
-        </TouchableOpacity>
+    <ScrollView style={styles.container}>
+      {/* ── Header Zone ──────────────────────────────────────── */}
+      <View style={styles.headerZone}>
+        <Text style={styles.title}>匯出分享</Text>
+        <Text style={styles.subtitle}>選擇條件後，產生文字摘要供分享給醫師或家人。</Text>
       </View>
 
-      {/* Date range */}
-      <Text style={styles.label}>起始日期</Text>
-      <TextInput
-        style={styles.input}
-        value={fromDate}
-        onChangeText={setFromDate}
-        placeholder="YYYY-MM-DD"
-      />
-
-      <Text style={styles.label}>結束日期</Text>
-      <TextInput
-        style={styles.input}
-        value={toDate}
-        onChangeText={setToDate}
-        placeholder="YYYY-MM-DD"
-      />
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <TouchableOpacity
-        style={[styles.generateButton, loading && styles.buttonDisabled]}
-        onPress={() => void handleGenerate()}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.generateText}>產生摘要</Text>
+      <View style={styles.content}>
+        {/* Recipient selector */}
+        {recipients.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>被照護者</Text>
+            <View style={styles.chipRow}>
+              {recipients.map((r) => {
+                const active = r.id === selectedRecipientId;
+                return (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setSelectedRecipientId(r.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {r.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
         )}
-      </TouchableOpacity>
 
-      {/* Preview */}
-      {text ? (
-        <View style={styles.previewBox}>
-          <Text style={styles.previewText}>{text}</Text>
-          <View style={styles.shareRow}>
-            <TouchableOpacity style={styles.shareButton} onPress={() => void handleCopy()}>
-              <Text style={styles.shareButtonText}>複製</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.shareButton} onPress={() => void handleShare()}>
-              <Text style={styles.shareButtonText}>分享</Text>
-            </TouchableOpacity>
+        {/* Type selector */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>量測類型</Text>
+          <View style={styles.toggleRow}>
+            {(['blood_pressure', 'blood_glucose'] as const).map((t) => {
+              const active = type === t;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.toggleChip, active && styles.toggleChipActive]}
+                  onPress={() => setType(t)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
+                    {t === 'blood_pressure' ? '血壓' : '血糖'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
-      ) : null}
+
+        {/* Date range */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>日期範圍</Text>
+          <View style={styles.dateRow}>
+            <View style={styles.dateField}>
+              <Text style={styles.dateHint}>起始</Text>
+              <TextInput
+                style={styles.input}
+                value={fromDate}
+                onChangeText={setFromDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textDisabled}
+                accessibilityLabel="起始日期"
+              />
+            </View>
+            <Text style={styles.dateSep}>至</Text>
+            <View style={styles.dateField}>
+              <Text style={styles.dateHint}>結束</Text>
+              <TextInput
+                style={styles.input}
+                value={toDate}
+                onChangeText={setToDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textDisabled}
+                accessibilityLabel="結束日期"
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Error */}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        {/* Generate */}
+        <TouchableOpacity
+          style={[styles.generateButton, loading && styles.buttonDisabled]}
+          onPress={() => void handleGenerate()}
+          disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={loading ? '產生中' : '產生摘要'}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.generateText}>產生摘要</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Preview result */}
+        {text ? (
+          <Card style={styles.previewCard}>
+            <Text style={styles.previewLabel}>摘要預覽</Text>
+            <Text style={styles.previewText}>{text}</Text>
+            <View style={styles.shareRow}>
+              <TouchableOpacity
+                style={styles.shareButton}
+                onPress={() => void handleCopy()}
+                accessibilityLabel="複製摘要"
+              >
+                <Text style={styles.shareButtonText}>複製</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.shareButton}
+                onPress={() => void handleShare()}
+                accessibilityLabel="分享摘要"
+              >
+                <Text style={styles.shareButtonText}>分享</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        ) : null}
+      </View>
     </ScrollView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  headerZone: {
+    backgroundColor: colors.bgSurface,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    ...shadows.low,
+  },
+  title: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary },
+  subtitle: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginTop: spacing.xs },
+  content: { padding: spacing.lg },
+
+  // ─── Sections ─────────────────────────────────────────────
+  section: { marginBottom: spacing.lg },
+  sectionLabel: {
+    fontSize: 10, fontWeight: '500', color: colors.textDisabled,
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.sm,
+  },
+
+  // ─── Chips ────────────────────────────────────────────────
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#e5e7eb',
+    paddingHorizontal: spacing.md + spacing.xxs, paddingVertical: spacing.sm,
+    borderRadius: radius.sm, backgroundColor: colors.bgSurfaceAlt,
   },
-  chipActive: { backgroundColor: '#3b82f6' },
-  chipText: { fontSize: 14, color: '#374151' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  toggleRow: { flexDirection: 'row', marginBottom: 12, gap: 8 },
-  toggleButton: {
-    flex: 1, paddingVertical: 10, borderRadius: 8,
-    backgroundColor: '#e5e7eb', alignItems: 'center',
+  chipActive: { backgroundColor: colors.primaryLight },
+  chipText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary },
+  chipTextActive: { color: colors.primaryText, fontWeight: '600' },
+
+  toggleRow: { flexDirection: 'row', gap: spacing.sm },
+  toggleChip: {
+    flex: 1, paddingVertical: spacing.sm + spacing.xxs, borderRadius: radius.sm,
+    backgroundColor: colors.bgSurfaceAlt, alignItems: 'center',
   },
-  toggleActive: { backgroundColor: '#3b82f6' },
-  toggleText: { fontSize: 15, fontWeight: '600', color: '#374151' },
-  toggleTextActive: { color: '#fff' },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 4, marginTop: 8 },
+  toggleChipActive: { backgroundColor: colors.primaryLight },
+  toggleText: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textTertiary },
+  toggleTextActive: { color: colors.primaryText },
+
+  // ─── Date Range ───────────────────────────────────────────
+  dateRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  dateField: { flex: 1 },
+  dateHint: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, marginBottom: spacing.xs },
+  dateSep: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, paddingBottom: spacing.md },
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db',
-    borderRadius: 8, padding: 12, fontSize: 16,
+    backgroundColor: colors.bgSurface, borderWidth: 1, borderColor: colors.borderStrong,
+    borderRadius: radius.sm, padding: spacing.md, fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
   },
-  error: { color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginTop: 8, fontSize: 14, overflow: 'hidden' },
+
+  // ─── Error ────────────────────────────────────────────────
+  errorBox: {
+    backgroundColor: colors.dangerLight, borderRadius: radius.sm,
+    padding: spacing.md, marginBottom: spacing.md,
+  },
+  errorText: { color: colors.danger, fontSize: typography.bodyMd.fontSize, textAlign: 'center' },
+
+  // ─── Generate ─────────────────────────────────────────────
   generateButton: {
-    backgroundColor: '#3b82f6', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 16,
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.5 },
-  generateText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  previewBox: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginTop: 16,
-    borderWidth: 1, borderColor: '#e5e7eb',
+  generateText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },
+
+  // ─── Preview Card ─────────────────────────────────────────
+  previewCard: { marginTop: spacing.lg, padding: spacing.lg },
+  previewLabel: {
+    fontSize: 10, fontWeight: '500', color: colors.textDisabled,
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.sm,
   },
-  previewText: { fontSize: 14, color: '#1f2937', lineHeight: 22 },
-  shareRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  previewText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary, lineHeight: typography.bodyMd.fontSize * 1.6 },
+  shareRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
   shareButton: {
-    flex: 1, backgroundColor: '#dbeafe', borderRadius: 12,
-    paddingVertical: 10, alignItems: 'center',
+    flex: 1, backgroundColor: colors.primaryLight, borderRadius: radius.sm,
+    paddingVertical: spacing.sm + spacing.xxs, alignItems: 'center',
   },
-  shareButtonText: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
+  shareButtonText: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.primaryText },
 });
