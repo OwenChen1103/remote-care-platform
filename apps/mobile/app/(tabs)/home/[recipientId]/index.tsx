@@ -12,6 +12,11 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { Card } from '@/components/ui/Card';
+import { ErrorState } from '@/components/ui/ErrorState';
+
+// ─── Types ────────────────────────────────────────────────────
 
 interface RecentMeasurement {
   id: string;
@@ -48,6 +53,8 @@ interface Reminder {
   updated_at: string;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────
+
 function formatGender(g: string | null): string {
   if (g === 'male') return '男';
   if (g === 'female') return '女';
@@ -66,6 +73,33 @@ function calculateAge(dob: string): number {
   return age;
 }
 
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return `今天 ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return '昨天';
+  return d.toLocaleDateString('zh-TW');
+}
+
+function formatGlucoseTiming(timing: string | null): string {
+  if (timing === 'fasting') return '空腹';
+  if (timing === 'before_meal') return '餐前';
+  if (timing === 'after_meal') return '餐後';
+  if (timing === 'random') return '隨機';
+  return '';
+}
+
+function getInitial(name: string): string {
+  return name.charAt(0);
+}
+
+// ─── Component ────────────────────────────────────────────────
+
 export default function RecipientDetailScreen() {
   const { recipientId } = useLocalSearchParams<{ recipientId: string }>();
   const router = useRouter();
@@ -82,14 +116,13 @@ export default function RecipientDetailScreen() {
     try {
       const data = await api.get<Recipient>(`/recipients/${recipientId}`);
       setRecipient(data);
-      // Fetch recent measurements and reminders (best-effort, don't block on failure)
       try {
         const measurements = await api.get<RecentMeasurement[]>(
           `/measurements?recipient_id=${recipientId}&limit=5`,
         );
         setRecentMeasurements(measurements);
       } catch {
-        // Non-critical — don't block detail view
+        // Non-critical
       }
       try {
         const reminderData = await api.get<Reminder[]>(`/recipients/${recipientId}/reminders`);
@@ -140,134 +173,213 @@ export default function RecipientDetailScreen() {
     void fetchRecipient();
   }, [fetchRecipient]);
 
+  // ─── Loading ───────────────────────────────────────────────────
+
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>載入中...</Text>
       </View>
     );
   }
+
+  // ─── Error ─────────────────────────────────────────────────────
 
   if (error || !recipient) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>{error || '找不到此被照護者'}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => void fetchRecipient()}>
-          <Text style={styles.retryText}>重試</Text>
-        </TouchableOpacity>
+        <ErrorState
+          message={error || '找不到此照護對象'}
+          onRetry={() => void fetchRecipient()}
+        />
       </View>
     );
   }
 
+  // ─── Main ──────────────────────────────────────────────────────
+
+  const abnormalCount = recentMeasurements.filter((m) => m.is_abnormal).length;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.name}>{recipient.name}</Text>
-        {recipient.date_of_birth && (
-          <Text style={styles.age}>{calculateAge(recipient.date_of_birth)} 歲</Text>
-        )}
-      </View>
 
-      {recipient.medical_tags.length > 0 && (
-        <View style={styles.tagsRow}>
-          {recipient.medical_tags.map((tag) => (
-            <View key={tag} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
+      {/* ═══ 1. Profile Hero Card ═══════════════════════════════ */}
+      <Card style={styles.profileCard}>
+        <View style={styles.profileTop}>
+          <View style={styles.profileIdentity}>
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarText}>{getInitial(recipient.name)}</Text>
             </View>
-          ))}
+            <View style={styles.profileNameBlock}>
+              <View style={styles.profileNameRow}>
+                <Text style={styles.profileName}>{recipient.name}</Text>
+                {recipient.date_of_birth && (
+                  <Text style={styles.profileAge}>{calculateAge(recipient.date_of_birth)} 歲</Text>
+                )}
+              </View>
+              {recipient.medical_tags.length > 0 && (
+                <View style={styles.profileTagsRow}>
+                  {recipient.medical_tags.map((tag) => (
+                    <View key={tag} style={styles.profileTag}>
+                      <Text style={styles.profileTagText}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Edit icon button — top right */}
+          <TouchableOpacity
+            style={styles.editIconButton}
+            onPress={() => router.push(`/(tabs)/home/${recipientId}/edit`)}
+            accessibilityLabel="編輯照護對象資料"
+          >
+            <Text style={styles.editIconText}>編輯</Text>
+          </TouchableOpacity>
         </View>
-      )}
 
-      <View style={styles.section}>
-        <Text style={styles.label}>性別</Text>
-        <Text style={styles.value}>{formatGender(recipient.gender)}</Text>
+        {/* Mini info grid inside profile card */}
+        <View style={styles.profileInfoGrid}>
+          <View style={styles.profileInfoItem}>
+            <Text style={styles.profileInfoLabel}>性別</Text>
+            <Text style={styles.profileInfoValue}>{formatGender(recipient.gender)}</Text>
+          </View>
+          <View style={styles.profileInfoDivider} />
+          <View style={styles.profileInfoItem}>
+            <Text style={styles.profileInfoLabel}>生日</Text>
+            <Text style={styles.profileInfoValue}>
+              {recipient.date_of_birth
+                ? new Date(recipient.date_of_birth).toLocaleDateString('zh-TW')
+                : '-'}
+            </Text>
+          </View>
+          {recipient.emergency_contact_name && (
+            <>
+              <View style={styles.profileInfoDivider} />
+              <View style={styles.profileInfoItem}>
+                <Text style={styles.profileInfoLabel}>緊急聯絡</Text>
+                <Text style={styles.profileInfoValue} numberOfLines={1}>
+                  {recipient.emergency_contact_name}
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* Notes — only if present */}
+        {recipient.notes ? (
+          <View style={styles.profileNotes}>
+            <Text style={styles.profileNotesLabel}>備註</Text>
+            <Text style={styles.profileNotesText}>{recipient.notes}</Text>
+          </View>
+        ) : null}
+      </Card>
+
+      {/* ═══ 2. Quick Actions ═══════════════════════════════════ */}
+      <View style={styles.actionsSection}>
+        <Text style={styles.sectionTitle}>快捷操作</Text>
+        <View style={styles.actionsGrid}>
+          {/* Primary actions — health recording */}
+          <TouchableOpacity
+            style={styles.actionCardPrimary}
+            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_pressure`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionLabel}>記錄血壓</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionCardPrimary}
+            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_glucose`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionLabel}>記錄血糖</Text>
+          </TouchableOpacity>
+          {/* Secondary actions */}
+          <TouchableOpacity
+            style={styles.actionCardSecondary}
+            onPress={() => router.push(`/(tabs)/health/trends?recipientId=${recipientId}`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionLabelSecondary}>看趨勢</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionCardSecondary}
+            onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipientId}`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionLabelSecondary}>行程管理</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>生日</Text>
-        <Text style={styles.value}>{recipient.date_of_birth ?? '-'}</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>緊急聯絡人</Text>
-        <Text style={styles.value}>
-          {recipient.emergency_contact_name ?? '-'}
-          {recipient.emergency_contact_phone ? `  ${recipient.emergency_contact_phone}` : ''}
-        </Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>備註</Text>
-        <Text style={styles.value}>{recipient.notes ?? '-'}</Text>
-      </View>
-
-      {/* Quick actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity
-          style={styles.quickButton}
-          onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_pressure`)}
-        >
-          <Text style={styles.quickButtonText}>記錄血壓</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickButton}
-          onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_glucose`)}
-        >
-          <Text style={styles.quickButtonText}>記錄血糖</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickButton}
-          onPress={() => router.push(`/(tabs)/health/trends?recipientId=${recipientId}`)}
-        >
-          <Text style={styles.quickButtonText}>看趨勢</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickButton}
-          onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipientId}`)}
-        >
-          <Text style={styles.quickButtonText}>行程管理</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recent measurements */}
+      {/* ═══ 3. Recent Measurements ════════════════════════════ */}
       {recentMeasurements.length > 0 && (
-        <View style={styles.recentSection}>
-          <Text style={styles.recentTitle}>最近量測</Text>
-          {recentMeasurements.map((m) => (
-            <View key={m.id} style={[styles.measurementRow, m.is_abnormal && styles.measurementAbnormal]}>
-              <Text style={styles.measurementType}>
-                {m.type === 'blood_pressure' ? '血壓' : '血糖'}
-              </Text>
-              <Text style={styles.measurementValue}>
-                {m.type === 'blood_pressure'
-                  ? `${m.systolic}/${m.diastolic}`
-                  : `${m.glucose_value}`}
-              </Text>
-              {m.is_abnormal && <Text style={styles.abnormalBadge}>異常</Text>}
-              <Text style={styles.measurementTime}>
-                {new Date(m.measured_at).toLocaleDateString('zh-TW')}
-              </Text>
-            </View>
-          ))}
+        <View style={styles.measurementsSection}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>最近量測</Text>
+            {abnormalCount > 0 && (
+              <View style={styles.abnormalCountBadge}>
+                <Text style={styles.abnormalCountText}>{abnormalCount} 筆偏高</Text>
+              </View>
+            )}
+          </View>
+          <Card style={styles.measurementsCard}>
+            {recentMeasurements.map((m, idx) => (
+              <View key={m.id}>
+                <View style={styles.measurementRow}>
+                  {/* Left: type indicator + value */}
+                  <View style={styles.measurementLeft}>
+                    <View style={[
+                      styles.measurementDot,
+                      { backgroundColor: m.is_abnormal ? colors.danger : colors.success },
+                    ]} />
+                    <View>
+                      <Text style={styles.measurementValue}>
+                        {m.type === 'blood_pressure'
+                          ? `${m.systolic}/${m.diastolic} mmHg`
+                          : `${m.glucose_value} mg/dL`}
+                      </Text>
+                      <Text style={styles.measurementMeta}>
+                        {m.type === 'blood_pressure' ? '血壓' : '血糖'}
+                        {m.glucose_timing ? ` · ${formatGlucoseTiming(m.glucose_timing)}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Right: status + date */}
+                  <View style={styles.measurementRight}>
+                    {m.is_abnormal && (
+                      <View style={styles.abnormalPill}>
+                        <Text style={styles.abnormalPillText}>偏高</Text>
+                      </View>
+                    )}
+                    <Text style={styles.measurementDate}>{formatDate(m.measured_at)}</Text>
+                  </View>
+                </View>
+                {idx < recentMeasurements.length - 1 && <View style={styles.measurementDivider} />}
+              </View>
+            ))}
+          </Card>
         </View>
       )}
 
-      {/* Reminder settings */}
+      {/* ═══ 4. Reminder Settings ══════════════════════════════ */}
       {reminders.length > 0 && (
-        <View style={styles.reminderSection}>
-          <Text style={styles.recentTitle}>量測提醒</Text>
+        <View style={styles.remindersSection}>
+          <Text style={styles.sectionTitle}>量測提醒</Text>
           {reminders.map((r) => {
             const label = r.reminder_type === 'morning' ? '早上提醒' : '晚上提醒';
             const isEditing = editingTime[r.reminder_type] !== undefined;
             return (
-              <View key={r.reminder_type} style={styles.reminderCard}>
+              <Card key={r.reminder_type} style={styles.reminderCard}>
                 <View style={styles.reminderRow}>
                   <Text style={styles.reminderLabel}>{label}</Text>
                   <Switch
                     value={r.is_enabled}
                     onValueChange={(val) => void toggleReminder(r.reminder_type, val)}
-                    trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-                    thumbColor={r.is_enabled ? '#3b82f6' : '#9ca3af'}
+                    trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
+                    thumbColor={r.is_enabled ? colors.primary : colors.textDisabled}
                   />
                 </View>
                 <View style={styles.reminderTimeRow}>
@@ -295,93 +407,344 @@ export default function RecipientDetailScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              </View>
+              </Card>
             );
           })}
         </View>
       )}
 
-      <TouchableOpacity
-        style={styles.editButton}
-        onPress={() => router.push(`/(tabs)/home/${recipientId}/edit`)}
-      >
-        <Text style={styles.editButtonText}>編輯</Text>
-      </TouchableOpacity>
+      {/* Bottom spacer */}
+      <View style={{ height: spacing['3xl'] }} />
     </ScrollView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  header: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 12 },
-  name: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
-  age: { fontSize: 16, color: '#6b7280', marginLeft: 10 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 },
-  tag: { backgroundColor: '#dbeafe', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  tagText: { fontSize: 13, color: '#1d4ed8' },
-  section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  label: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  value: { fontSize: 16, color: '#1f2937' },
-  quickActions: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 12 },
-  quickButton: {
-    flex: 1, backgroundColor: '#dbeafe', borderRadius: 12,
-    paddingVertical: 12, alignItems: 'center',
-  },
-  quickButtonText: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
-  recentSection: { marginTop: 8, marginBottom: 8 },
-  recentTitle: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  measurementRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#fff', borderRadius: 12, padding: 10, marginBottom: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2, elevation: 1,
-  },
-  measurementAbnormal: { borderLeftWidth: 3, borderLeftColor: '#dc2626' },
-  measurementType: { fontSize: 13, color: '#6b7280', width: 36 },
-  measurementValue: { fontSize: 15, fontWeight: '600', color: '#1f2937', flex: 1 },
-  abnormalBadge: {
-    fontSize: 11, fontWeight: '600', color: '#dc2626',
-    backgroundColor: '#fef2f2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-  },
-  measurementTime: { fontSize: 12, color: '#9ca3af' },
-  reminderSection: { marginTop: 16, marginBottom: 8 },
-  reminderCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
-  },
-  reminderRow: { flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const },
-  reminderLabel: { fontSize: 15, fontWeight: '600' as const, color: '#374151' },
-  reminderTimeRow: { marginTop: 8, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
-  reminderTime: { fontSize: 20, fontWeight: '700' as const, color: '#1f2937' },
-  reminderTimeHint: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
-  timeInput: {
-    borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 6, fontSize: 18, fontWeight: '600' as const,
-    color: '#1f2937', width: 80, textAlign: 'center' as const,
-  },
-  timeSaveButton: { backgroundColor: '#3b82f6', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  timeSaveText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
-  timeCancelText: { color: '#6b7280', fontSize: 14 },
-  editButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing['3xl'] },
+  center: {
+    flex: 1,
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.bgScreen,
   },
-  editButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  errorText: { fontSize: 14, color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, overflow: 'hidden' },
-  retryButton: { backgroundColor: '#3b82f6', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10 },
-  retryText: { color: '#fff', fontWeight: '600' },
+  loadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+
+  // ─── Profile Hero Card ─────────────────────────────────────
+  profileCard: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  profileTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  profileIdentity: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+  },
+  profileAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  profileAvatarText: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  profileNameBlock: {
+    flex: 1,
+    paddingTop: spacing.xxs,
+  },
+  profileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  profileName: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  profileAge: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textTertiary,
+  },
+  profileTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  profileTag: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + spacing.xxs,
+    paddingVertical: spacing.xxs + 1,
+  },
+  profileTagText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '500',
+    color: colors.primaryText,
+  },
+  editIconButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgSurfaceAlt,
+  },
+  editIconText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '500',
+    color: colors.textTertiary,
+  },
+
+  // Mini info grid
+  profileInfoGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
+  },
+  profileInfoItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  profileInfoLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.xxs,
+  },
+  profileInfoValue: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  profileInfoDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.borderDefault,
+  },
+
+  // Notes
+  profileNotes: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
+  },
+  profileNotesLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.xs,
+  },
+  profileNotesText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textSecondary,
+    lineHeight: typography.bodyMd.fontSize * 1.6,
+  },
+
+  // ─── Quick Actions ─────────────────────────────────────────
+  actionsSection: {
+    marginBottom: spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: typography.headingSm.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  actionCardPrimary: {
+    flex: 1,
+    minWidth: '45%' as unknown as number,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  actionCardSecondary: {
+    flex: 1,
+    minWidth: '45%' as unknown as number,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  actionLabel: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+  actionLabelSecondary: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+
+  // ─── Measurements ──────────────────────────────────────────
+  measurementsSection: {
+    marginBottom: spacing.xl,
+  },
+  abnormalCountBadge: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + spacing.xxs,
+    paddingVertical: spacing.xxs + 1,
+  },
+  abnormalCountText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '500',
+    color: colors.warning,
+  },
+  measurementsCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
+  measurementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  measurementLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  measurementDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: spacing.md,
+  },
+  measurementValue: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  measurementMeta: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginTop: spacing.xxs,
+  },
+  measurementRight: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  abnormalPill: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+  },
+  abnormalPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.warning,
+  },
+  measurementDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+  },
+  measurementDivider: {
+    height: 1,
+    backgroundColor: colors.borderDefault,
+    marginHorizontal: spacing.lg,
+  },
+
+  // ─── Reminders ─────────────────────────────────────────────
+  remindersSection: {
+    marginBottom: spacing.lg,
+  },
+  reminderCard: {
+    marginBottom: spacing.sm,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reminderLabel: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  reminderTimeRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  reminderTime: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  reminderTimeHint: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginTop: spacing.xxs,
+  },
+  timeInput: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    width: 80,
+    textAlign: 'center',
+  },
+  timeSaveButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  timeSaveText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+  },
+  timeCancelText: {
+    color: colors.textTertiary,
+    fontSize: typography.bodyMd.fontSize,
+  },
 });

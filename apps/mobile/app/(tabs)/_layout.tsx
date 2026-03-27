@@ -33,8 +33,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="ai/index"
         options={{
-          title: '安心報',
-          tabBarLabel: '安心報',
+          title: 'AI照護助理',
+          tabBarLabel: 'AI照護助理',
           ...visibleFor('caregiver'),
         }}
       />
