@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/admin/providers', label: '服務人員管理' },
   { href: '/admin/recipients', label: '被照護者總覽' },
   { href: '/admin/services', label: '服務類別管理' },
+  { href: '/admin/preview', label: '角色預覽' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

@@ -20,8 +20,20 @@ export async function GET(
       include: {
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
-        assigned_provider: { select: { id: true, name: true, phone: true } },
-        candidate_provider: { select: { id: true, name: true } },
+        assigned_provider: {
+          select: {
+            id: true, name: true, phone: true, level: true,
+            specialties: true, certifications: true,
+            experience_years: true, service_areas: true,
+          },
+        },
+        candidate_provider: {
+          select: {
+            id: true, name: true, phone: true, level: true,
+            specialties: true, certifications: true,
+            experience_years: true, service_areas: true,
+          },
+        },
       },
     });
 

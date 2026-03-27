@@ -8,6 +8,9 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Modal,
+  Pressable,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
@@ -25,8 +28,20 @@ interface Recipient {
   name: string;
   date_of_birth: string | null;
   gender: string | null;
+  relationship: string | null;
   medical_tags: string[];
   created_at: string;
+}
+
+const RELATIONSHIP_LABELS: Record<string, string> = {
+  father: '父親', mother: '母親', grandfather: '祖父', grandmother: '祖母',
+  spouse: '配偶', sibling: '兄弟姊妹', child: '子女', other: '其他',
+};
+
+/** Mask name: first char + ○ for remaining chars */
+function maskName(name: string): string {
+  if (name.length <= 1) return name;
+  return name.charAt(0) + '○'.repeat(name.length - 1);
 }
 
 interface LatestReport {
@@ -34,6 +49,14 @@ interface LatestReport {
   status_label: string;
   summary: string;
   generated_at: string;
+}
+
+interface Appointment {
+  id: string;
+  recipient_id: string;
+  title: string;
+  hospital_name: string | null;
+  appointment_date: string;
 }
 
 /** Per-recipient highlight for the overview card */
@@ -257,6 +280,9 @@ export default function HomeScreen() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<(Appointment & { recipientName: string; recipientRelationship: string | null })[]>([]);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [aiSheetVisible, setAiSheetVisible] = useState(false);
 
   // Spin animation for the refresh icon
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -332,6 +358,34 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const fetchUpcomingAppointments = useCallback(async (recipientList: Recipient[]) => {
+    if (recipientList.length === 0) return;
+    try {
+      const allAppts: (Appointment & { recipientName: string; recipientRelationship: string | null })[] = [];
+      await Promise.all(
+        recipientList.map(async (r) => {
+          try {
+            const appts = await api.get<Appointment[]>(
+              `/appointments?recipient_id=${r.id}&limit=3`,
+            );
+            for (const a of appts) {
+              allAppts.push({ ...a, recipientName: r.name, recipientRelationship: r.relationship });
+            }
+          } catch {
+            // Non-critical
+          }
+        }),
+      );
+      // Sort by appointment_date ascending, take first 3
+      allAppts.sort(
+        (a, b) => new Date(a.appointment_date).getTime() - new Date(b.appointment_date).getTime(),
+      );
+      setUpcomingAppointments(allAppts.slice(0, 3));
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
   /** Regenerate AI reports for all recipients, then refresh the overview */
   const regenerateOverview = useCallback(async () => {
     if (refreshing || recipients.length === 0) return;
@@ -367,8 +421,9 @@ export default function HomeScreen() {
   useEffect(() => {
     if (recipients.length > 0) {
       void fetchLatestReports(recipients);
+      void fetchUpcomingAppointments(recipients);
     }
-  }, [recipients, fetchLatestReports]);
+  }, [recipients, fetchLatestReports, fetchUpcomingAppointments]);
 
   // ─── Derived Data ──────────────────────────────────────────────
 
@@ -673,6 +728,50 @@ export default function HomeScreen() {
     );
   };
 
+  // ─── Render: Upcoming Appointments Footer ────────────────────
+
+  const renderAppointmentsFooter = () => {
+    if (upcomingAppointments.length === 0) return null;
+    return (
+      <View style={styles.apptSection}>
+        <Text style={styles.apptSectionTitle}>近期行程</Text>
+        {upcomingAppointments.map((appt) => {
+          const d = new Date(appt.appointment_date);
+          const dateStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+          const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          return (
+            <Card key={appt.id} style={styles.apptCard}>
+              <View style={styles.apptRow}>
+                <View style={styles.apptDateBadge}>
+                  <Text style={styles.apptDateText}>{dateStr}</Text>
+                  <Text style={styles.apptTimeText}>{timeStr}</Text>
+                </View>
+                <View style={styles.apptInfo}>
+                  <Text style={styles.apptTitle} numberOfLines={1}>{appt.title}</Text>
+                  <Text style={styles.apptMeta} numberOfLines={1}>
+                    {appt.recipientRelationship
+                      ? `${RELATIONSHIP_LABELS[appt.recipientRelationship] ?? appt.recipientRelationship} — ${maskName(appt.recipientName)}`
+                      : maskName(appt.recipientName)}
+                    {appt.hospital_name ? ` · ${appt.hospital_name}` : ''}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          );
+        })}
+        {recipients.length === 1 && recipients[0] && (
+          <TouchableOpacity
+            style={styles.apptViewAll}
+            onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipients[0]!.id}`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.apptViewAllText}>查看全部行程 →</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   // ─── Main Render ──────────────────────────────────────────────
 
   return (
@@ -705,14 +804,122 @@ export default function HomeScreen() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
+              style={styles.aiQuickButton}
+              onPress={() => setAiSheetVisible(true)}
+              accessibilityLabel="AI 安心報"
             >
-              <Text style={styles.logoutText}>登出</Text>
+              <Text style={styles.aiQuickIcon}>AI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => setMenuVisible(true)}
+              accessibilityLabel="選單"
+            >
+              <Text style={styles.menuIcon}>☰</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Menu Modal */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
+          <Pressable style={styles.menuSheet} onPress={() => {/* block bubble */}}>
+            <Text style={styles.menuTitle}>選單</Text>
+            {[
+              { label: '個人資料管理', onPress: () => router.push('/(tabs)/home/profile') },
+              { label: '服務需求紀錄', onPress: () => router.push('/(tabs)/services') },
+              { label: '通知', onPress: () => router.push('/(tabs)/home/notifications') },
+              { label: '安心報', onPress: () => router.push('/(tabs)/ai') },
+              { label: '提醒設定', onPress: () => {
+                const firstId = recipients[0]?.id;
+                if (firstId) {
+                  router.push(`/(tabs)/home/${firstId}`);
+                } else {
+                  Alert.alert('提示', '請先新增被照護者');
+                }
+              } },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                style={styles.menuItem}
+                onPress={() => { setMenuVisible(false); item.onPress(); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.menuItemText}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.menuDivider} />
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                void logout().then(() => router.replace('/(auth)/login'));
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.menuItemTextDanger}>登出</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* AI BottomSheet */}
+      <Modal
+        visible={aiSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAiSheetVisible(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setAiSheetVisible(false)}>
+          <Pressable style={styles.aiSheet} onPress={() => {/* block bubble */}}>
+            <Text style={styles.aiSheetTitle}>AI 安心報</Text>
+            {hasAnyReports ? (
+              <>
+                {sortedRecipients.slice(0, 3).map((r) => {
+                  const rpt = latestReports[r.id];
+                  if (!rpt) return null;
+                  const dotColor = STATUS_DOT[rpt.status_label] ?? colors.textDisabled;
+                  return (
+                    <View key={r.id} style={styles.aiSheetItem}>
+                      <View style={[styles.aiSheetDot, { backgroundColor: dotColor }]} />
+                      <View style={styles.aiSheetItemContent}>
+                        <Text style={styles.aiSheetName}>{r.name}</Text>
+                        <Text style={styles.aiSheetSummary} numberOfLines={2}>{rpt.summary}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+                <TouchableOpacity
+                  style={styles.aiSheetCta}
+                  onPress={() => { setAiSheetVisible(false); router.push('/(tabs)/ai'); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.aiSheetCtaText}>查看完整安心報 →</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.aiSheetEmpty}>
+                  還沒有安心報，點擊下方生成第一份報告。
+                </Text>
+                <TouchableOpacity
+                  style={styles.aiSheetCta}
+                  onPress={() => { setAiSheetVisible(false); router.push('/(tabs)/ai'); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.aiSheetCtaText}>前往 AI 安心報 →</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Content */}
       {recipients.length === 0 ? (
@@ -728,6 +935,7 @@ export default function HomeScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.singleList}
           renderItem={renderLargeCard}
+          ListFooterComponent={renderAppointmentsFooter}
         />
       ) : (
         <FlatList
@@ -736,19 +944,29 @@ export default function HomeScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={renderCareOverview}
           renderItem={renderRecipientTile}
+          ListFooterComponent={renderAppointmentsFooter}
         />
       )}
 
-      {/* FAB */}
+      {/* FABs */}
       <TouchableOpacity
-        style={styles.fab}
+        style={styles.fabSecondary}
         onPress={() => router.push('/(tabs)/home/add-recipient')}
         accessibilityLabel="新增被照護者"
         accessibilityRole="button"
         activeOpacity={0.85}
       >
-        <Text style={styles.fabPlus}>＋</Text>
-        <Text style={styles.fabLabel}>新增</Text>
+        <Text style={styles.fabSecondaryPlus}>＋</Text>
+        <Text style={styles.fabSecondaryLabel}>新增家人</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/(tabs)/services/new-request')}
+        accessibilityLabel="服務需求"
+        accessibilityRole="button"
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabLabel}>服務需求</Text>
       </TouchableOpacity>
     </View>
   );
@@ -829,10 +1047,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs, borderWidth: 2, borderColor: colors.bgSurface,
   },
   badgeText: { color: colors.white, fontSize: 10, fontWeight: '700' },
-  logoutButton: {
+  menuButton: {
+    padding: spacing.sm,
     borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+  },
+  menuIcon: {
+    fontSize: typography.headingLg.fontSize,
+    color: colors.textTertiary,
   },
   logoutButtonStandalone: {
     borderRadius: radius.sm,
@@ -845,6 +1066,115 @@ const styles = StyleSheet.create({
     color: colors.textDisabled,
     fontSize: typography.caption.fontSize,
     fontWeight: '500',
+  },
+
+  // ─── Menu Modal ──────────────────────────────────────────
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: colors.bgSurface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.lg,
+  },
+  menuTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: typography.headingSm.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+  menuItem: {
+    paddingVertical: spacing.md + spacing.xxs,
+  },
+  menuItemText: {
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.textPrimary,
+  },
+  menuItemTextDanger: {
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.danger,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: colors.borderDefault,
+    marginVertical: spacing.sm,
+  },
+
+  // ─── AI Quick Button ──────────────────────────────────────
+  aiQuickButton: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm + spacing.xxs,
+    paddingVertical: spacing.xs + 1,
+  },
+  aiQuickIcon: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+
+  // ─── AI BottomSheet ──────────────────────────────────────
+  aiSheet: {
+    backgroundColor: colors.bgSurface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.lg,
+    maxHeight: '60%' as unknown as number,
+  },
+  aiSheetTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: typography.headingSm.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+  aiSheetItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  aiSheetDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 5,
+  },
+  aiSheetItemContent: { flex: 1 },
+  aiSheetName: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xxs,
+  },
+  aiSheetSummary: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    lineHeight: typography.bodySm.fontSize * 1.5,
+  },
+  aiSheetEmpty: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.lg,
+  },
+  aiSheetCta: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm + spacing.xxs,
+    paddingHorizontal: spacing.lg,
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+  },
+  aiSheetCtaText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
   },
 
   // ─── Central AI Summary Card ───────────────────────────────
@@ -1076,20 +1406,94 @@ const styles = StyleSheet.create({
     fontSize: typography.bodyMd.fontSize, color: colors.textDisabled, marginBottom: spacing.xs,
   },
 
-  // ─── FAB ───────────────────────────────────────────────────
+  // ─── Upcoming Appointments Section ───────────────────────
+  apptSection: {
+    marginTop: spacing.lg,
+  },
+  apptSectionTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: typography.headingSm.fontWeight,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  apptCard: {
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  apptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  apptDateBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minWidth: 52,
+  },
+  apptDateText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  apptTimeText: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.primaryText,
+    marginTop: 1,
+  },
+  apptInfo: { flex: 1 },
+  apptTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  apptMeta: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+  },
+  apptViewAll: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+  },
+  apptViewAllText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+
+  // ─── FABs ──────────────────────────────────────────────────
   fab: {
     position: 'absolute', right: spacing.lg, bottom: spacing['2xl'] + spacing.sm,
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md + spacing.xxs,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + spacing.xxs,
     borderRadius: spacing['2xl'], gap: spacing.xs,
     ...shadows.high,
   },
-  fabPlus: {
-    fontSize: typography.headingSm.fontSize, color: colors.white, fontWeight: '600',
-  },
   fabLabel: {
     fontSize: typography.caption.fontSize, color: colors.white, fontWeight: '600',
+  },
+  fabSecondary: {
+    position: 'absolute', right: spacing.lg,
+    // Primary FAB height (~34px) + gap (spacing.sm=8) above the primary FAB
+    bottom: spacing['2xl'] + spacing.sm + 34 + spacing.sm,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bgSurface,
+    paddingHorizontal: spacing.md + spacing.xxs,
+    paddingVertical: spacing.sm,
+    borderRadius: spacing['2xl'], gap: spacing.xs,
+    borderWidth: 1, borderColor: colors.borderStrong,
+    ...shadows.low,
+  },
+  fabSecondaryPlus: {
+    fontSize: typography.bodyMd.fontSize, color: colors.primaryText, fontWeight: '600',
+  },
+  fabSecondaryLabel: {
+    fontSize: typography.captionSm.fontSize, color: colors.textSecondary, fontWeight: '500',
   },
 });

@@ -11,10 +11,12 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Svg, { Circle } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { calculateHealthScore, HEALTH_LEVEL_LABELS } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -41,6 +43,27 @@ interface Recipient {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface Appointment {
+  id: string;
+  title: string;
+  hospital_name: string | null;
+  department: string | null;
+  appointment_date: string;
+}
+
+interface LatestReport {
+  status_label: string;
+  summary: string;
+}
+
+interface MeasurementStats {
+  count: number;
+  abnormal_count: number;
+  systolic?: { avg: number };
+  diastolic?: { avg: number };
+  glucose_value?: { avg: number };
 }
 
 interface Reminder {
@@ -105,6 +128,10 @@ export default function RecipientDetailScreen() {
   const router = useRouter();
   const [recipient, setRecipient] = useState<Recipient | null>(null);
   const [recentMeasurements, setRecentMeasurements] = useState<RecentMeasurement[]>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
+  const [latestReport, setLatestReport] = useState<LatestReport | null>(null);
+  const [bpStats, setBpStats] = useState<MeasurementStats | null>(null);
+  const [bgStats, setBgStats] = useState<MeasurementStats | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [editingTime, setEditingTime] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -121,6 +148,33 @@ export default function RecipientDetailScreen() {
           `/measurements?recipient_id=${recipientId}&limit=5`,
         );
         setRecentMeasurements(measurements);
+      } catch {
+        // Non-critical
+      }
+      // Fetch health overview data (non-critical)
+      try {
+        const reports = await api.get<LatestReport[]>(
+          `/ai/reports?recipient_id=${recipientId}&report_type=health_summary&limit=1`,
+        );
+        if (reports[0]) setLatestReport(reports[0]);
+      } catch { /* Non-critical */ }
+      try {
+        const bp = await api.get<MeasurementStats>(
+          `/measurements/stats?recipient_id=${recipientId}&type=blood_pressure&period=7d`,
+        );
+        setBpStats(bp);
+      } catch { /* Non-critical */ }
+      try {
+        const bg = await api.get<MeasurementStats>(
+          `/measurements/stats?recipient_id=${recipientId}&type=blood_glucose&period=7d`,
+        );
+        setBgStats(bg);
+      } catch { /* Non-critical */ }
+      try {
+        const appts = await api.get<Appointment[]>(
+          `/appointments?recipient_id=${recipientId}&limit=2`,
+        );
+        setUpcomingAppointments(appts);
       } catch {
         // Non-critical
       }
@@ -277,7 +331,100 @@ export default function RecipientDetailScreen() {
         ) : null}
       </Card>
 
-      {/* ═══ 2. Quick Actions ═══════════════════════════════════ */}
+      {/* ═══ 2. Health Overview Card + Score Ring ═════════════════ */}
+      {(latestReport || bpStats || bgStats) && (() => {
+        const healthResult = calculateHealthScore({
+          bpStats, bgStats,
+          aiStatusLabel: latestReport?.status_label ?? null,
+        });
+        const SCORE_COLORS: Record<string, string> = {
+          excellent: colors.success, good: colors.primary,
+          fair: colors.warning, poor: colors.danger,
+        };
+        const ringColor = SCORE_COLORS[healthResult.level] ?? colors.textDisabled;
+        const ringSize = 80;
+        const strokeWidth = 6;
+        const ringRadius = (ringSize - strokeWidth) / 2;
+        const circumference = 2 * Math.PI * ringRadius;
+        const progress = healthResult.score / 100;
+        const strokeDashoffset = circumference * (1 - progress);
+
+        return (
+          <Card style={styles.overviewCard}>
+            {/* Score ring + status */}
+            <View style={styles.scoreRow}>
+              <View style={styles.scoreRingContainer}>
+                <Svg width={ringSize} height={ringSize}>
+                  <Circle
+                    cx={ringSize / 2} cy={ringSize / 2} r={ringRadius}
+                    stroke={colors.borderDefault} strokeWidth={strokeWidth} fill="none"
+                  />
+                  <Circle
+                    cx={ringSize / 2} cy={ringSize / 2} r={ringRadius}
+                    stroke={ringColor} strokeWidth={strokeWidth} fill="none"
+                    strokeDasharray={`${circumference}`}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
+                  />
+                </Svg>
+                <View style={styles.scoreCenter}>
+                  <Text style={[styles.scoreNumber, { color: ringColor }]}>{healthResult.score}</Text>
+                  <Text style={styles.scoreLevelText}>
+                    {HEALTH_LEVEL_LABELS[healthResult.level]}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.scoreInfo}>
+                {latestReport && (
+                  <Text style={styles.overviewSummary} numberOfLines={3}>
+                    {latestReport.summary}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Key metrics */}
+            <View style={styles.overviewMetrics}>
+            {bpStats && bpStats.count > 0 && bpStats.systolic && bpStats.diastolic && (
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>7 日平均血壓</Text>
+                <Text style={styles.metricValue}>
+                  {Math.round(bpStats.systolic.avg)}/{Math.round(bpStats.diastolic.avg)}
+                </Text>
+                <Text style={styles.metricUnit}>mmHg</Text>
+              </View>
+            )}
+            {bgStats && bgStats.count > 0 && bgStats.glucose_value && (
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>7 日平均血糖</Text>
+                <Text style={styles.metricValue}>
+                  {Math.round(bgStats.glucose_value.avg)}
+                </Text>
+                <Text style={styles.metricUnit}>mg/dL</Text>
+              </View>
+            )}
+            {(bpStats || bgStats) && (
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>7 日異常</Text>
+                <Text style={[
+                  styles.metricValue,
+                  ((bpStats?.abnormal_count ?? 0) + (bgStats?.abnormal_count ?? 0)) > 0
+                    ? { color: colors.danger }
+                    : undefined,
+                ]}>
+                  {(bpStats?.abnormal_count ?? 0) + (bgStats?.abnormal_count ?? 0)}
+                </Text>
+                <Text style={styles.metricUnit}>筆</Text>
+              </View>
+            )}
+          </View>
+          </Card>
+        );
+      })()}
+
+      {/* ═══ 3. Quick Actions ═══════════════════════════════════ */}
       <View style={styles.actionsSection}>
         <Text style={styles.sectionTitle}>快捷操作</Text>
         <View style={styles.actionsGrid}>
@@ -364,7 +511,44 @@ export default function RecipientDetailScreen() {
         </View>
       )}
 
-      {/* ═══ 4. Reminder Settings ══════════════════════════════ */}
+      {/* ═══ 4. Upcoming Appointments ═══════════════════════════ */}
+      {upcomingAppointments.length > 0 && (
+        <View style={styles.appointmentsSection}>
+          <Text style={styles.sectionTitle}>近期行程</Text>
+          {upcomingAppointments.map((appt) => {
+            const d = new Date(appt.appointment_date);
+            const dateStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+            const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            return (
+              <Card key={appt.id} style={styles.appointmentCard}>
+                <View style={styles.appointmentRow}>
+                  <View style={styles.appointmentDateBadge}>
+                    <Text style={styles.appointmentDateText}>{dateStr}</Text>
+                    <Text style={styles.appointmentTimeText}>{timeStr}</Text>
+                  </View>
+                  <View style={styles.appointmentInfo}>
+                    <Text style={styles.appointmentTitle} numberOfLines={1}>{appt.title}</Text>
+                    {(appt.hospital_name || appt.department) && (
+                      <Text style={styles.appointmentMeta} numberOfLines={1}>
+                        {[appt.hospital_name, appt.department].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </Card>
+            );
+          })}
+          <TouchableOpacity
+            style={styles.appointmentLink}
+            onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipientId}`)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.appointmentLinkText}>管理行程 →</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ═══ 5. Reminder Settings ══════════════════════════════ */}
       {reminders.length > 0 && (
         <View style={styles.remindersSection}>
           <Text style={styles.sectionTitle}>量測提醒</Text>
@@ -562,6 +746,93 @@ const styles = StyleSheet.create({
   },
 
   // ─── Quick Actions ─────────────────────────────────────────
+  // ─── Health Score + Overview Card ──────────────────────────
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  scoreRingContainer: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+  },
+  scoreCenter: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreNumber: {
+    fontSize: typography.headingXl.fontSize,
+    fontWeight: '700',
+  },
+  scoreLevelText: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: -2,
+  },
+  scoreInfo: {
+    flex: 1,
+  },
+  overviewCard: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  overviewStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  overviewDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  overviewStatusText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  overviewSummary: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    flex: 1,
+    marginLeft: spacing.xs,
+  },
+  overviewMetrics: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  metricItem: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  metricLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginBottom: spacing.xs,
+  },
+  metricValue: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  metricUnit: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginTop: spacing.xxs,
+  },
+
+  // ─── Quick Actions ───────────────────────────────────────
   actionsSection: {
     marginBottom: spacing.xl,
   },
@@ -685,6 +956,59 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.borderDefault,
     marginHorizontal: spacing.lg,
+  },
+
+  // ─── Upcoming Appointments ─────────────────────────────────
+  appointmentsSection: {
+    marginBottom: spacing.lg,
+  },
+  appointmentCard: {
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  appointmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  appointmentDateBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minWidth: 52,
+  },
+  appointmentDateText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  appointmentTimeText: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.primaryText,
+    marginTop: 1,
+  },
+  appointmentInfo: { flex: 1 },
+  appointmentTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  appointmentMeta: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+  },
+  appointmentLink: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+  },
+  appointmentLinkText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
   },
 
   // ─── Reminders ─────────────────────────────────────────────

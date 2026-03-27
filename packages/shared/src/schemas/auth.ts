@@ -23,6 +23,8 @@ export const UpdateProfileSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   phone: z.string().max(20).optional(),
   timezone: z.string().optional(),
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式需為 YYYY-MM-DD').optional().nullable(),
+  address: z.string().max(500, '地址不得超過 500 字').optional().nullable(),
 });
 
 export const UserResponseSchema = z.object({
@@ -32,6 +34,8 @@ export const UserResponseSchema = z.object({
   role: z.enum(['caregiver', 'patient', 'provider', 'admin']),
   phone: z.string().nullable(),
   timezone: z.string(),
+  date_of_birth: z.string().nullable(),
+  address: z.string().nullable(),
   created_at: z.string(),
 });
 

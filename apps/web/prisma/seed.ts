@@ -417,14 +417,15 @@ function requireServiceCategory(categories: SeedServiceCategory[], code: string)
 
 async function seedServiceCategories(): Promise<SeedServiceCategory[]> {
   const categories = [
+    // Priority order per client request: escort → assessment → exercise → cleaning first
     { code: 'escort_visit', name: '陪診師', description: '陪同就醫與流程協助', sort_order: 1 },
-    { code: 'pre_visit_consult', name: '診前諮詢', description: '就醫前需求評估與準備建議', sort_order: 2 },
-    { code: 'shopping_assist', name: '購物服務', description: '代購或陪同採買協助', sort_order: 3 },
-    { code: 'exercise_program', name: '運動項目', description: '居家運動陪伴與安排', sort_order: 4 },
-    { code: 'home_cleaning', name: '打掃清潔', description: '居家清潔服務需求', sort_order: 5 },
+    { code: 'functional_assessment', name: '身體功能檢測', description: '身體功能評估需求', sort_order: 2 },
+    { code: 'exercise_program', name: '運動項目', description: '居家運動陪伴與安排', sort_order: 3 },
+    { code: 'home_cleaning', name: '打掃清潔', description: '居家清潔服務需求', sort_order: 4 },
+    { code: 'pre_visit_consult', name: '診前諮詢', description: '就醫前需求評估與準備建議', sort_order: 5 },
     { code: 'daily_living_support', name: '生活輔助', description: '日常生活協助服務', sort_order: 6 },
     { code: 'nutrition_consult', name: '營養表諮詢', description: '營養建議與飲食諮詢', sort_order: 7 },
-    { code: 'functional_assessment', name: '身體功能檢測', description: '身體功能評估需求', sort_order: 8 },
+    { code: 'shopping_assist', name: '購物服務', description: '代購或陪同採買協助', sort_order: 8 },
   ];
 
   for (const category of categories) {

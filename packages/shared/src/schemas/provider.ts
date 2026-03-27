@@ -20,13 +20,17 @@ export const ProviderReviewSchema = z.object({
   admin_note: z.string().optional(),
 });
 
-// Self-service: providers can update these fields only (not level, review_status, email, name)
+// Self-service: providers can update these fields (not level, review_status)
 export const ProviderSelfUpdateSchema = z.object({
   phone: z.string().max(20).optional(),
+  education: z.string().max(200).optional().nullable(),
   specialties: z.array(z.string()).optional(),
   certifications: z.array(z.string()).optional(),
   experience_years: z.number().int().min(0).optional(),
   service_areas: z.array(z.string()).optional(),
+  available_services: z.array(z.string()).optional(),
+  available_schedule: z.record(z.array(z.string())).optional(),
+  schedule_note: z.string().max(500).optional().nullable(),
   availability_status: z.enum(['available', 'busy', 'offline']).optional(),
 });
 

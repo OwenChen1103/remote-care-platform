@@ -33,6 +33,23 @@ export async function PUT(
         admin_note: parsed.data.admin_note ?? existing.admin_note,
       },
     });
+
+    // Send notification to the provider about review result
+    if (existing.user_id) {
+      const isApproved = parsed.data.review_status === 'approved';
+      await prisma.notification.create({
+        data: {
+          user_id: existing.user_id,
+          type: 'provider_review_result',
+          title: isApproved ? '審核通過' : '審核未通過',
+          body: isApproved
+            ? '恭喜！您的服務人員資格已通過審核，現在可以開始接案。'
+            : `您的服務人員資格審核未通過。${parsed.data.admin_note ? `原因：${parsed.data.admin_note}` : '請聯繫客服了解詳情。'}`,
+          data: { provider_id: id, review_status: parsed.data.review_status },
+        },
+      });
+    }
+
     return successResponse(updated);
   } catch {
     return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
