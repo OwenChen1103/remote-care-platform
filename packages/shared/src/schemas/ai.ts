@@ -107,6 +107,32 @@ export const AI_CHAT_OUTPUT_SCHEMAS = {
   visit_questions: VisitQuestionsOutputSchema,
 } as const;
 
+// ─── Assistant Request Schema (Phase 2 — bounded free-text) ──
+
+/** All supported task families for classification */
+export const AI_TASK_FAMILY_VALUES = [
+  ...AI_REPORT_TYPE_VALUES,
+  ...AI_CHAT_TASK_VALUES,
+] as const;
+
+export const AiAssistantPreviousContextSchema = z.object({
+  user_message: z.string().max(200),
+  routed_task: z.string().max(30),
+  response_summary: z.string().max(200),
+}).strict();
+
+export const AiAssistantRequestSchema = z.object({
+  recipient_id: z.string().uuid(),
+  message: z.string().min(1).max(500),
+  previous_context: AiAssistantPreviousContextSchema.optional(),
+});
+
+export const AiInteractionListQuerySchema = z.object({
+  recipient_id: z.string().uuid(),
+  page: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().min(1).default(1)),
+  limit: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().min(1).max(50).default(10)),
+});
+
 // ─── Inferred Types ───────────────────────────────────────────
 
 export type HealthReportCreateInput = z.infer<typeof HealthReportCreateSchema>;
@@ -122,3 +148,6 @@ export type VisitQuestionsOutput = z.infer<typeof VisitQuestionsOutputSchema>;
 
 // AiReportType and AiStatusLabel are already exported from constants/enums.ts
 export type AiChatTask = (typeof AI_CHAT_TASK_VALUES)[number];
+export type AiAssistantRequest = z.infer<typeof AiAssistantRequestSchema>;
+export type AiInteractionListQuery = z.infer<typeof AiInteractionListQuerySchema>;
+export type AiTaskFamily = (typeof AI_TASK_FAMILY_VALUES)[number];

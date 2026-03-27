@@ -149,10 +149,28 @@ ${formatMeasurementContext(ctx.measurements)}
 - reminders: 看診提醒陣列（1-5項）`,
 };
 
-export function buildReportPrompt(type: AiReportType, ctx: PromptContext): { system: string; user: string } {
-  return { system: SYSTEM_RULES, user: REPORT_PROMPTS[type](ctx) };
+export interface FollowUpContext {
+  user_message: string;
+  routed_task: string;
+  response_summary: string;
 }
 
-export function buildChatPrompt(task: AiChatTask, ctx: PromptContext): { system: string; user: string } {
-  return { system: SYSTEM_RULES, user: CHAT_PROMPTS[task](ctx) };
+function formatFollowUpBlock(prev: FollowUpContext): string {
+  return `\n\n前次互動（供參考）：
+使用者問：「${prev.user_message}」
+助理回覆摘要：${prev.response_summary}
+
+使用者現在接著詢問相關問題，請參考上述脈絡回覆。`;
+}
+
+export function buildReportPrompt(type: AiReportType, ctx: PromptContext, followUp?: FollowUpContext): { system: string; user: string } {
+  let user = REPORT_PROMPTS[type](ctx);
+  if (followUp) user += formatFollowUpBlock(followUp);
+  return { system: SYSTEM_RULES, user };
+}
+
+export function buildChatPrompt(task: AiChatTask, ctx: PromptContext, followUp?: FollowUpContext): { system: string; user: string } {
+  let user = CHAT_PROMPTS[task](ctx);
+  if (followUp) user += formatFollowUpBlock(followUp);
+  return { system: SYSTEM_RULES, user };
 }

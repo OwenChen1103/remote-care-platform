@@ -243,7 +243,7 @@ export default function AiReportScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Page title */}
-      <Text style={styles.pageTitle}>AI 放心報</Text>
+      <Text style={styles.pageTitle}>安心報</Text>
 
       {/* Recipient selector */}
       {recipients.length > 1 && (

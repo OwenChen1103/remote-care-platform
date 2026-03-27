@@ -47,6 +47,7 @@ model Recipient {
   patient_user          User?                @relation("PatientRecipient", fields: [patient_user_id], references: [id])
   measurements          Measurement[]
   ai_reports            AiReport[]
+  ai_interactions       AiInteraction[]
   appointments          Appointment[]
   service_requests      ServiceRequest[]
   measurement_reminders MeasurementReminder[]
@@ -100,6 +101,28 @@ model AiReport {
 
   @@index([recipient_id, generated_at(sort: Desc)])
   @@map("ai_reports")
+}
+
+model AiInteraction {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipient_id  String   @db.Uuid
+  user_id       String   @db.Uuid
+  user_message  String   @db.Text
+  routed_task   String   @db.VarChar(30)
+  response      Json
+  disclaimer    String   @db.Text
+  is_fallback   Boolean  @default(false)
+  is_followup   Boolean  @default(false)
+  model         String?  @db.VarChar(50)
+  input_tokens  Int?
+  output_tokens Int?
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  recipient Recipient @relation(fields: [recipient_id], references: [id])
+
+  @@index([recipient_id, created_at(sort: Desc)])
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("ai_interactions")
 }
 
 model Appointment {

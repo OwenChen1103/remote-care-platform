@@ -4,7 +4,7 @@ import { AI_LIMITS } from '@remote-care/shared';
 import type { AiReportType, AiChatTask } from '@remote-care/shared';
 import { AI_OUTPUT_SCHEMAS, AI_CHAT_OUTPUT_SCHEMAS } from '@remote-care/shared';
 import { buildReportPrompt, buildChatPrompt } from './ai-prompts';
-import type { PromptContext } from './ai-prompts';
+import type { PromptContext, FollowUpContext } from './ai-prompts';
 
 function getClient(): OpenAI {
   const baseURL = process.env.OPENAI_BASE_URL ?? undefined;
@@ -118,8 +118,9 @@ async function callOpenAI(
 export async function generateReport(
   type: AiReportType,
   ctx: PromptContext,
+  followUp?: FollowUpContext,
 ): Promise<AiGenerationResult> {
-  const { system, user } = buildReportPrompt(type, ctx);
+  const { system, user } = buildReportPrompt(type, ctx, followUp);
   const schema = AI_OUTPUT_SCHEMAS[type];
   const debug = shouldDebugLog();
 
@@ -166,8 +167,9 @@ export async function generateReport(
 export async function generateChat(
   task: AiChatTask,
   ctx: PromptContext,
+  followUp?: FollowUpContext,
 ): Promise<AiGenerationResult> {
-  const { system, user } = buildChatPrompt(task, ctx);
+  const { system, user } = buildChatPrompt(task, ctx, followUp);
   const schema = AI_CHAT_OUTPUT_SCHEMAS[task];
   const debug = shouldDebugLog();
 

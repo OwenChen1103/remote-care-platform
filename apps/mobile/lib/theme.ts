@@ -48,6 +48,11 @@ export const colors = {
   info: '#2563EB',
   infoLight: '#DBEAFE',
 
+  // Status Tints — ultra-subtle background tints for status-aware card zones
+  statusTintStable: '#F7FEF9',        // whisper green
+  statusTintAttention: '#FFFDF5',     // whisper amber
+  statusTintConsultDoctor: '#FEF8F8', // whisper red
+
   // Constant
   white: '#FFFFFF',
   black: '#000000',
