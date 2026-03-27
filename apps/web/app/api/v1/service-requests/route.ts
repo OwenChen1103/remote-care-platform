@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import {
   ServiceRequestCreateSchema,
   ServiceRequestListQuerySchema,
@@ -62,7 +63,11 @@ export async function POST(request: NextRequest) {
         preferred_date: new Date(data.preferred_date),
         preferred_time_slot: data.preferred_time_slot ?? null,
         location: data.location,
+        departure_location: data.departure_location ?? null,
+        destination: data.destination ?? null,
+        service_duration: data.service_duration ?? null,
         description: data.description,
+        metadata: (data.metadata ?? {}) as Prisma.InputJsonValue,
       },
       include: {
         category: { select: { id: true, code: true, name: true } },

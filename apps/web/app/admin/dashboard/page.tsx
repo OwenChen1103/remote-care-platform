@@ -33,6 +33,22 @@ interface DashboardData {
   recent_abnormal_alerts: AbnormalAlert[];
 }
 
+interface MonthlyReport {
+  month: string;
+  new_caregivers: number;
+  new_recipients: number;
+  total_measurements: number;
+  abnormal_measurements: number;
+  service_requests: {
+    created: number;
+    completed: number;
+    cancelled: number;
+    by_category: Record<string, number>;
+  };
+  ai_reports_generated: number;
+  active_providers: number;
+}
+
 const STAT_CARDS: { key: keyof DashboardStats; label: string; color: string }[] = [
   { key: 'total_caregivers', label: '委託人數', color: 'text-blue-600' },
   { key: 'total_recipients', label: '被照護者數', color: 'text-green-600' },
@@ -46,6 +62,12 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Monthly report
+  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const [reportMonth, setReportMonth] = useState(currentMonth);
+  const [report, setReport] = useState<MonthlyReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -65,9 +87,23 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchReport = useCallback(async (month: string) => {
+    setReportLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/reports?month=${month}`);
+      const json = (await res.json()) as { success: boolean; data: MonthlyReport };
+      if (json.success) setReport(json.data);
+    } catch { /* ignore */ }
+    finally { setReportLoading(false); }
+  }, []);
+
   useEffect(() => {
     void fetchDashboard();
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    void fetchReport(reportMonth);
+  }, [reportMonth, fetchReport]);
 
   if (loading) {
     return (
@@ -179,6 +215,59 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Monthly Report */}
+      <div className="mt-8">
+        <div className="mb-4 flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-gray-900">月報表</h2>
+          <input
+            type="month"
+            value={reportMonth}
+            onChange={(e) => setReportMonth(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm"
+            max={currentMonth}
+          />
+        </div>
+        {reportLoading ? (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-400">
+            載入中...
+          </div>
+        ) : report ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ReportCard label="新增委託人" value={report.new_caregivers} />
+            <ReportCard label="新增被照護者" value={report.new_recipients} />
+            <ReportCard label="量測總數" value={report.total_measurements} />
+            <ReportCard label="異常量測" value={report.abnormal_measurements} color="text-red-600" />
+            <ReportCard label="建立需求單" value={report.service_requests.created} />
+            <ReportCard label="完成服務" value={report.service_requests.completed} color="text-green-600" />
+            <ReportCard label="取消需求" value={report.service_requests.cancelled} />
+            <ReportCard label="AI 報告生成" value={report.ai_reports_generated} />
+            <ReportCard label="活躍服務人員" value={report.active_providers} />
+            {Object.keys(report.service_requests.by_category).length > 0 && (
+              <div className="col-span-full rounded-lg border border-gray-200 bg-white p-6">
+                <p className="mb-3 text-sm font-medium text-gray-500">需求單分類統計</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Object.entries(report.service_requests.by_category).map(([name, count]) => (
+                    <div key={name} className="rounded bg-gray-50 px-3 py-2 text-center">
+                      <p className="text-xs text-gray-500">{name}</p>
+                      <p className="text-lg font-bold text-gray-900">{count}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReportCard({ label, value, color = 'text-gray-900' }: { label: string; value: number; color?: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
     </div>
   );
 }

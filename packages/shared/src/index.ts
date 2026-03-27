@@ -9,6 +9,9 @@ export * from './schemas/ai';
 export * from './schemas/notification';
 export * from './schemas/appointment';
 
+// Utils
+export * from './utils/health-score';
+
 // Constants
 export * from './constants/error-codes';
 export * from './constants/enums';

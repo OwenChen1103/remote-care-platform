@@ -10,6 +10,8 @@ import {
   Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
@@ -238,6 +240,61 @@ export default function AiReportScreen() {
     return '';
   };
 
+  function escHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  const handleDownloadPdf = async () => {
+    if (!report) return;
+    const recipientName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
+    const typeLabel = REPORT_TYPES.find((t) => t.key === report.report_type)?.label ?? report.report_type;
+    const statusLabel = report.status_label === 'stable' ? '穩定'
+      : report.status_label === 'attention' ? '需留意' : '建議就醫';
+    const statusColor = report.status_label === 'stable' ? '#15803D'
+      : report.status_label === 'attention' ? '#A16207' : '#DC2626';
+
+    const html = `
+      <html>
+      <head><meta charset="utf-8"><style>
+        body { font-family: sans-serif; padding: 32px; color: #111827; }
+        h1 { font-size: 22px; margin-bottom: 4px; }
+        .subtitle { color: #6B7280; font-size: 13px; margin-bottom: 20px; }
+        .status { display: inline-block; padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 14px; color: ${statusColor}; background: ${statusColor}18; }
+        .summary { font-size: 16px; margin: 16px 0; line-height: 1.6; }
+        .section-title { font-size: 14px; font-weight: 600; color: #374151; margin-top: 16px; margin-bottom: 8px; }
+        .item { font-size: 14px; color: #374151; margin-bottom: 4px; line-height: 1.5; }
+        .disclaimer { margin-top: 24px; padding: 12px; background: #F3F4F6; border-radius: 8px; font-size: 12px; color: #6B7280; line-height: 1.5; }
+        .footer { margin-top: 24px; font-size: 11px; color: #9CA3AF; text-align: center; }
+      </style></head>
+      <body>
+        <h1>${escHtml(typeLabel)}</h1>
+        <p class="subtitle">${escHtml(recipientName)} · ${new Date(report.generated_at).toLocaleDateString('zh-TW')}</p>
+        <span class="status">${escHtml(statusLabel)}</span>
+        <p class="summary">${escHtml(report.summary)}</p>
+        ${report.reasons.length > 0 ? `
+          <p class="section-title">原因</p>
+          ${report.reasons.map((r) => `<p class="item">• ${escHtml(r)}</p>`).join('')}
+        ` : ''}
+        ${report.suggestions.length > 0 ? `
+          <p class="section-title">建議</p>
+          ${report.suggestions.map((s) => `<p class="item">• ${escHtml(s)}</p>`).join('')}
+        ` : ''}
+        <div class="disclaimer">${escHtml(report.disclaimer)}</div>
+        <p class="footer">由遠端照護平台產生</p>
+      </body></html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+      }
+    } catch {
+      // Fall back to text share if PDF generation fails
+      void handleShare(buildShareText());
+    }
+  };
+
   // ─── Render ──────────────────────────────────────────────────
 
   return (
@@ -420,14 +477,25 @@ export default function AiReportScreen() {
           {/* Disclaimer — always visible, non-dismissible */}
           <Text style={styles.disclaimer}>{report.disclaimer}</Text>
 
-          {/* Share */}
-          <TouchableOpacity
-            style={styles.shareButton}
-            onPress={() => void handleShare(buildShareText())}
-            accessibilityLabel="分享報告"
-          >
-            <Text style={styles.shareText}>分享</Text>
-          </TouchableOpacity>
+          {/* Share + PDF */}
+          <View style={styles.shareRow}>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() => void handleShare(buildShareText())}
+              accessibilityLabel="分享報告"
+            >
+              <Text style={styles.shareText}>分享</Text>
+            </TouchableOpacity>
+            {Platform.OS !== 'web' && (
+              <TouchableOpacity
+                style={styles.pdfButton}
+                onPress={() => void handleDownloadPdf()}
+                accessibilityLabel="下載 PDF"
+              >
+                <Text style={styles.pdfText}>下載 PDF</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </Card>
       )}
 
@@ -700,18 +768,37 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm + spacing.xxs,
   },
 
-  // ─── Share Button ─────────────────────────────────────────
+  // ─── Share & PDF Buttons ──────────────────────────────────
+  shareRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
   shareButton: {
+    flex: 1,
     backgroundColor: colors.primaryLight,
     borderRadius: radius.md,
     paddingVertical: spacing.sm + spacing.xxs,
     alignItems: 'center',
-    marginTop: spacing.md,
   },
   shareText: {
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
     color: colors.primaryText,
+  },
+  pdfButton: {
+    flex: 1,
+    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + spacing.xxs,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+  },
+  pdfText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 
   // ─── History Section ──────────────────────────────────────

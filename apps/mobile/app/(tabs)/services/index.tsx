@@ -3,16 +3,31 @@ import {
   View,
   Text,
   FlatList,
+  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+
+// ─── Filter Options ──────────────────────────────────────────
+
+const FILTER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'active', label: '處理中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'cancelled', label: '已取消' },
+] as const;
+
+const ACTIVE_STATUSES = [
+  'submitted', 'screening', 'candidate_proposed',
+  'caregiver_confirmed', 'provider_confirmed', 'arranged', 'in_service',
+];
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -35,6 +50,7 @@ export default function ServicesScreen() {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [filter, setFilter] = useState('');
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -53,6 +69,12 @@ export default function ServicesScreen() {
   useEffect(() => {
     void fetchRequests();
   }, [fetchRequests]);
+
+  const filteredRequests = requests.filter((r) => {
+    if (!filter) return true;
+    if (filter === 'active') return ACTIVE_STATUSES.includes(r.status);
+    return r.status === filter;
+  });
 
   // ─── Error State ──────────────────────────────────────────
 
@@ -79,6 +101,28 @@ export default function ServicesScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Filter Chips */}
+      {requests.length > 0 && (
+        <View style={styles.filterRow}>
+          {FILTER_OPTIONS.map((opt) => {
+            const isActive = filter === opt.value;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setFilter(opt.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       {requests.length === 0 ? (
         <EmptyState
           title="尚無服務需求"
@@ -86,9 +130,14 @@ export default function ServicesScreen() {
           actionLabel="新增需求"
           onAction={() => router.push('/(tabs)/services/new-request')}
         />
+      ) : filteredRequests.length === 0 ? (
+        <EmptyState
+          title="沒有符合的需求"
+          description="此分類下目前沒有服務需求。"
+        />
       ) : (
         <FlatList
-          data={requests}
+          data={filteredRequests}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           onRefresh={() => void fetchRequests()}
@@ -150,6 +199,35 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontSize: typography.bodySm.fontSize,
     color: colors.textTertiary,
+  },
+
+  // ─── Filter Chips ────────────────────────────────────────
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.lg - spacing.xxs,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
+  },
+  filterChipActive: {
+    borderColor: colors.primaryText,
+    backgroundColor: colors.primaryLight,
+  },
+  filterChipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+  filterChipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '600',
   },
 
   // ─── List ─────────────────────────────────────────────────

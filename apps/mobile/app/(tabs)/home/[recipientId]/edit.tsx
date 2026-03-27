@@ -11,15 +11,37 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+
+// ─── Relationship options (same as add-recipient) ─────────────
+const RELATIONSHIP_OPTIONS = [
+  { value: 'father', label: '父親' },
+  { value: 'mother', label: '母親' },
+  { value: 'grandfather', label: '祖父' },
+  { value: 'grandmother', label: '祖母' },
+  { value: 'spouse', label: '配偶' },
+  { value: 'sibling', label: '兄弟姊妹' },
+  { value: 'child', label: '子女' },
+  { value: 'other', label: '其他' },
+] as const;
+
+// ─── Preset medical conditions (same as add-recipient) ────────
+const PRESET_MEDICAL_TAGS = [
+  '高血壓', '糖尿病', '心臟病', '中風', '腎臟病',
+  '肝臟病', '肺部疾病', '癌症', '失智症', '帕金森氏症',
+  '骨質疏鬆', '關節炎',
+] as const;
 
 interface Recipient {
   id: string;
   name: string;
   date_of_birth: string | null;
   gender: string | null;
+  relationship: string | null;
   medical_tags: string[];
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
+  address: string | null;
   notes: string | null;
 }
 
@@ -35,10 +57,27 @@ export default function EditRecipientScreen() {
   const [name, setName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('');
-  const [medicalTags, setMedicalTags] = useState('');
+  const [relationship, setRelationship] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [address, setAddress] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [notes, setNotes] = useState('');
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
+
+  function addCustomTag() {
+    const tag = customTagInput.trim();
+    if (tag && !selectedTags.includes(tag)) {
+      setSelectedTags((prev) => [...prev, tag]);
+    }
+    setCustomTagInput('');
+  }
 
   const fetchRecipient = useCallback(async () => {
     setLoading(true);
@@ -48,7 +87,9 @@ export default function EditRecipientScreen() {
       setName(data.name);
       setDateOfBirth(data.date_of_birth ?? '');
       setGender((data.gender as typeof gender) || '');
-      setMedicalTags(data.medical_tags.join(', '));
+      setRelationship(data.relationship ?? '');
+      setSelectedTags(data.medical_tags);
+      setAddress(data.address ?? '');
       setEmergencyName(data.emergency_contact_name ?? '');
       setEmergencyPhone(data.emergency_contact_phone ?? '');
       setNotes(data.notes ?? '');
@@ -80,10 +121,9 @@ export default function EditRecipientScreen() {
       const data: Record<string, unknown> = { name: name.trim() };
       data.date_of_birth = dateOfBirth.trim() || null;
       data.gender = gender || null;
-      data.medical_tags = medicalTags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
+      data.relationship = relationship || null;
+      data.medical_tags = selectedTags;
+      data.address = address.trim() || null;
       data.emergency_contact_name = emergencyName.trim() || null;
       data.emergency_contact_phone = emergencyPhone.trim() || null;
       data.notes = notes.trim() || null;
@@ -104,7 +144,7 @@ export default function EditRecipientScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -152,13 +192,80 @@ export default function EditRecipientScreen() {
         ))}
       </View>
 
-      <Text style={styles.label}>疾病標籤（以逗號分隔）</Text>
-      <TextInput
-        style={styles.input}
-        value={medicalTags}
-        onChangeText={setMedicalTags}
-        placeholder="例：高血壓,糖尿病"
-      />
+      <Text style={styles.label}>與您的關係</Text>
+      <View style={styles.tagGrid}>
+        {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
+          const active = relationship === value;
+          return (
+            <TouchableOpacity
+              key={value}
+              style={[styles.tagChip, active && styles.tagChipActive]}
+              onPress={() => setRelationship(active ? '' : value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Text style={styles.label}>疾病標籤</Text>
+      <View style={styles.tagGrid}>
+        {PRESET_MEDICAL_TAGS.map((tag) => {
+          const active = selectedTags.includes(tag);
+          return (
+            <TouchableOpacity
+              key={tag}
+              style={[styles.tagChip, active && styles.tagChipActive]}
+              onPress={() => toggleTag(tag)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: active }}
+            >
+              <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                {tag}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Custom tags */}
+      {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
+        <View style={styles.customTagRow}>
+          {selectedTags
+            .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
+            .map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.tagChip, styles.tagChipActive]}
+                onPress={() => toggleTag(t)}
+              >
+                <Text style={styles.tagChipTextActive}>{t} ✕</Text>
+              </TouchableOpacity>
+            ))}
+        </View>
+      )}
+
+      <View style={styles.customInputRow}>
+        <TextInput
+          style={[styles.input, { flex: 1 }]}
+          value={customTagInput}
+          onChangeText={setCustomTagInput}
+          placeholder="其他病史（手動輸入）"
+          returnKeyType="done"
+          onSubmitEditing={addCustomTag}
+        />
+        <TouchableOpacity
+          style={styles.addTagBtn}
+          onPress={addCustomTag}
+          disabled={!customTagInput.trim()}
+        >
+          <Text style={[styles.addTagBtnText, !customTagInput.trim() && { opacity: 0.4 }]}>新增</Text>
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.label}>緊急聯絡人姓名</Text>
       <TextInput style={styles.input} value={emergencyName} onChangeText={setEmergencyName} />
@@ -169,6 +276,14 @@ export default function EditRecipientScreen() {
         value={emergencyPhone}
         onChangeText={setEmergencyPhone}
         keyboardType="phone-pad"
+      />
+
+      <Text style={styles.label}>居住地址</Text>
+      <TextInput
+        style={styles.input}
+        value={address}
+        onChangeText={setAddress}
+        placeholder="選填"
       />
 
       <Text style={styles.label}>備註</Text>
@@ -206,6 +321,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   textArea: { height: 80, textAlignVertical: 'top' },
+  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  customTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  customInputRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
+  tagChip: {
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderStrong,
+    backgroundColor: colors.bgSurface,
+  },
+  tagChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryText },
+  tagChipText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '500' },
+  tagChipTextActive: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
+  addTagBtn: {
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    backgroundColor: colors.primaryLight, borderRadius: radius.sm,
+  },
+  addTagBtnText: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
   genderRow: { flexDirection: 'row', gap: 8 },
   genderButton: {
     paddingHorizontal: 20,

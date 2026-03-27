@@ -5,7 +5,12 @@ import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
 
-function formatUser(user: { id: string; email: string; name: string; role: string; phone: string | null; timezone: string; created_at: Date }) {
+function formatUser(user: {
+  id: string; email: string; name: string; role: string;
+  phone: string | null; timezone: string;
+  date_of_birth: Date | null; address: string | null;
+  created_at: Date;
+}) {
   return {
     id: user.id,
     email: user.email,
@@ -13,6 +18,8 @@ function formatUser(user: { id: string; email: string; name: string; role: strin
     role: user.role,
     phone: user.phone,
     timezone: user.timezone,
+    date_of_birth: user.date_of_birth ? user.date_of_birth.toISOString().split('T')[0] : null,
+    address: user.address,
     created_at: user.created_at.toISOString(),
   };
 }
@@ -26,7 +33,10 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: auth.userId },
-      select: { id: true, email: true, name: true, role: true, phone: true, timezone: true, created_at: true },
+      select: {
+        id: true, email: true, name: true, role: true, phone: true,
+        timezone: true, date_of_birth: true, address: true, created_at: true,
+      },
     });
 
     if (!user) {
@@ -61,10 +71,19 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const { date_of_birth, ...rest } = parsed.data;
+    const updateData: Record<string, unknown> = { ...rest };
+    if (date_of_birth !== undefined) {
+      updateData.date_of_birth = date_of_birth ? new Date(date_of_birth) : null;
+    }
+
     const user = await prisma.user.update({
       where: { id: auth.userId },
-      data: parsed.data,
-      select: { id: true, email: true, name: true, role: true, phone: true, timezone: true, created_at: true },
+      data: updateData,
+      select: {
+        id: true, email: true, name: true, role: true, phone: true,
+        timezone: true, date_of_birth: true, address: true, created_at: true,
+      },
     });
 
     return successResponse(formatUser(user));

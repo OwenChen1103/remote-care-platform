@@ -103,6 +103,7 @@ export default function TabLayout() {
       <Tabs.Screen name="health/trends" options={{ href: null, title: '趨勢分析' }} />
       <Tabs.Screen name="health/export" options={{ href: null, title: '匯出紀錄' }} />
       <Tabs.Screen name="health/ai-report" options={{ href: null, title: '安心報' }} />
+      <Tabs.Screen name="home/profile" options={{ href: null, title: '個人資料管理' }} />
       <Tabs.Screen name="home/appointments" options={{ href: null, title: '行程管理' }} />
       <Tabs.Screen name="home/add-appointment" options={{ href: null, title: '新增行程' }} />
     </Tabs>

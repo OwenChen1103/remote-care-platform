@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
@@ -20,12 +21,27 @@ interface ServiceRequestDetail {
   description: string;
   admin_note: string | null;
   provider_note: string | null;
+  caregiver_confirmed_at: string | null;
+  provider_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
   category: { id: string; code: string; name: string };
   recipient: { id: string; name: string };
-  assigned_provider: { id: string; name: string; phone: string | null } | null;
-  candidate_provider: { id: string; name: string } | null;
+  assigned_provider: ProviderInfo | null;
+  candidate_provider: ProviderInfo | null;
+  provider_report: Record<string, unknown> | null;
+}
+
+interface ProviderInfo {
+  id: string;
+  name: string;
+  phone: string | null;
+  photo_url: string | null;
+  level: string;
+  specialties: string[];
+  certifications: string[];
+  experience_years: number | null;
+  service_areas: string[];
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -165,6 +181,12 @@ export default function ServiceRequestDetailScreen() {
         </Text>
       </View>
 
+      {/* Status Timeline */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>進度時間軸</Text>
+        <StatusTimeline request={request} />
+      </View>
+
       {/* Category & Recipient */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>服務資訊</Text>
@@ -191,10 +213,7 @@ export default function ServiceRequestDetailScreen() {
       {request.assigned_provider && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>指派服務者</Text>
-          <InfoRow label="姓名" value={request.assigned_provider.name} />
-          {request.assigned_provider.phone && (
-            <InfoRow label="電話" value={request.assigned_provider.phone} />
-          )}
+          <ProviderCard provider={request.assigned_provider} />
         </View>
       )}
 
@@ -202,7 +221,7 @@ export default function ServiceRequestDetailScreen() {
       {request.candidate_provider && request.status === 'candidate_proposed' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>候選服務人員</Text>
-          <InfoRow label="姓名" value={request.candidate_provider.name} />
+          <ProviderCard provider={request.candidate_provider} />
           <View style={styles.confirmButtons}>
             <TouchableOpacity
               style={[styles.confirmButton, confirming && styles.cancelButtonDisabled]}
@@ -228,7 +247,7 @@ export default function ServiceRequestDetailScreen() {
       {request.candidate_provider && request.status !== 'candidate_proposed' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>候選服務人員</Text>
-          <InfoRow label="姓名" value={request.candidate_provider.name} />
+          <ProviderCard provider={request.candidate_provider} />
         </View>
       )}
 
@@ -253,6 +272,125 @@ export default function ServiceRequestDetailScreen() {
         </TouchableOpacity>
       )}
     </ScrollView>
+  );
+}
+
+// ─── Timeline ─────────────────────────────────────────────────
+
+const TIMELINE_STEPS = [
+  'submitted', 'screening', 'candidate_proposed',
+  'caregiver_confirmed', 'provider_confirmed',
+  'arranged', 'in_service', 'completed',
+] as const;
+
+function StatusTimeline({ request }: { request: ServiceRequestDetail }) {
+  const currentIdx = TIMELINE_STEPS.indexOf(
+    request.status as typeof TIMELINE_STEPS[number],
+  );
+  const isCancelled = request.status === 'cancelled';
+
+  // Build time map from available timestamps
+  const timeMap: Record<string, string | null> = {
+    submitted: request.created_at,
+    caregiver_confirmed: request.caregiver_confirmed_at,
+    provider_confirmed: request.provider_confirmed_at,
+  };
+
+  return (
+    <View>
+      {TIMELINE_STEPS.map((step, idx) => {
+        const cfg = STATUS_CONFIG[step] ?? { label: step, color: '#6B7280', bg: '#F3F4F6' };
+        const isPast = !isCancelled && idx <= currentIdx;
+        const isCurrent = !isCancelled && idx === currentIdx;
+        const timestamp = timeMap[step];
+        const isLast = idx === TIMELINE_STEPS.length - 1;
+
+        return (
+          <View key={step} style={styles.timelineRow}>
+            {/* Vertical line + dot */}
+            <View style={styles.timelineLeft}>
+              <View style={[
+                styles.timelineDot,
+                isPast
+                  ? { backgroundColor: cfg.color }
+                  : { backgroundColor: '#E5E7EB' },
+                isCurrent && { borderWidth: 2, borderColor: cfg.color, backgroundColor: '#FFFFFF' },
+              ]} />
+              {!isLast && (
+                <View style={[
+                  styles.timelineLine,
+                  isPast ? { backgroundColor: cfg.color } : { backgroundColor: '#E5E7EB' },
+                ]} />
+              )}
+            </View>
+            {/* Label + time */}
+            <View style={styles.timelineContent}>
+              <Text style={[
+                styles.timelineLabel,
+                isPast ? { color: '#111827', fontWeight: '600' } : { color: '#9CA3AF' },
+              ]}>
+                {cfg.label}
+              </Text>
+              {timestamp && (
+                <Text style={styles.timelineTime}>
+                  {new Date(timestamp).toLocaleString('zh-TW')}
+                </Text>
+              )}
+            </View>
+          </View>
+        );
+      })}
+      {isCancelled && (
+        <View style={styles.timelineRow}>
+          <View style={styles.timelineLeft}>
+            <View style={[styles.timelineDot, { backgroundColor: STATUS_CONFIG.cancelled?.color ?? '#DC2626' }]} />
+          </View>
+          <View style={styles.timelineContent}>
+            <Text style={[styles.timelineLabel, { color: '#DC2626', fontWeight: '600' }]}>
+              已取消
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Provider Card ────────────────────────────────────────────
+
+const LEVEL_LABELS: Record<string, string> = { L1: '初級', L2: '中級', L3: '資深' };
+
+function ProviderCard({ provider }: { provider: ProviderInfo }) {
+  return (
+    <View>
+      {/* Photo + Name row */}
+      <View style={styles.providerPhotoRow}>
+        {provider.photo_url ? (
+          <Image source={{ uri: provider.photo_url }} style={styles.providerPhoto} />
+        ) : (
+          <View style={styles.providerPhotoFallback}>
+            <Text style={styles.providerPhotoInitial}>{provider.name.charAt(0)}</Text>
+          </View>
+        )}
+        <View style={styles.providerPhotoInfo}>
+          <Text style={styles.providerPhotoName}>{provider.name}</Text>
+          <Text style={styles.providerPhotoLevel}>{provider.level}（{LEVEL_LABELS[provider.level] ?? provider.level}）</Text>
+        </View>
+      </View>
+      {provider.phone && <InfoRow label="電話" value={provider.phone} />}
+      {provider.experience_years != null && (
+        <InfoRow label="年資" value={`${provider.experience_years} 年`} />
+      )}
+      {((provider.specialties ?? []) as string[]).length > 0 && (
+        <InfoRow label="專業" value={((provider.specialties ?? []) as string[]).join('、')} />
+      )}
+      {((provider.certifications ?? []) as string[]).length > 0 && (
+        <InfoRow label="證照" value={((provider.certifications ?? []) as string[]).join('、')} />
+      )}
+      {((provider.service_areas ?? []) as string[]).length > 0 && (
+        <InfoRow label="服務區域" value={((provider.service_areas ?? []) as string[]).join('、')} />
+      )}
+    </View>
   );
 }
 
@@ -310,6 +448,79 @@ const styles = StyleSheet.create({
   },
   cancelButtonDisabled: { opacity: 0.6 },
   cancelButtonText: { color: '#DC2626', fontSize: 15, fontWeight: '600' },
+  // ─── Provider Photo ──────────────────────────────────────
+  providerPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  providerPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+  },
+  providerPhotoFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerPhotoInitial: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  providerPhotoInfo: { flex: 1 },
+  providerPhotoName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  providerPhotoLevel: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+
+  // ─── Timeline ────────────────────────────────────────────
+  timelineRow: {
+    flexDirection: 'row',
+    minHeight: 40,
+  },
+  timelineLeft: {
+    width: 24,
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  timelineContent: {
+    flex: 1,
+    paddingLeft: 8,
+    paddingBottom: 12,
+  },
+  timelineLabel: {
+    fontSize: 14,
+  },
+  timelineTime: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+
   confirmButtons: {
     flexDirection: 'row',
     gap: 12,

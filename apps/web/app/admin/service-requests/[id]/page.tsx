@@ -20,8 +20,20 @@ interface ServiceRequestDetail {
   updated_at: string;
   category: { id: string; code: string; name: string };
   recipient: { id: string; name: string };
-  assigned_provider: { id: string; name: string; phone: string | null } | null;
-  candidate_provider: { id: string; name: string } | null;
+  assigned_provider: ProviderOptionFull | null;
+  candidate_provider: ProviderOptionFull | null;
+  provider_report: Record<string, unknown> | null;
+}
+
+interface ProviderOptionFull {
+  id: string;
+  name: string;
+  phone: string | null;
+  level: string;
+  specialties: string[];
+  certifications: string[];
+  experience_years: number | null;
+  service_areas: string[];
 }
 
 interface ProviderOption {
@@ -29,6 +41,8 @@ interface ProviderOption {
   name: string;
   level: string;
   phone: string | null;
+  specialties: string[];
+  certifications: string[];
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -250,30 +264,14 @@ export default function AdminServiceRequestDetailPage() {
           {request.assigned_provider && (
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h2 className="mb-4 text-lg font-semibold text-gray-900">指派服務者</h2>
-              <dl className="space-y-2 text-sm">
-                <div>
-                  <dt className="text-gray-500">姓名</dt>
-                  <dd className="text-gray-900">{request.assigned_provider.name}</dd>
-                </div>
-                {request.assigned_provider.phone && (
-                  <div>
-                    <dt className="text-gray-500">電話</dt>
-                    <dd className="text-gray-900">{request.assigned_provider.phone}</dd>
-                  </div>
-                )}
-              </dl>
+              <ProviderDetailCard provider={request.assigned_provider} />
             </div>
           )}
 
           {request.candidate_provider && (
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h2 className="mb-4 text-lg font-semibold text-gray-900">候選服務人員</h2>
-              <dl className="space-y-2 text-sm">
-                <div>
-                  <dt className="text-gray-500">姓名</dt>
-                  <dd className="text-gray-900">{request.candidate_provider.name}</dd>
-                </div>
-              </dl>
+              <ProviderDetailCard provider={request.candidate_provider} />
               <div className="mt-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span className={request.caregiver_confirmed_at ? 'text-green-600' : 'text-gray-400'}>
@@ -310,10 +308,25 @@ export default function AdminServiceRequestDetailPage() {
                 <option value="">&mdash; 選擇服務人員 &mdash;</option>
                 {providers.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}（{p.level}）{p.phone ? ` ${p.phone}` : ''}
+                    {p.name}（{p.level}）{(p.certifications ?? []).length > 0 ? ` [${(p.certifications as string[]).join(',')}]` : ''}{p.phone ? ` ${p.phone}` : ''}
                   </option>
                 ))}
               </select>
+              {selectedProviderId && (() => {
+                const sp = providers.find(p => p.id === selectedProviderId);
+                if (!sp) return null;
+                return (
+                  <div className="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-sm">
+                    <p className="font-medium text-gray-900">{sp.name}（{sp.level}）</p>
+                    {(sp.specialties ?? []).length > 0 && (
+                      <p className="text-gray-600">專業：{(sp.specialties as string[]).join('、')}</p>
+                    )}
+                    {(sp.certifications ?? []).length > 0 && (
+                      <p className="text-gray-600">證照：{(sp.certifications as string[]).join('、')}</p>
+                    )}
+                  </div>
+                );
+              })()}
               <button
                 disabled={!selectedProviderId || proposing}
                 onClick={() => void proposeCandidate()}
@@ -390,5 +403,27 @@ export default function AdminServiceRequestDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+const LEVEL_LABELS: Record<string, string> = { L1: '初級', L2: '中級', L3: '資深' };
+
+function ProviderDetailCard({ provider }: { provider: ProviderOptionFull }) {
+  return (
+    <dl className="space-y-2 text-sm">
+      <div><dt className="text-gray-500">姓名</dt><dd className="font-medium text-gray-900">{provider.name}</dd></div>
+      <div><dt className="text-gray-500">等級</dt><dd className="text-gray-900">{provider.level}（{LEVEL_LABELS[provider.level] ?? provider.level}）</dd></div>
+      {provider.phone && <div><dt className="text-gray-500">電話</dt><dd className="text-gray-900">{provider.phone}</dd></div>}
+      {provider.experience_years != null && <div><dt className="text-gray-500">年資</dt><dd className="text-gray-900">{provider.experience_years} 年</dd></div>}
+      {(provider.specialties ?? []).length > 0 && (
+        <div><dt className="text-gray-500">專業</dt><dd className="text-gray-900">{(provider.specialties as string[]).join('、')}</dd></div>
+      )}
+      {(provider.certifications ?? []).length > 0 && (
+        <div><dt className="text-gray-500">證照</dt><dd className="text-gray-900">{(provider.certifications as string[]).join('、')}</dd></div>
+      )}
+      {(provider.service_areas ?? []).length > 0 && (
+        <div><dt className="text-gray-500">服務區域</dt><dd className="text-gray-900">{(provider.service_areas as string[]).join('、')}</dd></div>
+      )}
+    </dl>
   );
 }

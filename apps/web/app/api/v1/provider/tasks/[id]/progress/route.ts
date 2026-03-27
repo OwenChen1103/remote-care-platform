@@ -46,12 +46,17 @@ export async function PUT(
       return errorResponse('INVALID_STATE_TRANSITION', `無法從「${currentStatus}」轉換至「${targetStatus}」`);
     }
 
+    const updateData: Record<string, unknown> = {
+      status: parsed.data.status,
+      provider_note: parsed.data.provider_note ?? task.provider_note,
+    };
+    if (parsed.data.provider_report) {
+      updateData.provider_report = parsed.data.provider_report;
+    }
+
     const updated = await prisma.serviceRequest.update({
       where: { id },
-      data: {
-        status: parsed.data.status,
-        provider_note: parsed.data.provider_note ?? task.provider_note,
-      },
+      data: updateData,
       include: {
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },

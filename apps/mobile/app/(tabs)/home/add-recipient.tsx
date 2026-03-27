@@ -11,6 +11,25 @@ import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
+// ─── Relationship options (client-requested dropdown) ─────────
+const RELATIONSHIP_OPTIONS = [
+  { value: 'father', label: '父親' },
+  { value: 'mother', label: '母親' },
+  { value: 'grandfather', label: '祖父' },
+  { value: 'grandmother', label: '祖母' },
+  { value: 'spouse', label: '配偶' },
+  { value: 'sibling', label: '兄弟姊妹' },
+  { value: 'child', label: '子女' },
+  { value: 'other', label: '其他' },
+] as const;
+
+// ─── Preset medical conditions (client-requested dropdown) ────
+const PRESET_MEDICAL_TAGS = [
+  '高血壓', '糖尿病', '心臟病', '中風', '腎臟病',
+  '肝臟病', '肺部疾病', '癌症', '失智症', '帕金森氏症',
+  '骨質疏鬆', '關節炎',
+] as const;
+
 // ─── Component ────────────────────────────────────────────────
 
 export default function AddRecipientScreen() {
@@ -18,12 +37,29 @@ export default function AddRecipientScreen() {
   const [name, setName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('');
-  const [medicalTags, setMedicalTags] = useState('');
+  const [relationship, setRelationship] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [address, setAddress] = useState('');
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
+
+  function addCustomTag() {
+    const tag = customTagInput.trim();
+    if (tag && !selectedTags.includes(tag)) {
+      setSelectedTags((prev) => [...prev, tag]);
+    }
+    setCustomTagInput('');
+  }
 
   async function handleSubmit() {
     if (!name.trim()) {
@@ -38,9 +74,11 @@ export default function AddRecipientScreen() {
       const data: Record<string, unknown> = { name: name.trim() };
       if (dateOfBirth.trim()) data.date_of_birth = dateOfBirth.trim();
       if (gender) data.gender = gender;
-      if (medicalTags.trim()) {
-        data.medical_tags = medicalTags.split(',').map((t) => t.trim()).filter(Boolean);
+      if (relationship) data.relationship = relationship;
+      if (selectedTags.length > 0) {
+        data.medical_tags = selectedTags;
       }
+      if (address.trim()) data.address = address.trim();
       if (emergencyName.trim()) data.emergency_contact_name = emergencyName.trim();
       if (emergencyPhone.trim()) data.emergency_contact_phone = emergencyPhone.trim();
       if (notes.trim()) data.notes = notes.trim();
@@ -121,6 +159,26 @@ export default function AddRecipientScreen() {
               );
             })}
           </View>
+
+          <Text style={styles.label}>與您的關係</Text>
+          <View style={styles.tagGrid}>
+            {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
+              const active = relationship === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => setRelationship(active ? '' : value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* ── Section: Medical Info ───────────────────────── */}
@@ -128,14 +186,65 @@ export default function AddRecipientScreen() {
           <Text style={styles.sectionLabel}>健康資訊</Text>
 
           <Text style={styles.label}>疾病標籤</Text>
-          <TextInput
-            style={styles.input}
-            value={medicalTags}
-            onChangeText={setMedicalTags}
-            placeholder="例：高血壓,糖尿病（以逗號分隔）"
-            placeholderTextColor={colors.textDisabled}
-            accessibilityLabel="疾病標籤"
-          />
+          <View style={styles.tagGrid}>
+            {PRESET_MEDICAL_TAGS.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <TouchableOpacity
+                  key={tag}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => toggleTag(tag)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: active }}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {tag}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Custom tags already added */}
+          {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
+            <View style={styles.customTagRow}>
+              {selectedTags
+                .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
+                .map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.chip, styles.chipActive]}
+                    onPress={() => toggleTag(t)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: true }}
+                  >
+                    <Text style={styles.chipTextActive}>{t} ✕</Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
+          )}
+
+          {/* Custom input */}
+          <View style={styles.customTagInputRow}>
+            <TextInput
+              style={[styles.input, styles.customTagField]}
+              value={customTagInput}
+              onChangeText={setCustomTagInput}
+              placeholder="其他病史（手動輸入）"
+              placeholderTextColor={colors.textDisabled}
+              returnKeyType="done"
+              onSubmitEditing={addCustomTag}
+              accessibilityLabel="自定義疾病標籤"
+            />
+            <TouchableOpacity
+              style={styles.addTagButton}
+              onPress={addCustomTag}
+              disabled={!customTagInput.trim()}
+              accessibilityLabel="新增自定義標籤"
+            >
+              <Text style={[styles.addTagText, !customTagInput.trim() && styles.addTagDisabled]}>新增</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Section: Emergency Contact ──────────────────── */}
@@ -161,6 +270,21 @@ export default function AddRecipientScreen() {
             placeholder="選填"
             placeholderTextColor={colors.textDisabled}
             accessibilityLabel="緊急聯絡人電話"
+          />
+        </View>
+
+        {/* ── Section: Address ───────────────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>居住地址</Text>
+
+          <Text style={styles.label}>地址</Text>
+          <TextInput
+            style={styles.input}
+            value={address}
+            onChangeText={setAddress}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+            accessibilityLabel="居住地址"
           />
         </View>
 
@@ -245,6 +369,18 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+
+  // ─── Tag Grid (Medical) ──────────────────────────────────
+  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  customTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  customTagInputRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
+  customTagField: { flex: 1 },
+  addTagButton: {
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    backgroundColor: colors.primaryLight, borderRadius: radius.sm,
+  },
+  addTagText: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
+  addTagDisabled: { opacity: 0.4 },
 
   // ─── Chips (Gender) ───────────────────────────────────────
   chipRow: { flexDirection: 'row', gap: spacing.sm },

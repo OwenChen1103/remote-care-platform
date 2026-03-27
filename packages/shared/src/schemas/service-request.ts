@@ -34,7 +34,11 @@ export const ServiceRequestCreateSchema = z.object({
   preferred_date: z.string().datetime(),
   preferred_time_slot: z.enum(['morning', 'afternoon', 'evening']).optional(),
   location: z.string().min(1, '服務地點為必填').max(500),
+  departure_location: z.string().max(500).optional(),
+  destination: z.string().max(500).optional(),
+  service_duration: z.number().int().min(1).max(24).optional(),
   description: z.string().min(1, '需求描述為必填'),
+  metadata: z.record(z.unknown()).default({}),
 });
 
 export const ServiceRequestStatusUpdateSchema = z.object({
@@ -71,9 +75,29 @@ export const ServiceRequestProviderConfirmSchema = z.object({
   provider_note: z.string().max(1000).optional(),
 });
 
+export const ProviderReportSchema = z.object({
+  service_date: z.string().optional(),
+  health_data: z.object({
+    blood_pressure: z.object({ systolic: z.number(), diastolic: z.number() }).optional(),
+    heart_rate: z.number().optional(),
+    blood_glucose: z.number().optional(),
+    blood_oxygen: z.number().optional(),
+    height_cm: z.number().optional(),
+    weight_kg: z.number().optional(),
+    body_fat_pct: z.number().optional(),
+    muscle_mass_kg: z.number().optional(),
+    cholesterol: z.number().optional(),
+  }).optional(),
+  medication_notes: z.string().max(1000).optional(),
+  doctor_instructions: z.string().max(1000).optional(),
+  next_visit_date: z.string().optional(),
+  additional_notes: z.string().max(2000).optional(),
+});
+
 export const ServiceRequestProviderProgressSchema = z.object({
   status: z.enum(['in_service', 'completed']),
   provider_note: z.string().max(1000).optional(),
+  provider_report: ProviderReportSchema.optional(),
 });
 
 export type ServiceRequestCreateInput = z.infer<typeof ServiceRequestCreateSchema>;
@@ -83,3 +107,4 @@ export type ServiceRequestProposeCandidateInput = z.infer<typeof ServiceRequestP
 export type ServiceRequestCaregiverConfirmInput = z.infer<typeof ServiceRequestCaregiverConfirmSchema>;
 export type ServiceRequestProviderConfirmInput = z.infer<typeof ServiceRequestProviderConfirmSchema>;
 export type ServiceRequestProviderProgressInput = z.infer<typeof ServiceRequestProviderProgressSchema>;
+export type ProviderReportInput = z.infer<typeof ProviderReportSchema>;
