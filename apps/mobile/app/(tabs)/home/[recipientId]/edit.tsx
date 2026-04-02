@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 // ─── Relationship options (same as add-recipient) ─────────────
 const RELATIONSHIP_OPTIONS = [
@@ -166,134 +166,149 @@ export default function EditRecipientScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Text style={styles.label}>姓名 *</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="例：王奶奶" />
+      {/* ── Basic Info Card ─────────────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.label}>姓名 *</Text>
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="例：王奶奶" />
 
-      <Text style={styles.label}>生日</Text>
-      <TextInput
-        style={styles.input}
-        value={dateOfBirth}
-        onChangeText={setDateOfBirth}
-        placeholder="YYYY-MM-DD"
-      />
-
-      <Text style={styles.label}>性別</Text>
-      <View style={styles.genderRow}>
-        {(['male', 'female', 'other'] as const).map((g) => (
-          <TouchableOpacity
-            key={g}
-            style={[styles.genderButton, gender === g && styles.genderActive]}
-            onPress={() => setGender(g)}
-          >
-            <Text style={[styles.genderText, gender === g && styles.genderTextActive]}>
-              {g === 'male' ? '男' : g === 'female' ? '女' : '其他'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>與您的關係</Text>
-      <View style={styles.tagGrid}>
-        {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
-          const active = relationship === value;
-          return (
-            <TouchableOpacity
-              key={value}
-              style={[styles.tagChip, active && styles.tagChipActive]}
-              onPress={() => setRelationship(active ? '' : value)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-            >
-              <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <Text style={styles.label}>疾病標籤</Text>
-      <View style={styles.tagGrid}>
-        {PRESET_MEDICAL_TAGS.map((tag) => {
-          const active = selectedTags.includes(tag);
-          return (
-            <TouchableOpacity
-              key={tag}
-              style={[styles.tagChip, active && styles.tagChipActive]}
-              onPress={() => toggleTag(tag)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: active }}
-            >
-              <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
-                {tag}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Custom tags */}
-      {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
-        <View style={styles.customTagRow}>
-          {selectedTags
-            .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
-            .map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.tagChip, styles.tagChipActive]}
-                onPress={() => toggleTag(t)}
-              >
-                <Text style={styles.tagChipTextActive}>{t} ✕</Text>
-              </TouchableOpacity>
-            ))}
-        </View>
-      )}
-
-      <View style={styles.customInputRow}>
+        <Text style={styles.label}>生日</Text>
         <TextInput
-          style={[styles.input, { flex: 1 }]}
-          value={customTagInput}
-          onChangeText={setCustomTagInput}
-          placeholder="其他病史（手動輸入）"
-          returnKeyType="done"
-          onSubmitEditing={addCustomTag}
+          style={styles.input}
+          value={dateOfBirth}
+          onChangeText={setDateOfBirth}
+          placeholder="YYYY-MM-DD"
         />
-        <TouchableOpacity
-          style={styles.addTagBtn}
-          onPress={addCustomTag}
-          disabled={!customTagInput.trim()}
-        >
-          <Text style={[styles.addTagBtnText, !customTagInput.trim() && { opacity: 0.4 }]}>新增</Text>
-        </TouchableOpacity>
+
+        <Text style={styles.label}>性別</Text>
+        <View style={styles.genderRow}>
+          {(['male', 'female', 'other'] as const).map((g) => (
+            <TouchableOpacity
+              key={g}
+              style={[styles.genderButton, gender === g && styles.genderActive]}
+              onPress={() => setGender(g)}
+            >
+              <Text style={[styles.genderText, gender === g && styles.genderTextActive]}>
+                {g === 'male' ? '男' : g === 'female' ? '女' : '其他'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      <Text style={styles.label}>緊急聯絡人姓名</Text>
-      <TextInput style={styles.input} value={emergencyName} onChangeText={setEmergencyName} />
+      {/* ── Relationship Card ───────────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.label}>與您的關係</Text>
+        <View style={styles.tagGrid}>
+          {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
+            const active = relationship === value;
+            return (
+              <TouchableOpacity
+                key={value}
+                style={[styles.tagChip, active && styles.tagChipActive]}
+                onPress={() => setRelationship(active ? '' : value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
 
-      <Text style={styles.label}>緊急聯絡人電話</Text>
-      <TextInput
-        style={styles.input}
-        value={emergencyPhone}
-        onChangeText={setEmergencyPhone}
-        keyboardType="phone-pad"
-      />
+      {/* ── Medical Tags Card ───────────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.label}>疾病標籤</Text>
+        <View style={styles.tagGrid}>
+          {PRESET_MEDICAL_TAGS.map((tag) => {
+            const active = selectedTags.includes(tag);
+            return (
+              <TouchableOpacity
+                key={tag}
+                style={[styles.tagChip, active && styles.tagChipActive]}
+                onPress={() => toggleTag(tag)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: active }}
+              >
+                <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
+                  {tag}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
-      <Text style={styles.label}>居住地址</Text>
-      <TextInput
-        style={styles.input}
-        value={address}
-        onChangeText={setAddress}
-        placeholder="選填"
-      />
+        {/* Custom tags */}
+        {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
+          <View style={styles.customTagRow}>
+            {selectedTags
+              .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
+              .map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.tagChip, styles.tagChipActive]}
+                  onPress={() => toggleTag(t)}
+                >
+                  <Text style={styles.tagChipTextActive}>{t} ✕</Text>
+                </TouchableOpacity>
+              ))}
+          </View>
+        )}
 
-      <Text style={styles.label}>備註</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={3}
-      />
+        <View style={styles.customInputRow}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            value={customTagInput}
+            onChangeText={setCustomTagInput}
+            placeholder="其他病史（手動輸入）"
+            returnKeyType="done"
+            onSubmitEditing={addCustomTag}
+          />
+          <TouchableOpacity
+            style={styles.addTagBtn}
+            onPress={addCustomTag}
+            disabled={!customTagInput.trim()}
+          >
+            <Text style={[styles.addTagBtnText, !customTagInput.trim() && { opacity: 0.4 }]}>新增</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Emergency Contact Card ──────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.label}>緊急聯絡人姓名</Text>
+        <TextInput style={styles.input} value={emergencyName} onChangeText={setEmergencyName} />
+
+        <Text style={styles.label}>緊急聯絡人電話</Text>
+        <TextInput
+          style={styles.input}
+          value={emergencyPhone}
+          onChangeText={setEmergencyPhone}
+          keyboardType="phone-pad"
+        />
+      </View>
+
+      {/* ── Address & Notes Card ────────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.label}>居住地址</Text>
+        <TextInput
+          style={styles.input}
+          value={address}
+          onChangeText={setAddress}
+          placeholder="選填"
+        />
+
+        <Text style={styles.label}>備註</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
 
       <TouchableOpacity
         style={[styles.submitButton, saving && styles.submitDisabled]}
@@ -307,18 +322,37 @@ export default function EditRecipientScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 14 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  title: {
+    ...typography.headingLg,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+  // Card wrapper for form sections
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.low,
+  },
+  label: {
+    ...typography.bodyMd,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+  },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.bgSurface,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderColor: colors.borderDefault,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.textPrimary,
   },
   textArea: { height: 80, textAlignVertical: 'top' },
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -337,29 +371,53 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight, borderRadius: radius.sm,
   },
   addTagBtnText: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
-  genderRow: { flexDirection: 'row', gap: 8 },
+  genderRow: { flexDirection: 'row', gap: spacing.sm },
   genderButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#fff',
+    borderColor: colors.borderDefault,
+    backgroundColor: colors.bgSurface,
   },
-  genderActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  genderText: { color: '#374151', fontWeight: '500' },
-  genderTextActive: { color: '#fff' },
-  error: { color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, fontSize: 14, overflow: 'hidden' },
-  errorText: { fontSize: 14, color: '#dc2626', backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, textAlign: 'center', marginBottom: 12, overflow: 'hidden' },
-  retryButton: { backgroundColor: '#3b82f6', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10 },
-  retryText: { color: '#fff', fontWeight: '600' },
+  genderActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  genderText: { color: colors.textSecondary, fontWeight: '500' },
+  genderTextActive: { color: colors.white },
+  error: {
+    color: colors.danger,
+    backgroundColor: colors.dangerLight,
+    padding: spacing.md,
+    borderRadius: radius.sm,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    fontSize: typography.bodyMd.fontSize,
+    overflow: 'hidden',
+  },
+  errorText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.danger,
+    backgroundColor: colors.dangerLight,
+    padding: spacing.md,
+    borderRadius: radius.sm,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  retryText: { color: colors.white, fontWeight: '600' },
   submitButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    padding: spacing.lg,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing['2xl'],
+    ...shadows.high,
   },
   submitDisabled: { opacity: 0.5 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },
 });

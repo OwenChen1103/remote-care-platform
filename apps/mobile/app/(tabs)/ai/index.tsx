@@ -10,11 +10,13 @@ import {
   Share,
   Platform,
   Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useFocusEffect } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { ErrorState } from '@/components/ui/ErrorState';
 
@@ -36,16 +38,18 @@ interface AssistantResult {
   disclaimer: string; is_fallback: boolean;
 }
 
-interface HistoricalReport {
-  id: string; report_type: string; status_label: string; summary: string; generated_at: string;
-}
-
-interface InteractionRecord {
-  id: string; user_message: string; routed_task: string; created_at: string;
-}
-
 interface FollowUpSession {
   userMessage: string; routedTask: string; responseSummary: string; depth: number;
+}
+
+// Chat message for the conversation view
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'ai' | 'system';
+  text: string;
+  report?: ReportResult;
+  assistantResult?: AssistantResult;
+  timestamp: Date;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -82,26 +86,24 @@ function extractResponseSummary(result: Record<string, unknown>): string {
   return '';
 }
 
+let msgIdCounter = 0;
+function nextMsgId(): string { return `msg-${++msgIdCounter}-${Date.now()}`; }
+
 // ─── Component ────────────────────────────────────────────────
 
 export default function AiAssistantScreen() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [report, setReport] = useState<ReportResult | null>(null);
-  const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
   const [error, setError] = useState('');
   const [rateLimited, setRateLimited] = useState(false);
   const [freeText, setFreeText] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const followUpRef = useRef<FollowUpSession | null>(null);
   const [followUpDepth, setFollowUpDepth] = useState(0);
-
-  const [reportHistory, setReportHistory] = useState<HistoricalReport[]>([]);
-  const [interactionHistory, setInteractionHistory] = useState<InteractionRecord[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const welcomeShownForRef = useRef<string | null>(null);
 
   // ─── Helpers ────────────────────────────────────────────────
 
@@ -117,37 +119,45 @@ export default function AiAssistantScreen() {
     return { user_message: sess.userMessage, routed_task: sess.routedTask, response_summary: sess.responseSummary };
   }, []);
 
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, []);
+
+  const addMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    setMessages((prev) => [...prev, { ...msg, id: nextMsgId(), timestamp: new Date() }]);
+  }, []);
+
   // ─── Data ───────────────────────────────────────────────────
 
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        try {
+          const result = await api.get<Recipient[]>('/recipients');
+          setRecipients(result);
+          if (result[0] && !selectedRecipientId) setSelectedRecipientId(result[0].id);
+        } catch { /* silent */ }
+      })();
+    }, [selectedRecipientId]),
+  );
+
+  // Welcome message — only show once per recipient (not on every recipients array update)
   useEffect(() => {
-    void (async () => {
-      try {
-        const result = await api.get<Recipient[]>('/recipients');
-        setRecipients(result);
-        if (result[0] && !selectedRecipientId) setSelectedRecipientId(result[0].id);
-      } catch { /* silent */ }
-    })();
-  }, [selectedRecipientId]);
-
-  const fetchHistory = useCallback(async () => {
-    if (!selectedRecipientId) return;
-    setHistoryLoading(true);
-    try { setReportHistory(await api.get<HistoricalReport[]>(`/ai/reports?recipient_id=${selectedRecipientId}&limit=10`)); } catch { /* */ }
-    try { setInteractionHistory(await api.get<InteractionRecord[]>(`/ai/interactions?recipient_id=${selectedRecipientId}&limit=10`)); } catch { /* */ }
-    setHistoryLoading(false);
-    setInitialLoading(false);
-  }, [selectedRecipientId]);
-
-  useEffect(() => { void fetchHistory(); }, [fetchHistory]);
+    if (!selectedRecipientId || selectedRecipientId === welcomeShownForRef.current) return;
+    const name = recipients.find((r) => r.id === selectedRecipientId)?.name;
+    if (!name) return;
+    welcomeShownForRef.current = selectedRecipientId;
+    setMessages([{
+      id: nextMsgId(),
+      role: 'ai',
+      text: `你好！我是 AI 照護助理。\n想了解 ${name} 的什麼呢？可以點選下方的選項，或直接輸入問題。`,
+      timestamp: new Date(),
+    }]);
+  }, [selectedRecipientId, recipients]);
 
   const handleSelectRecipient = (id: string) => {
-    setSelectedRecipientId(id); setReport(null); setAssistantResult(null);
-    setError(''); setRateLimited(false); setFreeText('');
-    clearFollowUp(); setInitialLoading(true); setHistoryExpanded(false);
-  };
-
-  const handleNewTopic = () => {
-    setReport(null); setAssistantResult(null);
+    welcomeShownForRef.current = null; // allow new welcome message
+    setSelectedRecipientId(id);
     setError(''); setRateLimited(false); setFreeText('');
     clearFollowUp();
   };
@@ -157,58 +167,78 @@ export default function AiAssistantScreen() {
   const executeChipTask = useCallback(async (task: typeof SUGGESTED_TASKS[number], isFollowUp = false) => {
     if (!selectedRecipientId || generating) return;
     if (!isFollowUp) clearFollowUp();
-    setGenerating(true);    setError(''); setRateLimited(false); setReport(null); setAssistantResult(null);
+
+    // Add user bubble
+    addMessage({ role: 'user', text: task.label });
+    scrollToBottom();
+
+    setGenerating(true); setError(''); setRateLimited(false);
     const prevCtx = isFollowUp ? buildPreviousContext() : undefined;
     try {
       if (task.kind === 'report') {
         const result = await api.post<ReportResult>('/ai/health-report', { recipient_id: selectedRecipientId, report_type: task.key });
-        setReport(result);
+        addMessage({ role: 'ai', text: '', report: result });
         updateFollowUp(task.label, task.key, { summary: result.summary, status_label: result.status_label });
       } else {
         const result = await api.post<AssistantResult>('/ai/assistant', { recipient_id: selectedRecipientId, message: task.label, ...(prevCtx ? { previous_context: prevCtx } : {}) });
-        setAssistantResult(result);
-        if (result.result && result.routed_task) updateFollowUp(task.label, result.routed_task, result.result);
+        if (result.routed_kind === 'unsupported' && result.guidance) {
+          addMessage({ role: 'ai', text: result.guidance });
+        } else if (result.result) {
+          addMessage({ role: 'ai', text: '', assistantResult: result });
+          if (result.routed_task) updateFollowUp(task.label, result.routed_task, result.result);
+        }
       }
-      void fetchHistory();
     } catch (e) {
       if (e instanceof ApiError) { if (e.code === 'AI_RATE_LIMITED') setRateLimited(true); else setError(e.message); }
       else setError('更新失敗，請稍後再試');
-    } finally { setGenerating(false); }
-  }, [selectedRecipientId, generating, fetchHistory, clearFollowUp, updateFollowUp, buildPreviousContext]);
+    } finally { setGenerating(false); scrollToBottom(); }
+  }, [selectedRecipientId, generating, clearFollowUp, updateFollowUp, buildPreviousContext, addMessage, scrollToBottom]);
 
   const executeFreeText = useCallback(async () => {
     const trimmed = freeText.trim();
     if (!selectedRecipientId || !trimmed || generating) return;
     Keyboard.dismiss();
+
+    addMessage({ role: 'user', text: trimmed });
+    setFreeText('');
+    scrollToBottom();
+
     const isFollowUp = followUpRef.current !== null && followUpRef.current.depth < MAX_FOLLOWUP_DEPTH;
     const prevCtx = isFollowUp ? buildPreviousContext() : undefined;
-    setGenerating(true);    setError(''); setRateLimited(false); setReport(null); setAssistantResult(null);
+    setGenerating(true); setError(''); setRateLimited(false);
     try {
       const result = await api.post<AssistantResult>('/ai/assistant', { recipient_id: selectedRecipientId, message: trimmed, ...(prevCtx ? { previous_context: prevCtx } : {}) });
-      setAssistantResult(result); setFreeText('');
-      if (result.result && result.routed_task) updateFollowUp(trimmed, result.routed_task, result.result);
-      void fetchHistory();
+      if (result.routed_kind === 'unsupported' && result.guidance) {
+        addMessage({ role: 'ai', text: result.guidance });
+      } else if (result.result) {
+        addMessage({ role: 'ai', text: '', assistantResult: result });
+        if (result.routed_task) updateFollowUp(trimmed, result.routed_task, result.result);
+      }
     } catch (e) {
       if (e instanceof ApiError) { if (e.code === 'AI_RATE_LIMITED') setRateLimited(true); else setError(e.message); }
       else setError('更新失敗，請稍後再試');
-    } finally { setGenerating(false); }
-  }, [selectedRecipientId, freeText, generating, fetchHistory, updateFollowUp, buildPreviousContext]);
+    } finally { setGenerating(false); scrollToBottom(); }
+  }, [selectedRecipientId, freeText, generating, updateFollowUp, buildPreviousContext, addMessage, scrollToBottom]);
 
   const executeFollowUpChip = useCallback(async (label: string) => {
     if (!selectedRecipientId || generating) return;
     Keyboard.dismiss();
+    addMessage({ role: 'user', text: label });
+    scrollToBottom();
+
     const prevCtx = buildPreviousContext();
-    setGenerating(true);    setError(''); setRateLimited(false); setReport(null); setAssistantResult(null);
+    setGenerating(true); setError(''); setRateLimited(false);
     try {
       const result = await api.post<AssistantResult>('/ai/assistant', { recipient_id: selectedRecipientId, message: label, ...(prevCtx ? { previous_context: prevCtx } : {}) });
-      setAssistantResult(result); setFreeText('');
-      if (result.result && result.routed_task) updateFollowUp(label, result.routed_task, result.result);
-      void fetchHistory();
+      if (result.result) {
+        addMessage({ role: 'ai', text: '', assistantResult: result });
+        if (result.routed_task) updateFollowUp(label, result.routed_task, result.result);
+      }
     } catch (e) {
       if (e instanceof ApiError) { if (e.code === 'AI_RATE_LIMITED') setRateLimited(true); else setError(e.message); }
       else setError('更新失敗，請稍後再試');
-    } finally { setGenerating(false); }
-  }, [selectedRecipientId, generating, fetchHistory, updateFollowUp, buildPreviousContext]);
+    } finally { setGenerating(false); scrollToBottom(); }
+  }, [selectedRecipientId, generating, updateFollowUp, buildPreviousContext, addMessage, scrollToBottom]);
 
   // ─── Share ──────────────────────────────────────────────────
 
@@ -216,513 +246,325 @@ export default function AiAssistantScreen() {
     if (Platform.OS === 'web') { await Clipboard.setStringAsync(text); return; }
     await Share.share({ message: text });
   };
-  const buildShareText = (): string => {
+  const buildShareText = (msg: ChatMessage): string => {
     const name = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
-    if (report) {
-      return [`【${name} ${TASK_LABELS[report.report_type] ?? report.report_type}】`, report.summary, '', '最近觀察：',
-        ...report.reasons.map((r) => `• ${r}`), '', '溫馨提醒：', ...report.suggestions.map((s) => `• ${s}`), '', report.disclaimer].join('\n');
+    if (msg.report) {
+      const rpt = msg.report;
+      return [`【${name} ${TASK_LABELS[rpt.report_type] ?? rpt.report_type}】`, rpt.summary, '', '最近觀察：',
+        ...rpt.reasons.map((r) => `• ${r}`), '', '溫馨提醒：', ...rpt.suggestions.map((s) => `• ${s}`), '', rpt.disclaimer].join('\n');
     }
-    if (assistantResult?.result) {
-      const r = assistantResult.result;
+    if (msg.assistantResult?.result) {
+      const r = msg.assistantResult.result;
       const parts: string[] = [`【${name} AI照護助理】`];
       if (typeof r.summary === 'string') parts.push(r.summary);
       if (typeof r.explanation === 'string') parts.push(r.explanation);
-      parts.push('', assistantResult.disclaimer);
+      parts.push('', msg.assistantResult.disclaimer);
       return parts.join('\n');
     }
-    return '';
+    return msg.text;
   };
 
-  // ─── Derived ────────────────────────────────────────────────
+  // ─── Derived ──────────────────────────────────────────────
 
-  const hasActiveResult = report !== null || (assistantResult !== null && assistantResult.result !== null);
-  const hasGuidance = assistantResult !== null && assistantResult.routed_kind === 'unsupported' && assistantResult.guidance !== null;
-  const activeRoutedTask = report?.report_type ?? assistantResult?.routed_task ?? null;
-  const canFollowUp = hasActiveResult && followUpDepth < MAX_FOLLOWUP_DEPTH && activeRoutedTask !== null;
+  const lastAiMsg = [...messages].reverse().find((m) => m.role === 'ai' && (m.report || m.assistantResult));
+  const activeRoutedTask = lastAiMsg?.report?.report_type ?? lastAiMsg?.assistantResult?.routed_task ?? null;
+  const canFollowUp = lastAiMsg && followUpDepth < MAX_FOLLOWUP_DEPTH && activeRoutedTask !== null;
   const followUpChips = canFollowUp && activeRoutedTask ? (FOLLOWUP_CHIPS[activeRoutedTask] ?? []) : [];
-  const atFollowUpLimit = followUpDepth >= MAX_FOLLOWUP_DEPTH && hasActiveResult;
-  const hasHistory = interactionHistory.length > 0 || reportHistory.length > 0;
-  const isLanding = !hasActiveResult && !hasGuidance && !generating;
+  const isLanding = messages.length <= 1 && !generating;
+  const selectedName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
 
-  // ─── Response content renderer ──────────────────────────────
+  // ─── Render response content inside bubble ────────────────
 
-  const renderResponseContent = (r: Record<string, unknown>, disc: string, isFallback: boolean) => (
+  const renderBubbleContent = (r: Record<string, unknown>, disc: string, isFallback: boolean) => (
     <>
-      {typeof r.summary === 'string' && <Text style={st.resSummary}>{r.summary}</Text>}
-      {typeof r.explanation === 'string' && <Text style={st.resSummary}>{r.explanation}</Text>}
-      {typeof r.health_update === 'string' && <Text style={st.resSummary}>{r.health_update}</Text>}
-      {typeof r.message === 'string' && <Text style={st.resSummary}>{r.message}</Text>}
-      {typeof r.greeting === 'string' && <Text style={st.resItem}>{r.greeting}</Text>}
-      {Array.isArray(r.reasons) && <View style={st.resSection}><Text style={st.resSectionLabel}>最近觀察</Text>{(r.reasons as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.suggestions) && <View style={st.resSection}><Text style={st.resSectionLabel}>溫馨提醒</Text>{(r.suggestions as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.key_observations) && <View style={st.resSection}><Text style={st.resSectionLabel}>重點觀察</Text>{(r.key_observations as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.key_points) && <View style={st.resSection}><Text style={st.resSectionLabel}>重點</Text>{(r.key_points as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.highlights) && <View style={st.resSection}><Text style={st.resSectionLabel}>重點</Text>{(r.highlights as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.questions) && <View style={st.resSection}><Text style={st.resSectionLabel}>建議問題</Text>{(r.questions as Array<Record<string, string>>).map((q, i) => <Text key={i} style={st.resItem}>• {typeof q === 'string' ? q : q.question ?? ''}</Text>)}</View>}
-      {Array.isArray(r.data_to_bring) && <View style={st.resSection}><Text style={st.resSectionLabel}>需準備的資料</Text>{(r.data_to_bring as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {Array.isArray(r.reminders) && <View style={st.resSection}><Text style={st.resSectionLabel}>提醒</Text>{(r.reminders as string[]).map((x, i) => <Text key={i} style={st.resItem}>• {x}</Text>)}</View>}
-      {typeof r.notes === 'string' && <Text style={st.resClosing}>{r.notes}</Text>}
-      {typeof r.closing === 'string' && <Text style={st.resClosing}>{r.closing}</Text>}
-      {isFallback && <Text style={st.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>}
-      <Text style={st.disclaimer}>{disc}</Text>
-      <TouchableOpacity style={st.shareButton} onPress={() => void handleShare(buildShareText())} accessibilityLabel="分享給家人">
-        <Text style={st.shareText}>分享給家人</Text>
-      </TouchableOpacity>
+      {typeof r.summary === 'string' && <Text style={s.bubbleText}>{r.summary}</Text>}
+      {typeof r.explanation === 'string' && <Text style={s.bubbleText}>{r.explanation}</Text>}
+      {typeof r.health_update === 'string' && <Text style={s.bubbleText}>{r.health_update}</Text>}
+      {typeof r.message === 'string' && <Text style={s.bubbleText}>{r.message}</Text>}
+      {typeof r.greeting === 'string' && <Text style={s.bubbleItem}>{r.greeting}</Text>}
+      {Array.isArray(r.reasons) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>最近觀察</Text>{(r.reasons as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.suggestions) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>溫馨提醒</Text>{(r.suggestions as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.key_observations) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>重點觀察</Text>{(r.key_observations as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.key_points) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>重點</Text>{(r.key_points as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.highlights) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>重點</Text>{(r.highlights as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.questions) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>建議問題</Text>{(r.questions as Array<Record<string, string>>).map((q, i) => <Text key={i} style={s.bubbleItem}>• {typeof q === 'string' ? q : q.question ?? ''}</Text>)}</View>}
+      {Array.isArray(r.data_to_bring) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>需準備的資料</Text>{(r.data_to_bring as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {Array.isArray(r.reminders) && <View style={s.bubbleSection}><Text style={s.bubbleSectionLabel}>提醒</Text>{(r.reminders as string[]).map((x, i) => <Text key={i} style={s.bubbleItem}>• {x}</Text>)}</View>}
+      {typeof r.notes === 'string' && <Text style={s.bubbleClosing}>{r.notes}</Text>}
+      {typeof r.closing === 'string' && <Text style={s.bubbleClosing}>{r.closing}</Text>}
+      {isFallback && <Text style={s.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>}
+      <Text style={s.bubbleDisclaimer}>{disc}</Text>
     </>
   );
 
   // ─── Render ─────────────────────────────────────────────────
 
   return (
-    <ScrollView style={st.screen} contentContainerStyle={st.scrollContent} keyboardShouldPersistTaps="handled">
-
-      {initialLoading ? (
-        <View style={st.loadingArea}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={st.loadingText}>載入中...</Text>
-        </View>
-      ) : (
-        <>
-          {/* ═══ Title ════════════════════════════════════════ */}
-          <Text style={st.pageTitle}>AI照護助理</Text>
-          {isLanding && (
-            <Text style={st.pageSubtitle}>想了解哪位家人的近況？</Text>
-          )}
-
-          {/* ═══ Recipient Selector ══════════════════════════ */}
-          {recipients.length > 1 && !hasActiveResult && (
-            <View style={st.recipientRow}>
-              {recipients.map((r) => {
-                const active = r.id === selectedRecipientId;
-                return (
-                  <TouchableOpacity key={r.id} style={[st.chip, active && st.chipActive]} onPress={() => handleSelectRecipient(r.id)} accessibilityRole="button" accessibilityState={{ selected: active }}>
-                    <Text style={[st.chipText, active && st.chipTextActive]}>{r.name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* ═══ Action Grid 3×2 ═════════════════════════════ */}
-          {selectedRecipientId && isLanding && (
-            <View style={st.actionGrid}>
-              {SUGGESTED_TASKS.map((task) => (
-                <TouchableOpacity key={task.key} style={st.actionTile} onPress={() => void executeChipTask(task, false)} disabled={generating} activeOpacity={0.7}>
-                  <Text style={st.actionTileText}>{task.label}</Text>
+    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
+      {/* ── Header ──────────────────────────────── */}
+      <View style={s.header}>
+        <Text style={s.headerTitle}>AI 照護助理</Text>
+        {recipients.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.headerChips}>
+            {recipients.map((r) => {
+              const active = r.id === selectedRecipientId;
+              return (
+                <TouchableOpacity key={r.id} style={[s.chip, active && s.chipActive]} onPress={() => handleSelectRecipient(r.id)} activeOpacity={0.7}>
+                  <Text style={[s.chipText, active && s.chipTextActive]}>{r.name}</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )}
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
 
-          {/* ═══ Query Input (landing) ═══════════════════════ */}
-          {selectedRecipientId && isLanding && (
-            <View style={st.querySection}>
-              <Text style={st.queryLabel}>也可以直接問我問題</Text>
-              <View style={st.queryRow}>
-                <TextInput
-                  style={st.queryInput}
-                  value={freeText}
-                  onChangeText={setFreeText}
-                  placeholder="輸入您的問題..."
-                  placeholderTextColor={colors.textDisabled}
-                  maxLength={500}
-                  editable={!generating}
-                  returnKeyType="send"
-                  onSubmitEditing={() => void executeFreeText()}
-                />
-                <TouchableOpacity
-                  style={[st.sendBtn, (!freeText.trim() || generating) && st.sendBtnDisabled]}
-                  onPress={() => void executeFreeText()}
-                  disabled={!freeText.trim() || generating}
-                  accessibilityLabel="送出"
-                >
-                  <Text style={st.sendBtnText}>送出</Text>
-                </TouchableOpacity>
+      {/* ── Chat Area ───────────────────────────── */}
+      <ScrollView
+        ref={scrollRef}
+        style={s.chatArea}
+        contentContainerStyle={s.chatContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Messages */}
+        {messages.map((msg) => {
+          if (msg.role === 'user') {
+            return (
+              <View key={msg.id} style={s.userRow}>
+                <View style={s.userBubble}>
+                  <Text style={s.userBubbleText}>{msg.text}</Text>
+                </View>
+              </View>
+            );
+          }
+
+          // AI bubble
+          return (
+            <View key={msg.id} style={s.aiRow}>
+              <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+              <View style={s.aiBubble}>
+                {/* Plain text message */}
+                {msg.text && !msg.report && !msg.assistantResult && (
+                  <Text style={s.bubbleText}>{msg.text}</Text>
+                )}
+
+                {/* Report result */}
+                {msg.report && (
+                  <>
+                    <View style={s.bubbleHeader}>
+                      <Text style={s.bubbleTypeLabel}>{TASK_LABELS[msg.report.report_type] ?? msg.report.report_type}</Text>
+                      <StatusPill status={msg.report.status_label} type="aiHealth" />
+                    </View>
+                    {renderBubbleContent({ summary: msg.report.summary, reasons: msg.report.reasons, suggestions: msg.report.suggestions }, msg.report.disclaimer, msg.report.is_fallback)}
+                    <TouchableOpacity style={s.shareBtn} onPress={() => void handleShare(buildShareText(msg))} activeOpacity={0.7}>
+                      <Text style={s.shareBtnText}>分享給家人</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Assistant result */}
+                {msg.assistantResult?.result && msg.assistantResult.routed_kind !== 'unsupported' && (
+                  <>
+                    <View style={s.bubbleHeader}>
+                      <Text style={s.bubbleTypeLabel}>{TASK_LABELS[msg.assistantResult.routed_task ?? ''] ?? ''}</Text>
+                      {typeof msg.assistantResult.result.status_label === 'string' && <StatusPill status={msg.assistantResult.result.status_label} type="aiHealth" />}
+                    </View>
+                    {renderBubbleContent(msg.assistantResult.result, msg.assistantResult.disclaimer, msg.assistantResult.is_fallback)}
+                    <TouchableOpacity style={s.shareBtn} onPress={() => void handleShare(buildShareText(msg))} activeOpacity={0.7}>
+                      <Text style={s.shareBtnText}>分享給家人</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </View>
-          )}
+          );
+        })}
 
-          {/* ═══ Generating ══════════════════════════════════ */}
-          {generating && (
-            <View style={st.generatingArea}>
+        {/* Generating indicator */}
+        {generating && (
+          <View style={s.aiRow}>
+            <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+            <View style={s.aiBubbleTyping}>
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={st.generatingText}>正在幫您整理...</Text>
+              <Text style={s.typingText}>正在整理...</Text>
             </View>
-          )}
+          </View>
+        )}
 
-          {rateLimited && (
-            <View style={st.infoBanner}><Text style={st.infoBannerText}>已達更新上限，請稍後再試</Text></View>
-          )}
+        {/* Error / Rate limit */}
+        {rateLimited && (
+          <View style={s.aiRow}>
+            <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+            <View style={s.aiBubbleWarn}><Text style={s.warnText}>已達更新上限，請稍後再試</Text></View>
+          </View>
+        )}
+        {error ? <View style={s.errorWrap}><ErrorState message={error} /></View> : null}
 
-          {error ? <View style={st.errorArea}><ErrorState message={error} /></View> : null}
-
-          {/* ═══ Guidance ════════════════════════════════════ */}
-          {hasGuidance && assistantResult && (
-            <Card style={st.guidanceCard}>
-              <Text style={st.guidanceText}>{assistantResult.guidance}</Text>
-              <Text style={st.disclaimerSmall}>{assistantResult.disclaimer}</Text>
-            </Card>
-          )}
-
-          {/* ═══ Response Card ═══════════════════════════════ */}
-          {report && (
-            <Card style={st.responseCard}>
-              <View style={st.resHeader}>
-                <Text style={st.resTypeLabel}>{TASK_LABELS[report.report_type] ?? report.report_type}</Text>
-                <StatusPill status={report.status_label} type="aiHealth" />
-              </View>
-              {renderResponseContent({ summary: report.summary, reasons: report.reasons, suggestions: report.suggestions, status_label: report.status_label }, report.disclaimer, report.is_fallback)}
-            </Card>
-          )}
-
-          {assistantResult && assistantResult.result && assistantResult.routed_kind !== 'unsupported' && (
-            <Card style={st.responseCard}>
-              <View style={st.resHeader}>
-                <Text style={st.resTypeLabel}>{TASK_LABELS[assistantResult.routed_task ?? ''] ?? assistantResult.routed_task}</Text>
-                {typeof assistantResult.result.status_label === 'string' && <StatusPill status={assistantResult.result.status_label} type="aiHealth" />}
-              </View>
-              {renderResponseContent(assistantResult.result, assistantResult.disclaimer, assistantResult.is_fallback)}
-            </Card>
-          )}
-
-          {/* ═══ Follow-up ═══════════════════════════════════ */}
-          {followUpChips.length > 0 && !generating && (
-            <View style={st.followUpArea}>
-              <Text style={st.followUpLabel}>想接著了解：</Text>
-              <View style={st.followUpRow}>
-                {followUpChips.map((label) => (
-                  <TouchableOpacity key={label} style={st.followUpChip} onPress={() => void executeFollowUpChip(label)} activeOpacity={0.7}>
-                    <Text style={st.followUpChipText}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {atFollowUpLimit && !generating && (
-            <Text style={st.limitHint}>接下來會視為新問題重新整理</Text>
-          )}
-
-          {/* ═══ Compact input (result / guidance state) ═════ */}
-          {(hasActiveResult || hasGuidance) && !generating && selectedRecipientId && (
-            <View style={st.compactInputRow}>
-              <TextInput
-                style={st.compactInput}
-                value={freeText}
-                onChangeText={setFreeText}
-                placeholder={canFollowUp ? '接著問更多...' : '輸入新的問題...'}
-                placeholderTextColor={colors.textDisabled}
-                maxLength={500}
-                editable={!generating}
-                returnKeyType="send"
-                onSubmitEditing={() => void executeFreeText()}
-              />
-              <TouchableOpacity
-                style={[st.compactSendBtn, (!freeText.trim() || generating) && st.sendBtnDisabled]}
-                onPress={() => void executeFreeText()}
-                disabled={!freeText.trim() || generating}
-                accessibilityLabel="送出"
-              >
-                <Text style={st.sendBtnText}>送出</Text>
+        {/* Suggested tasks (landing only) — 2×3 grid */}
+        {isLanding && selectedRecipientId && (
+          <View style={s.suggestGrid}>
+            {SUGGESTED_TASKS.map((task) => (
+              <TouchableOpacity key={task.key} style={s.suggestChip} onPress={() => void executeChipTask(task, false)} disabled={generating} activeOpacity={0.7}>
+                <Text style={s.suggestChipText}>{task.label}</Text>
               </TouchableOpacity>
-            </View>
-          )}
+            ))}
+          </View>
+        )}
 
-          {(hasActiveResult || hasGuidance) && !generating && (
-            <TouchableOpacity style={st.newTopicBtn} onPress={handleNewTopic} activeOpacity={0.7}>
-              <Text style={st.newTopicText}>重新開始</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* ═══ History (collapsible) ═══════════════════════ */}
-          {hasHistory && (
-            <View style={st.historySection}>
-              <TouchableOpacity style={st.historyToggle} onPress={() => setHistoryExpanded((prev) => !prev)} activeOpacity={0.7}>
-                <Text style={st.historyToggleText}>查看過去紀錄</Text>
-                <Text style={st.historyArrow}>{historyExpanded ? '▲' : '▼'}</Text>
+        {/* Follow-up chips */}
+        {followUpChips.length > 0 && !generating && (
+          <View style={s.followUpRow}>
+            {followUpChips.map((label) => (
+              <TouchableOpacity key={label} style={s.suggestChip} onPress={() => void executeFollowUpChip(label)} activeOpacity={0.7}>
+                <Text style={s.suggestChipText}>{label}</Text>
               </TouchableOpacity>
-              {historyExpanded && (
-                historyLoading ? (
-                  <ActivityIndicator size="small" color={colors.primary} style={st.historyLoader} />
-                ) : (
-                  <View style={st.historyList}>
-                    {interactionHistory.slice(0, 3).map((item) => (
-                      <View key={item.id} style={st.historyItem}>
-                        <View style={st.historyItemRow}>
-                          <Text style={st.historyType}>{TASK_LABELS[item.routed_task] ?? item.routed_task}</Text>
-                          <Text style={st.historyDate}>{new Date(item.created_at).toLocaleDateString('zh-TW')}</Text>
-                        </View>
-                        <Text style={st.historySummary} numberOfLines={1}>{item.user_message}</Text>
-                      </View>
-                    ))}
-                    {reportHistory.slice(0, 3).map((h) => (
-                      <View key={h.id} style={st.historyItem}>
-                        <View style={st.historyItemRow}>
-                          <Text style={st.historyType}>{TASK_LABELS[h.report_type] ?? h.report_type}</Text>
-                          <StatusPill status={h.status_label} type="aiHealth" />
-                          <Text style={st.historyDate}>{new Date(h.generated_at).toLocaleDateString('zh-TW')}</Text>
-                        </View>
-                        <Text style={st.historySummary} numberOfLines={2}>{h.summary}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )
-              )}
-            </View>
-          )}
+            ))}
+          </View>
+        )}
+      </ScrollView>
 
-          <Text style={st.footerNote}>以上為 AI 整理，僅供健康參考，不構成醫療診斷。</Text>
-        </>
-      )}
-    </ScrollView>
+      {/* ── Input Bar (fixed bottom) ────────────── */}
+      <View style={s.inputBar}>
+        <View style={s.inputWrap}>
+          <TextInput
+            style={s.input}
+            value={freeText}
+            onChangeText={setFreeText}
+            placeholder={`問問 ${selectedName} 的健康狀況...`}
+            placeholderTextColor={colors.textDisabled}
+            maxLength={500}
+            editable={!generating}
+            returnKeyType="send"
+            onSubmitEditing={() => void executeFreeText()}
+            multiline
+          />
+        </View>
+        <TouchableOpacity
+          style={[s.sendBtn, (!freeText.trim() || generating) && s.sendBtnDisabled]}
+          onPress={() => void executeFreeText()}
+          disabled={!freeText.trim() || generating}
+          accessibilityLabel="送出"
+        >
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+            <Path d="M22 2L11 13" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  // Screen
-  screen: { flex: 1, backgroundColor: colors.bgScreen },
-  scrollContent: { padding: spacing.lg, paddingBottom: spacing['3xl'] * 2 },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bgScreen },
 
-  // Loading
-  loadingArea: { alignItems: 'center', paddingVertical: spacing['3xl'] * 2, gap: spacing.md },
-  loadingText: { fontSize: typography.bodyMd.fontSize, color: colors.textDisabled },
+  // ─── Header ─────────────────────────────────────────────
+  header: {
+    backgroundColor: colors.bgSurface, paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm, paddingBottom: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.borderDefault,
+  },
+  headerTitle: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  headerChips: { gap: spacing.sm },
+  chip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.bgSurfaceAlt },
+  chipActive: { backgroundColor: colors.primary },
+  chipText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, fontWeight: '600' },
+  chipTextActive: { color: colors.white, fontWeight: '700' },
 
-  // Title area
-  pageTitle: {
-    fontSize: typography.headingMd.fontSize,
-    fontWeight: typography.headingMd.fontWeight,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  pageSubtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textTertiary,
-    marginBottom: spacing.xl,
-  },
+  // ─── Chat Area ──────────────────────────────────────────
+  chatArea: { flex: 1 },
+  chatContent: { padding: spacing.lg, paddingBottom: spacing.md },
 
-  // Recipient chips
-  recipientRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
+  // ─── User Bubble ────────────────────────────────────────
+  userRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.md },
+  userBubble: {
+    backgroundColor: colors.primary, borderRadius: radius.xl,
+    borderBottomRightRadius: spacing.xs,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    maxWidth: '75%',
   },
-  chip: {
-    backgroundColor: colors.bgSurface,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  chipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
-  },
-  chipText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textSecondary,
-  },
-  chipTextActive: {
-    color: colors.primaryText,
-    fontWeight: '600',
-  },
+  userBubbleText: { fontSize: typography.bodyMd.fontSize, color: colors.white, lineHeight: 20 },
 
-  // Action grid — 3 rows × 2 columns
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: spacing['2xl'],
+  // ─── AI Bubble ──────────────────────────────────────────
+  aiRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, gap: spacing.sm },
+  aiAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
-  actionTile: {
-    width: '48%',
-    backgroundColor: colors.bgSurface,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    ...shadows.low,
+  aiAvatarText: { fontSize: 11, fontWeight: '700', color: colors.primaryText },
+  aiBubble: {
+    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
+    borderBottomLeftRadius: spacing.xs,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    maxWidth: '80%', ...shadows.low,
   },
-  actionTileText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '500',
-    color: colors.textPrimary,
-    textAlign: 'center',
+  aiBubbleTyping: {
+    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, ...shadows.low,
   },
+  typingText: { fontSize: typography.bodySm.fontSize, color: colors.textDisabled },
+  aiBubbleWarn: {
+    backgroundColor: colors.warningLight, borderRadius: radius.xl,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+  },
+  warnText: { fontSize: typography.bodySm.fontSize, color: colors.warning },
 
-  // Query section (landing state)
-  querySection: {
-    marginBottom: spacing.xl,
-  },
-  queryLabel: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-    marginBottom: spacing.sm,
-  },
-  queryRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  queryInput: {
-    flex: 1,
-    backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textPrimary,
-    minHeight: 48,
-  },
-  sendBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.xl,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendBtnText: { color: colors.white, fontSize: typography.bodyMd.fontSize, fontWeight: '600' },
+  // ─── Bubble Content ─────────────────────────────────────
+  bubbleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  bubbleTypeLabel: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.textTertiary },
+  bubbleText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary, lineHeight: 22, marginBottom: spacing.sm },
+  bubbleSection: { marginBottom: spacing.sm, paddingTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault },
+  bubbleSectionLabel: { fontSize: typography.captionSm.fontSize, fontWeight: '600', color: colors.textTertiary, marginBottom: spacing.xs },
+  bubbleItem: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, lineHeight: 20 },
+  bubbleClosing: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginTop: spacing.xs },
+  bubbleDisclaimer: { fontSize: 10, color: colors.textDisabled, marginTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault, paddingTop: spacing.sm },
+  fallbackNote: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, fontStyle: 'italic', marginBottom: spacing.xs },
+  shareBtn: { backgroundColor: colors.primaryLight, borderRadius: radius.full, paddingVertical: spacing.sm, alignItems: 'center', marginTop: spacing.md },
+  shareBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.primaryText },
 
-  // Generating
-  generatingArea: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing['3xl'],
-    justifyContent: 'center',
-  },
-  generatingText: { fontSize: typography.bodyMd.fontSize, color: colors.textDisabled },
-
-  // Info / error
-  infoBanner: { backgroundColor: colors.infoLight, borderRadius: radius.sm, padding: spacing.md, marginBottom: spacing.md, alignItems: 'center' },
-  infoBannerText: { fontSize: typography.bodyMd.fontSize, color: colors.primaryText, textAlign: 'center' },
-  errorArea: { marginBottom: spacing.md },
-
-  // Guidance card
-  guidanceCard: { padding: spacing.lg, marginBottom: spacing.md },
-  guidanceText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textSecondary,
-    lineHeight: typography.bodyMd.fontSize * 1.6,
-  },
-  disclaimerSmall: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-    marginTop: spacing.sm,
-  },
-
-  // Response card
-  responseCard: { padding: spacing.xl, marginBottom: spacing.md },
-  resHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
-  resTypeLabel: { fontSize: typography.headingSm.fontSize, fontWeight: typography.headingSm.fontWeight, color: colors.textSecondary },
-  resSummary: { fontSize: typography.bodyLg.fontSize, color: colors.textPrimary, lineHeight: typography.bodyLg.fontSize * 1.5, marginBottom: spacing.md },
-  resSection: { marginBottom: spacing.md, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault },
-  resSectionLabel: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.textTertiary, marginBottom: spacing.xs },
-  resItem: { fontSize: typography.bodyMd.fontSize, color: colors.textSecondary, lineHeight: typography.bodyMd.fontSize * 1.6 },
-  resClosing: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, marginTop: spacing.sm },
-  fallbackNote: { fontSize: typography.caption.fontSize, color: colors.textDisabled, fontStyle: 'italic', marginBottom: spacing.sm },
-  disclaimer: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, lineHeight: typography.captionSm.fontSize * 1.45, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault, paddingTop: spacing.sm + spacing.xxs, marginTop: spacing.sm + spacing.xxs },
-  shareButton: { backgroundColor: colors.primaryLight, borderRadius: radius.md, paddingVertical: spacing.sm + spacing.xxs, alignItems: 'center', marginTop: spacing.md },
-  shareText: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.primaryText },
-
-  // Follow-up
-  followUpArea: { marginBottom: spacing.md },
-  followUpLabel: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-    marginBottom: spacing.sm,
+  // ─── Suggested Tasks Grid (2×3) ──────────────────────────
+  suggestGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
+    marginBottom: spacing.md, paddingLeft: 32 + spacing.sm, // align with bubble (avatar width + gap)
   },
   followUpRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
+    marginBottom: spacing.md, paddingLeft: 32 + spacing.sm,
   },
-  followUpChip: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+  suggestChip: {
+    backgroundColor: colors.bgSurface, borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
   },
-  followUpChipText: {
-    fontSize: typography.bodySm.fontSize,
-    fontWeight: '500',
-    color: colors.primaryText,
-  },
+  suggestChipText: { fontSize: typography.caption.fontSize, fontWeight: '500', color: colors.textPrimary },
 
-  // Limit + new topic
-  limitHint: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, textAlign: 'center', marginBottom: spacing.md },
-  newTopicBtn: { alignSelf: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderDefault, marginBottom: spacing.xl },
-  newTopicText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
+  // ─── Error ──────────────────────────────────────────────
+  errorWrap: { marginBottom: spacing.md },
 
-  // Compact input (result / guidance state)
-  compactInputRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+  // ─── Input Bar (fixed bottom) ───────────────────────────
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.bgSurface,
+    borderTopWidth: 1, borderTopColor: colors.borderDefault,
   },
-  compactInput: {
-    flex: 1,
-    backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.md,
+  inputWrap: {
+    flex: 1, backgroundColor: colors.bgSurfaceAlt, borderRadius: 20,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + spacing.xxs,
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textPrimary,
-  },
-  compactSendBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    minHeight: 40, maxHeight: 100,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-
-  // History (collapsible)
-  historySection: {
-    marginTop: spacing.lg,
-    paddingTop: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderDefault,
-  },
-  historyToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  input: {
+    fontSize: typography.bodyMd.fontSize, color: colors.textPrimary,
     paddingVertical: spacing.sm,
+    lineHeight: 20,
   },
-  historyToggleText: {
-    fontSize: typography.bodySm.fontSize,
-    fontWeight: '600',
-    color: colors.textDisabled,
+  sendBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center',
+    ...shadows.low,
   },
-  historyArrow: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-  },
-  historyLoader: { marginTop: spacing.md },
-  historyList: { marginTop: spacing.sm },
-  historyItem: {
-    paddingVertical: spacing.sm + spacing.xxs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderDefault,
-  },
-  historyItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xxs,
-  },
-  historyType: { fontSize: typography.captionSm.fontSize, fontWeight: '600', color: colors.textTertiary },
-  historyDate: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, marginLeft: 'auto' },
-  historySummary: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled },
-
-  // Footer
-  footerNote: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, textAlign: 'center', marginTop: spacing.xl },
+  sendBtnDisabled: { opacity: 0.3 },
 });

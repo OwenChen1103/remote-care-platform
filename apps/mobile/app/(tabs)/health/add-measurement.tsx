@@ -371,9 +371,10 @@ const styles = StyleSheet.create({
 
   // ─── Submit ───────────────────────────────────────────────
   submitButton: {
-    backgroundColor: colors.primary, borderRadius: radius.md,
+    backgroundColor: colors.primary, borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
     marginTop: spacing.sm,
+    ...shadows.high,
   },
   submitDisabled: { opacity: 0.5 },
   submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },

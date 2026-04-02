@@ -97,78 +97,84 @@ export default function ExportScreen() {
       <View style={styles.content}>
         {/* Recipient selector */}
         {recipients.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>被照護者</Text>
+              <View style={styles.chipRow}>
+                {recipients.map((r) => {
+                  const active = r.id === selectedRecipientId;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[styles.chip, active && styles.chipActive]}
+                      onPress={() => setSelectedRecipientId(r.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                        {r.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Type selector */}
+        <View style={styles.card}>
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>被照護者</Text>
-            <View style={styles.chipRow}>
-              {recipients.map((r) => {
-                const active = r.id === selectedRecipientId;
+            <Text style={styles.sectionLabel}>量測類型</Text>
+            <View style={styles.toggleRow}>
+              {(['blood_pressure', 'blood_glucose'] as const).map((t) => {
+                const active = type === t;
                 return (
                   <TouchableOpacity
-                    key={r.id}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => setSelectedRecipientId(r.id)}
+                    key={t}
+                    style={[styles.toggleChip, active && styles.toggleChipActive]}
+                    onPress={() => setType(t)}
                     accessibilityRole="button"
                     accessibilityState={{ selected: active }}
                   >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                      {r.name}
+                    <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
+                      {t === 'blood_pressure' ? '血壓' : '血糖'}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
           </View>
-        )}
-
-        {/* Type selector */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>量測類型</Text>
-          <View style={styles.toggleRow}>
-            {(['blood_pressure', 'blood_glucose'] as const).map((t) => {
-              const active = type === t;
-              return (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.toggleChip, active && styles.toggleChipActive]}
-                  onPress={() => setType(t)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                >
-                  <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
-                    {t === 'blood_pressure' ? '血壓' : '血糖'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
         </View>
 
         {/* Date range */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>日期範圍</Text>
-          <View style={styles.dateRow}>
-            <View style={styles.dateField}>
-              <Text style={styles.dateHint}>起始</Text>
-              <TextInput
-                style={styles.input}
-                value={fromDate}
-                onChangeText={setFromDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textDisabled}
-                accessibilityLabel="起始日期"
-              />
-            </View>
-            <Text style={styles.dateSep}>至</Text>
-            <View style={styles.dateField}>
-              <Text style={styles.dateHint}>結束</Text>
-              <TextInput
-                style={styles.input}
-                value={toDate}
-                onChangeText={setToDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textDisabled}
-                accessibilityLabel="結束日期"
-              />
+        <View style={styles.card}>
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>日期範圍</Text>
+            <View style={styles.dateRow}>
+              <View style={styles.dateField}>
+                <Text style={styles.dateHint}>起始</Text>
+                <TextInput
+                  style={styles.input}
+                  value={fromDate}
+                  onChangeText={setFromDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textDisabled}
+                  accessibilityLabel="起始日期"
+                />
+              </View>
+              <Text style={styles.dateSep}>至</Text>
+              <View style={styles.dateField}>
+                <Text style={styles.dateHint}>結束</Text>
+                <TextInput
+                  style={styles.input}
+                  value={toDate}
+                  onChangeText={setToDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textDisabled}
+                  accessibilityLabel="結束日期"
+                />
+              </View>
             </View>
           </View>
         </View>
@@ -240,8 +246,17 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginTop: spacing.xs },
   content: { padding: spacing.lg },
 
+  // ─── Card container ───────────────────────────────────────
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.sm,
+  },
+
   // ─── Sections ─────────────────────────────────────────────
-  section: { marginBottom: spacing.lg },
+  section: { marginBottom: 0 },
   sectionLabel: {
     fontSize: 10, fontWeight: '500', color: colors.textDisabled,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.sm,
@@ -280,14 +295,16 @@ const styles = StyleSheet.create({
   // ─── Error ────────────────────────────────────────────────
   errorBox: {
     backgroundColor: colors.dangerLight, borderRadius: radius.sm,
-    padding: spacing.md, marginBottom: spacing.md,
+    padding: spacing.md, marginBottom: spacing.md, marginTop: spacing.sm,
   },
   errorText: { color: colors.danger, fontSize: typography.bodyMd.fontSize, textAlign: 'center' },
 
   // ─── Generate ─────────────────────────────────────────────
   generateButton: {
-    backgroundColor: colors.primary, borderRadius: radius.md,
+    backgroundColor: colors.primary, borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
+    marginTop: spacing.sm,
+    ...shadows.low,
   },
   buttonDisabled: { opacity: 0.5 },
   generateText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },

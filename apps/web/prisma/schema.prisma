@@ -39,6 +39,7 @@ model Recipient {
   gender                   String?   @db.VarChar(10)
   relationship             String?   @db.VarChar(20)
   medical_tags             Json      @default("[]")
+  lifestyle_habits         Json      @default("{}")
   emergency_contact_name   String?   @db.VarChar(100)
   emergency_contact_phone  String?   @db.VarChar(20)
   address                  String?   @db.VarChar(500)

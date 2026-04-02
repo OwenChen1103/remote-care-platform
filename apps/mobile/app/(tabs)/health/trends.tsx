@@ -46,8 +46,8 @@ type StatsData = BpStats | BgStats;
 // ─── Chart Colors (aligned with visual-direction-v1.md Part 8) ──
 
 const CHART_COLORS = {
-  systolic: colors.primary,       // #2563EB
-  diastolic: '#60A5FA',           // lighter blue per spec
+  systolic: colors.primary,
+  diastolic: colors.primaryText,  // lighter purple variant per spec
 } as const;
 
 // ─── Helpers ──────────────────────────────────────────────────

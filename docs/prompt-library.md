@@ -1382,3 +1382,5 @@ submitted → screening → candidate_proposed → caregiver_confirmed
 ---
 
 > **End of prompt library.** 所有 Prompt 都強制先閱讀 `implementation-spec.md` 和 `engineering-standards.md` 再進行任何操作。這是設計好的——這個專案中 bug 的首要原因是在不理解現有系統的情況下做出修改。搭配 Claude Code Skill 使用可以進一步提升工作品質和效率。
+
+**每個實作之前都要非常仔細深入的閱讀所有跟即將修改部分析相關的原有code 必須非常仔細閱讀 極其充分理解 才能開始著手改動 避免產出跟原系統不匹配的代碼 導致衝突 或是 邏輯重複代碼等等問題 然後每一個實作結束 也要非常深入的進行一次自我檢查看看有沒有前面提到的問題**
