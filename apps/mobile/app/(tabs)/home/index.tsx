@@ -24,7 +24,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { api, ApiError } from '@/lib/api-client';
@@ -111,11 +111,12 @@ const SCORE_COLORS: Record<string, string> = {
 
 // ─── Accent colors for metric cards ──────────────────────────
 
+// Accent colors — warm palette that harmonizes with purple primary
 const METRIC_ACCENTS = {
-  bp: { bar: '#E57373', bg: '#FFF5F5' },      // warm red
-  bg: { bar: '#FFB74D', bg: '#FFFAF0' },      // warm orange
-  abnormal: { bar: '#FFD54F', bg: '#FFFDE7' }, // warm yellow
-  count: { bar: '#81C784', bg: '#F1F8E9' },    // warm green
+  bp: { bar: '#E8707E', bg: '#FFF2F4' },      // rose
+  bg: { bar: '#E8A44E', bg: '#FFF8EF' },      // warm gold
+  abnormal: { bar: '#D4930A', bg: '#FFFBF0' }, // amber
+  count: { bar: '#5BB98B', bg: '#F0F9F3' },    // sage green
 } as const;
 
 // ─── SVG Icons (24×24 line style) ───────────────────────────
@@ -187,15 +188,16 @@ const SERVICE_ICONS: Record<string, (props: { size: number; color: string }) => 
   ),
 };
 
+// Service category colors — muted, warm, cohesive with purple base
 const SERVICE_CATEGORY_COLORS: Record<string, { icon: string; bg: string }> = {
-  escort_visit: { icon: '#E57373', bg: '#FFF5F5' },
-  functional_assessment: { icon: '#7986CB', bg: '#F3F0FF' },
-  exercise_program: { icon: '#4DB6AC', bg: '#F0FBF8' },
-  home_cleaning: { icon: '#FFB74D', bg: '#FFFAF0' },
-  pre_visit_consult: { icon: '#9575CD', bg: '#F8F5FF' },
-  daily_living_support: { icon: '#4FC3F7', bg: '#F0F9FF' },
-  nutrition_consult: { icon: '#81C784', bg: '#F1F8E9' },
-  shopping_assist: { icon: '#F06292', bg: '#FFF0F6' },
+  escort_visit: { icon: '#E8707E', bg: '#FFF2F4' },
+  functional_assessment: { icon: '#7B71D4', bg: '#F2F0FF' },
+  exercise_program: { icon: '#5BB98B', bg: '#F0F9F3' },
+  home_cleaning: { icon: '#E8A44E', bg: '#FFF8EF' },
+  pre_visit_consult: { icon: '#9B8FD8', bg: '#F5F3FF' },
+  daily_living_support: { icon: '#6BAFCF', bg: '#F0F7FC' },
+  nutrition_consult: { icon: '#6DB88A', bg: '#F0F8F2' },
+  shopping_assist: { icon: '#D4789B', bg: '#FFF0F5' },
 };
 
 function escHtml(s: string): string {
@@ -360,12 +362,16 @@ export default function HomeScreen() {
     } catch { /* non-critical */ }
   }, []);
 
-  useEffect(() => {
-    void fetchRecipients();
-    void fetchUnreadCount();
-    void fetchCategories();
-  }, [fetchRecipients, fetchUnreadCount, fetchCategories]);
+  // Re-fetch all data every time the tab gains focus (e.g. returning from add-measurement)
+  useFocusEffect(
+    useCallback(() => {
+      void fetchRecipients();
+      void fetchUnreadCount();
+      void fetchCategories();
+    }, [fetchRecipients, fetchUnreadCount, fetchCategories]),
+  );
 
+  // When recipients list changes, fetch per-recipient data
   useEffect(() => {
     if (recipients.length > 0) void fetchAllData(recipients);
   }, [recipients, fetchAllData]);
@@ -403,7 +409,20 @@ export default function HomeScreen() {
     } catch { /* fallback silently */ }
   }, [activeReport, activeRecipient, healthResult]);
 
+  // ─── Role redirect — Provider/Patient should not see this page ──
+  useEffect(() => {
+    if (user?.role === 'provider') {
+      router.replace('/(tabs)/services/provider-tasks');
+    } else if (user?.role === 'patient') {
+      router.replace('/(tabs)/patient/summary');
+    }
+  }, [user?.role, router]);
+
   // ─── Loading / Error ──────────────────────────────────────────
+
+  if (user?.role && user.role !== 'caregiver') {
+    return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
+  }
 
   if (loading) {
     return (
@@ -443,9 +462,9 @@ export default function HomeScreen() {
 
   const firstName = user?.name?.charAt(0) ?? '';
 
-  // Ring chart constants — large and prominent
-  const ringSize = 110;
-  const strokeW = 8;
+  // Ring chart constants
+  const ringSize = 88;
+  const strokeW = 7;
   const ringR = (ringSize - strokeW) / 2;
   const circ = 2 * Math.PI * ringR;
   const ringColor = SCORE_COLORS[healthResult?.level ?? 'good'] ?? colors.primary;
@@ -458,6 +477,9 @@ export default function HomeScreen() {
   });
 
   // ─── Main Render ──────────────────────────────────────────────
+
+  const abnormalTotal = (activeBp?.abnormal_count ?? 0) + (activeBg?.abnormal_count ?? 0);
+  const measureTotal = (activeBp?.count ?? 0) + (activeBg?.count ?? 0);
 
   return (
     <View style={styles.container}>
@@ -481,277 +503,220 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() => router.push('/(tabs)/home/notifications')}
-              accessibilityLabel="通知"
-            >
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/home/notifications')} accessibilityLabel="通知">
               <IconBell />
-              {unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
+              {unreadCount > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() => setMenuVisible(true)}
-              accessibilityLabel="選單"
-            >
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setMenuVisible(true)} accessibilityLabel="選單">
               <IconMenu />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Recipient Switcher (multi-person) ── */}
+        {/* ── Recipient Switcher ──────────────── */}
         {recipients.length > 1 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.switcherScroll}
-            contentContainerStyle={styles.switcherContent}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.switcherScroll} contentContainerStyle={styles.switcherContent}>
             {recipients.map((r) => {
               const isActive = r.id === activeId;
               return (
-                <TouchableOpacity
-                  key={r.id}
-                  style={[styles.switcherChip, isActive && styles.switcherChipActive]}
-                  onPress={() => handleSwitchRecipient(r.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.switcherText, isActive && styles.switcherTextActive]}>
-                    {r.name}
-                  </Text>
+                <TouchableOpacity key={r.id} style={[styles.switcherChip, isActive && styles.switcherChipActive]} onPress={() => handleSwitchRecipient(r.id)} activeOpacity={0.7}>
+                  <Text style={[styles.switcherText, isActive && styles.switcherTextActive]}>{r.name}</Text>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
         )}
 
-        {/* ── Health Score Hero Card ──────────── */}
-        <TouchableOpacity
-          style={[styles.heroCard, { backgroundColor: healthResult ? (healthResult.level === 'excellent' || healthResult.level === 'good' ? '#F0F7FF' : healthResult.level === 'fair' ? '#FFFCF0' : '#FFF5F5') : colors.primaryLight }]}
-          onPress={() => setAiSheetVisible(true)}
-          activeOpacity={0.8}
-          accessibilityLabel="查看安心報"
-        >
-          <View style={styles.heroTop}>
-            {/* Ring Chart — animated */}
-            <View style={styles.ringContainer}>
-              <Svg width={ringSize} height={ringSize}>
-                <Circle cx={ringSize / 2} cy={ringSize / 2} r={ringR}
-                  stroke={colors.borderDefault} strokeWidth={strokeW} fill="none" />
-                <AnimatedCircle cx={ringSize / 2} cy={ringSize / 2} r={ringR}
-                  stroke={ringColor} strokeWidth={strokeW} fill="none"
-                  strokeDasharray={`${circ}`}
-                  strokeDashoffset={animatedDashOffset}
-                  strokeLinecap="round"
-                  transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
-              </Svg>
-              <View style={styles.ringCenter}>
-                <Text style={[styles.ringScore, { color: ringColor }]}>
-                  {healthResult ? displayScore : '--'}
-                </Text>
-                <Text style={styles.ringLabel}>分</Text>
-              </View>
-            </View>
+        {/* ═══════════════════════════════════════
+            BENTO PUZZLE LAYOUT — no section titles,
+            cards of varying sizes interlock like tiles
+            ═══════════════════════════════════════ */}
+        <View style={styles.bento}>
 
-            {/* Status + Summary */}
-            <View style={styles.heroInfo}>
-              <View style={styles.heroStatusRow}>
-                <View style={[styles.heroDot, { backgroundColor: ringColor }]} />
-                <Text style={styles.heroStatusText}>
-                  {healthResult ? HEALTH_LEVEL_LABELS[healthResult.level] : '尚無資料'}
-                </Text>
-              </View>
-              <Text style={styles.heroSummary} numberOfLines={2}>
-                {activeReport ? extractExcerpt(activeReport.summary, 40) : '生成安心報以查看健康摘要'}
-              </Text>
-              <View style={styles.heroActions}>
-                <TouchableOpacity
-                  style={styles.heroBtn}
-                  onPress={() => router.push('/(tabs)/health/ai-report')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.heroBtnText}>查看安心報</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.heroBtnOutline}
-                  onPress={() => void handleDownloadPdf()}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.heroBtnOutlineText}>PDF</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-          <Text style={styles.heroDisclaimer}>AI 生成，僅供參考</Text>
-        </TouchableOpacity>
-
-        {/* ── Health Metrics Bento Grid ───────── */}
-        <Text style={styles.sectionTitle}>健康指標</Text>
-        <View style={styles.bentoGrid}>
+          {/* ── Row 1: Hero Score (full width) ──── */}
           <TouchableOpacity
-            style={[styles.bentoCard, { backgroundColor: METRIC_ACCENTS.bp.bg }]}
-            onPress={() => router.push(`/(tabs)/health/trends?recipientId=${activeId}&type=blood_pressure`)}
-            activeOpacity={0.7}
+            style={[styles.heroCard, { backgroundColor: healthResult ? (healthResult.level === 'excellent' || healthResult.level === 'good' ? colors.primaryLight : healthResult.level === 'fair' ? colors.warningLight : colors.dangerLight) : colors.primaryLight }]}
+            onPress={() => setAiSheetVisible(true)}
+            activeOpacity={0.8}
           >
-            <View style={[styles.bentoAccent, { backgroundColor: METRIC_ACCENTS.bp.bar }]} />
-            <View style={styles.bentoContent}>
-              <Text style={styles.bentoLabel}>血壓</Text>
-              <Text style={styles.bentoValue}>
-                {activeBp?.systolic && activeBp?.diastolic
-                  ? `${Math.round(activeBp.systolic.avg)}/${Math.round(activeBp.diastolic.avg)}`
-                  : '--'}
-              </Text>
-              <Text style={styles.bentoUnit}>mmHg · 7日均值</Text>
+            <View style={styles.heroTop}>
+              <View style={styles.ringContainer}>
+                <Svg width={ringSize} height={ringSize}>
+                  <Circle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={colors.borderDefault} strokeWidth={strokeW} fill="none" />
+                  <AnimatedCircle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={ringColor} strokeWidth={strokeW} fill="none" strokeDasharray={`${circ}`} strokeDashoffset={animatedDashOffset} strokeLinecap="round" transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
+                </Svg>
+                <View style={styles.ringCenter}>
+                  <Text style={[styles.ringScore, { color: ringColor }]}>{healthResult ? displayScore : '--'}</Text>
+                  <Text style={styles.ringLabel}>分</Text>
+                </View>
+              </View>
+              <View style={styles.heroInfo}>
+                <View style={styles.heroStatusRow}>
+                  <View style={[styles.heroDot, { backgroundColor: ringColor }]} />
+                  <Text style={styles.heroStatusText}>{healthResult ? HEALTH_LEVEL_LABELS[healthResult.level] : '尚無資料'}</Text>
+                </View>
+                <Text style={styles.heroSummary} numberOfLines={2}>
+                  {activeReport ? extractExcerpt(activeReport.summary, 40) : '生成安心報以查看健康摘要'}
+                </Text>
+                <View style={styles.heroActions}>
+                  <TouchableOpacity style={styles.heroBtn} onPress={() => router.push('/(tabs)/health/ai-report')} activeOpacity={0.7}>
+                    <Text style={styles.heroBtnText}>查看安心報</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.heroBtnOutline} onPress={() => void handleDownloadPdf()} activeOpacity={0.7}>
+                    <Text style={styles.heroBtnOutlineText}>PDF</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.bentoCard, { backgroundColor: METRIC_ACCENTS.bg.bg }]}
-            onPress={() => router.push(`/(tabs)/health/trends?recipientId=${activeId}&type=blood_glucose`)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.bentoAccent, { backgroundColor: METRIC_ACCENTS.bg.bar }]} />
-            <View style={styles.bentoContent}>
+          {/* ── Row 2: BP (large) + BG (large) ── */}
+          <View style={styles.bentoRow}>
+            <TouchableOpacity
+              style={[styles.bentoLarge, { backgroundColor: METRIC_ACCENTS.bp.bg }]}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_pressure`)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bentoLabel}>血壓</Text>
+              <Text style={[styles.bentoValueLg, { color: METRIC_ACCENTS.bp.bar }]}>
+                {activeBp?.systolic && activeBp?.diastolic ? `${Math.round(activeBp.systolic.avg)}/${Math.round(activeBp.diastolic.avg)}` : '--'}
+              </Text>
+              <Text style={styles.bentoUnit}>mmHg · 7日均值</Text>
+              <Text style={styles.bentoAction}>記錄 →</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.bentoLarge, { backgroundColor: METRIC_ACCENTS.bg.bg }]}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_glucose`)}
+              activeOpacity={0.7}
+            >
               <Text style={styles.bentoLabel}>血糖</Text>
-              <Text style={styles.bentoValue}>
+              <Text style={[styles.bentoValueLg, { color: METRIC_ACCENTS.bg.bar }]}>
                 {activeBg?.glucose_value ? Math.round(activeBg.glucose_value.avg).toString() : '--'}
               </Text>
               <Text style={styles.bentoUnit}>mg/dL · 7日均值</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.bentoCard, { backgroundColor: METRIC_ACCENTS.abnormal.bg }]}
-            onPress={() => router.push(`/(tabs)/home/${activeId}`)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.bentoAccent, { backgroundColor: METRIC_ACCENTS.abnormal.bar }]} />
-            <View style={styles.bentoContent}>
-              <Text style={styles.bentoLabel}>異常紀錄</Text>
-              <Text style={[
-                styles.bentoValue,
-                (activeBp?.abnormal_count ?? 0) + (activeBg?.abnormal_count ?? 0) > 0 && { color: colors.danger },
-              ]}>
-                {(activeBp?.abnormal_count ?? 0) + (activeBg?.abnormal_count ?? 0)}
-              </Text>
-              <Text style={styles.bentoUnit}>筆 · 近 7 日</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.bentoCard, { backgroundColor: METRIC_ACCENTS.count.bg }]}
-            onPress={() => router.push(`/(tabs)/health?recipientId=${activeId}`)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.bentoAccent, { backgroundColor: METRIC_ACCENTS.count.bar }]} />
-            <View style={styles.bentoContent}>
-              <Text style={styles.bentoLabel}>量測次數</Text>
-              <Text style={styles.bentoValue}>
-                {(activeBp?.count ?? 0) + (activeBg?.count ?? 0)}
-              </Text>
-              <Text style={styles.bentoUnit}>筆 · 近 7 日</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Quick Actions ───────────────────── */}
-        <View style={styles.quickRow}>
-          <TouchableOpacity
-            style={[styles.quickBtn, { backgroundColor: METRIC_ACCENTS.bp.bg }]}
-            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_pressure`)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.quickBtnText, { color: METRIC_ACCENTS.bp.bar }]}>記錄血壓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.quickBtn, { backgroundColor: METRIC_ACCENTS.bg.bg }]}
-            onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_glucose`)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.quickBtnText, { color: METRIC_ACCENTS.bg.bar }]}>記錄血糖</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.quickBtn, { backgroundColor: colors.bgSurfaceAlt }]}
-            onPress={() => router.push(`/(tabs)/home/${activeId}`)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.quickBtnText, { color: colors.textSecondary }]}>詳細資料</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Upcoming Appointments ───────────── */}
-        {appointments.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>近期行程</Text>
-            {appointments.map((appt) => {
-              const d = new Date(appt.appointment_date);
-              const dateStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
-              const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-              return (
-                <View key={appt.id} style={styles.apptRow}>
-                  <View style={styles.apptDateCol}>
-                    <Text style={styles.apptDate}>{dateStr}</Text>
-                    <Text style={styles.apptTime}>{timeStr}</Text>
-                  </View>
-                  <View style={styles.apptDivider} />
-                  <View style={styles.apptDetail}>
-                    <Text style={styles.apptTitle} numberOfLines={1}>{appt.title}</Text>
-                    <Text style={styles.apptMeta} numberOfLines={1}>
-                      {appt.recipientRelationship
-                        ? `${RELATIONSHIP_LABELS[appt.recipientRelationship] ?? ''} — ${maskName(appt.recipientName)}`
-                        : maskName(appt.recipientName)}
-                      {appt.hospital_name ? ` · ${appt.hospital_name}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
+              <Text style={styles.bentoAction}>記錄 →</Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* ── Service Categories Grid ────────── */}
-        {categories.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>服務項目</Text>
-            <View style={styles.catGrid}>
-              {categories.map((cat) => {
-                const catColor = SERVICE_CATEGORY_COLORS[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight };
-                const IconComponent = SERVICE_ICONS[cat.code];
+          {/* ── Row 3: Illustration card (2×1) + stats column (1×1 + 1×1) ── */}
+          <View style={styles.bentoRow}>
+            {/* Left: illustration placeholder — replace with real image later */}
+            <TouchableOpacity
+              style={styles.illustCard}
+              onPress={() => router.push(`/(tabs)/home/${activeId}`)}
+              activeOpacity={0.8}
+            >
+              {/* Abstract caring illustration — SVG shapes */}
+              <View style={styles.illustGraphic}>
+                <Svg width={100} height={70} viewBox="0 0 130 95">
+                  {/* House body */}
+                  <Rect x="30" y="42" width="60" height="45" rx="4" fill={colors.primary} opacity={0.12} />
+                  {/* Roof */}
+                  <Path d="M25 45 L60 18 L95 45Z" fill={colors.primary} opacity={0.18} />
+                  {/* Door */}
+                  <Rect x="52" y="62" width="16" height="25" rx="3" fill={colors.primary} opacity={0.15} />
+                  {/* Heart window */}
+                  <Path d="M48 52 C46 48 40 48 40 52 C40 55 48 60 48 60 C48 60 56 55 56 52 C56 48 50 48 48 52Z"
+                    fill={colors.accent} opacity={0.5} />
+                  {/* Right window */}
+                  <Rect x="66" y="48" width="12" height="10" rx="2" fill={colors.bgSurface} opacity={0.5} />
+                  {/* Chimney */}
+                  <Rect x="76" y="22" width="8" height="18" rx="2" fill={colors.primary} opacity={0.12} />
+                  {/* Smoke puffs */}
+                  <Circle cx="80" cy="18" r="3" fill={colors.textDisabled} opacity={0.2} />
+                  <Circle cx="84" cy="12" r="4" fill={colors.textDisabled} opacity={0.15} />
+                  <Circle cx="82" cy="5" r="3.5" fill={colors.textDisabled} opacity={0.1} />
+                  {/* Floating decorations */}
+                  <Circle cx="110" cy="30" r="6" fill={colors.accent} opacity={0.12} />
+                  <Circle cx="15" cy="55" r="5" fill={colors.primary} opacity={0.1} />
+                  {/* Sparkles */}
+                  <Path d="M108 55 L110 51 L112 55 L116 57 L112 59 L110 63 L108 59 L104 57Z" fill={colors.primary} opacity={0.15} />
+                  <Path d="M18 35 L19 32 L20 35 L23 36 L20 37 L19 40 L18 37 L15 36Z" fill={colors.accent} opacity={0.2} />
+                </Svg>
+              </View>
+              <Text style={styles.illustTitle}>{activeRecipient?.name ?? ''} 的照護摘要</Text>
+              <Text style={styles.illustSub}>查看詳細資料 →</Text>
+            </TouchableOpacity>
+
+            {/* Right: two stacked mini cards */}
+            <View style={styles.bentoStackCol}>
+              <TouchableOpacity
+                style={[styles.bentoMini, { backgroundColor: METRIC_ACCENTS.abnormal.bg }]}
+                onPress={() => router.push(`/(tabs)/health/trends?recipientId=${activeId}`)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.bentoMiniLabel}>異常</Text>
+                <Text style={[styles.bentoMiniValue, abnormalTotal > 0 && { color: colors.danger }]}>
+                  {abnormalTotal}
+                </Text>
+                <Text style={styles.bentoMiniUnit}>筆</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bentoMini, { backgroundColor: METRIC_ACCENTS.count.bg }]}
+                onPress={() => router.push(`/(tabs)/health?recipientId=${activeId}`)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.bentoMiniLabel}>量測</Text>
+                <Text style={styles.bentoMiniValue}>{measureTotal}</Text>
+                <Text style={styles.bentoMiniUnit}>筆</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── Row 4: Appointments (if any) ──── */}
+          {appointments.length > 0 && (
+            <View style={styles.apptCard}>
+              <Text style={styles.apptCardTitle}>近期行程</Text>
+              {appointments.map((appt) => {
+                const d = new Date(appt.appointment_date);
+                const dateStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+                const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
                 return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.catCard, { backgroundColor: catColor.bg }]}
-                    onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)}
-                    activeOpacity={0.7}
-                  >
-                    {IconComponent && (
-                      <View style={styles.catIconWrap}>
-                        <IconComponent size={20} color={catColor.icon} />
-                      </View>
-                    )}
-                    <Text style={[styles.catName, { color: catColor.icon }]}>{cat.name}</Text>
-                  </TouchableOpacity>
+                  <View key={appt.id} style={styles.apptRow}>
+                    <View style={styles.apptDateCol}>
+                      <Text style={styles.apptDate}>{dateStr}</Text>
+                      <Text style={styles.apptTime}>{timeStr}</Text>
+                    </View>
+                    <View style={styles.apptDivider} />
+                    <View style={styles.apptDetail}>
+                      <Text style={styles.apptTitle} numberOfLines={1}>{appt.title}</Text>
+                      <Text style={styles.apptMeta} numberOfLines={1}>
+                        {appt.recipientRelationship ? `${RELATIONSHIP_LABELS[appt.recipientRelationship] ?? ''} — ${maskName(appt.recipientName)}` : maskName(appt.recipientName)}
+                        {appt.hospital_name ? ` · ${appt.hospital_name}` : ''}
+                      </Text>
+                    </View>
+                  </View>
                 );
               })}
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Bottom spacer for FAB */}
-        <View style={{ height: 80 }} />
+          {/* ── Row 5: Service categories (2×4) ─ */}
+          {categories.length > 0 && (
+            <View style={styles.catSection}>
+              <Text style={styles.catSectionTitle}>服務項目</Text>
+              <View style={styles.catGrid}>
+                {categories.map((cat) => {
+                  const catColor = SERVICE_CATEGORY_COLORS[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight };
+                  const IconComp = SERVICE_ICONS[cat.code];
+                  return (
+                    <TouchableOpacity key={cat.id} style={[styles.catCard, { backgroundColor: catColor.bg }]} onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)} activeOpacity={0.7}>
+                      {IconComp && <View style={styles.catIconWrap}><IconComp size={22} color={catColor.icon} /></View>}
+                      <Text style={[styles.catName, { color: catColor.icon }]}>{cat.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+        </View>
+
+        <View style={{ height: 90 }} />
       </ScrollView>
 
       {/* ── FAB ──────────────────────────────── */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/(tabs)/services/new-request')}
-        activeOpacity={0.85}
-        accessibilityLabel="新增服務需求"
-      >
+      <TouchableOpacity style={styles.fab} onPress={() => router.push('/(tabs)/services/new-request')} activeOpacity={0.85} accessibilityLabel="新增服務需求">
         <Text style={styles.fabText}>＋ 服務需求</Text>
       </TouchableOpacity>
 
@@ -836,153 +801,157 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: spacing['3xl'] },
 
-  // ─── Header — compact, confident ────────────────────────────
+  // ─── Header ─────────────────────────────────────────────────
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.sm,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   avatar: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: '#E8EEFF', alignItems: 'center', justifyContent: 'center',
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center',
     marginRight: spacing.md,
   },
-  avatarText: { fontSize: 20, fontWeight: '800', color: '#4361EE' },
-  greeting: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  avatarText: { fontSize: 19, fontWeight: '700', color: colors.accent },
+  greeting: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary },
   greetingSub: { fontSize: typography.caption.fontSize, color: colors.textDisabled, marginTop: 2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBtn: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: '#F0F1F5', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.bgSurfaceAlt, alignItems: 'center', justifyContent: 'center',
   },
   iconBtnText: { fontSize: 18 },
   badge: {
     position: 'absolute', top: -3, right: -3,
-    backgroundColor: '#FF4757', borderRadius: radius.full,
+    backgroundColor: colors.accent, borderRadius: radius.full,
     minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: spacing.xs, borderWidth: 2, borderColor: colors.bgScreen,
   },
-  badgeText: { color: colors.white, fontSize: 9, fontWeight: '800' },
+  badgeText: { color: colors.white, fontSize: 9, fontWeight: '700' },
 
-  // ─── Recipient Switcher — pill style ────────────────────────
+  // ─── Recipient Switcher ─────────────────────────────────────
   switcherScroll: { maxHeight: 48 },
   switcherContent: { paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xs },
   switcherChip: {
     paddingHorizontal: spacing.xl, paddingVertical: spacing.sm + 2,
-    borderRadius: radius.full, backgroundColor: '#F0F1F5',
+    borderRadius: radius.full, backgroundColor: colors.bgSurfaceAlt,
   },
-  switcherChipActive: { backgroundColor: '#4361EE' },
+  switcherChipActive: { backgroundColor: colors.primary },
   switcherText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '600' },
   switcherTextActive: { color: colors.white, fontWeight: '700' },
 
-  // ─── Hero Card — bold, prominent ───────────────────────────
+  // ─── Bento Container ───────────────────────────────────────
+  bento: { paddingHorizontal: spacing.lg, gap: 6, marginTop: spacing.xs },
+
+  // ─── Hero Card ─────────────────────────────────────────────
   heroCard: {
-    marginHorizontal: spacing.lg, marginTop: spacing.md,
-    borderRadius: 22,
-    padding: spacing.xl,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
     ...shadows.low,
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  ringContainer: { position: 'relative', width: 110, height: 110 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  ringContainer: { position: 'relative', width: 88, height: 88 },
   ringCenter: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  ringScore: { fontSize: 40, fontWeight: '800', letterSpacing: -1 },
-  ringLabel: { fontSize: typography.caption.fontSize, color: colors.textTertiary, marginTop: -4, fontWeight: '500' },
+  ringScore: { fontSize: 30, fontWeight: '700' },
+  ringLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: -3, fontWeight: '500' },
   heroInfo: { flex: 1 },
-  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  heroDot: { width: 10, height: 10, borderRadius: 5 },
-  heroStatusText: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary },
-  heroSummary: { fontSize: typography.bodyMd.fontSize, color: '#5A6478', lineHeight: 20, marginBottom: spacing.lg },
+  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  heroDot: { width: 8, height: 8, borderRadius: 4 },
+  heroStatusText: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary },
+  heroSummary: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.md },
   heroActions: { flexDirection: 'row', gap: spacing.sm },
   heroBtn: {
-    backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: radius.full,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
   },
-  heroBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '700', color: '#4361EE' },
+  heroBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '700', color: colors.primaryText },
   heroBtnOutline: {
-    backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.45)', borderRadius: radius.full,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
   },
-  heroBtnOutlineText: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: '#5A6478' },
-  heroDisclaimer: {
-    fontSize: 10, color: '#9AA4B8',
-    textAlign: 'right', marginTop: spacing.md,
-  },
+  heroBtnOutlineText: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.textTertiary },
 
-  // ─── Bento Grid — mixed sizes, tight gaps ──────────────────
-  sectionTitle: {
-    fontSize: 18, fontWeight: '800', letterSpacing: -0.3,
-    color: colors.textPrimary, marginHorizontal: spacing.xl,
-    marginTop: spacing.xl, marginBottom: spacing.md,
-  },
-  bentoGrid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: spacing.lg, gap: spacing.sm,
-  },
-  bentoCard: {
-    width: '47%' as unknown as number, flexGrow: 1,
-    borderRadius: 18, overflow: 'hidden',
-    flexDirection: 'row',
-  },
-  bentoAccent: { width: 5, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 },
-  bentoContent: { flex: 1, paddingVertical: spacing.lg, paddingHorizontal: spacing.md + spacing.xs },
-  bentoLabel: { fontSize: typography.caption.fontSize, color: '#7A8599', fontWeight: '600', marginBottom: spacing.sm },
-  bentoValue: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
-  bentoUnit: { fontSize: typography.captionSm.fontSize, color: '#9AA4B8', marginTop: spacing.xs },
+  // ─── Bento Row (side by side) ──────────────────────────────
+  bentoRow: { flexDirection: 'row', gap: spacing.sm },
 
-  // ─── Quick Actions — pills with character ──────────────────
-  quickRow: {
-    flexDirection: 'row', gap: spacing.sm,
-    paddingHorizontal: spacing.lg, marginTop: spacing.lg,
+  // ─── Large metric cards (BP / BG) ──────────────────────────
+  bentoLarge: {
+    flex: 1, borderRadius: radius.xl, padding: spacing.md,
   },
-  quickBtn: {
-    flex: 1, borderRadius: radius.full,
-    paddingVertical: spacing.md + 2, alignItems: 'center',
+  bentoLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, fontWeight: '600' },
+  bentoValueLg: { fontSize: 26, fontWeight: '700', marginTop: spacing.xs },
+  bentoUnit: { fontSize: 10, color: colors.textDisabled, marginTop: spacing.xxs },
+  bentoAction: { fontSize: 10, color: colors.textTertiary, fontWeight: '600', marginTop: spacing.sm },
+
+  // ─── Illustration card (2×1 wide) ─────────────────────────
+  illustCard: {
+    flex: 1.2, backgroundColor: colors.primaryLight, borderRadius: radius.xl,
+    padding: spacing.md, justifyContent: 'flex-end',
+    height: 150, overflow: 'hidden',
   },
-  quickBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '700' },
+  illustGraphic: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  illustTitle: { fontSize: typography.bodyMd.fontSize, fontWeight: '700', color: colors.textPrimary },
+  illustSub: { fontSize: typography.caption.fontSize, color: colors.primaryText, marginTop: spacing.xs, fontWeight: '600' },
 
-  // ─── Section ────────────────────────────────────────────────
-  section: { marginTop: spacing.md },
+  // ─── Stacked mini cards column ─────────────────────────────
+  bentoStackCol: { flex: 0.8, gap: 6 },
+  bentoMini: {
+    flex: 1, borderRadius: radius.lg, padding: spacing.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  bentoMiniLabel: { fontSize: 10, color: colors.textTertiary, fontWeight: '600' },
+  bentoMiniValue: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xxs },
+  bentoMiniUnit: { fontSize: 9, color: colors.textDisabled, marginTop: 1 },
 
-  // ─── Appointments — clean, confident ───────────────────────
+  // ─── Appointments card ─────────────────────────────────────
+  apptCard: {
+    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
+    padding: spacing.lg, ...shadows.low,
+  },
+  apptCardTitle: {
+    fontSize: typography.headingSm.fontSize, fontWeight: '700',
+    color: colors.textPrimary, marginBottom: spacing.md,
+  },
   apptRow: {
     flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.bgSurface,
-    borderRadius: 16, padding: spacing.lg,
-    marginBottom: spacing.sm,
-    ...shadows.low,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.borderDefault,
   },
-  apptDateCol: { width: 52, alignItems: 'center' },
-  apptDate: { fontSize: 16, fontWeight: '800', color: '#4361EE' },
-  apptTime: { fontSize: typography.captionSm.fontSize, color: '#9AA4B8', marginTop: 2 },
-  apptDivider: { width: 2, height: 36, backgroundColor: '#E8EEFF', marginHorizontal: spacing.md, borderRadius: 1 },
+  apptDateCol: { width: 50, alignItems: 'center' },
+  apptDate: { fontSize: typography.bodyMd.fontSize, fontWeight: '700', color: colors.primaryText },
+  apptTime: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, marginTop: 1 },
+  apptDivider: { width: 2, height: 28, backgroundColor: colors.primaryLight, marginHorizontal: spacing.md, borderRadius: 1 },
   apptDetail: { flex: 1 },
   apptTitle: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textPrimary },
-  apptMeta: { fontSize: typography.caption.fontSize, color: '#7A8599', marginTop: spacing.xs },
+  apptMeta: { fontSize: typography.caption.fontSize, color: colors.textTertiary, marginTop: spacing.xxs },
 
-  // ─── Service Categories — bold grid ────────────────────────
-  catGrid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: spacing.lg, gap: spacing.sm,
+  // ─── Service Categories ─────────────────────────────────────
+  catSection: { marginTop: spacing.sm },
+  catSectionTitle: {
+    fontSize: typography.headingSm.fontSize, fontWeight: '700',
+    color: colors.textPrimary, marginBottom: spacing.md,
   },
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   catCard: {
     width: '22%' as unknown as number, flexGrow: 1,
-    borderRadius: 16,
-    paddingVertical: spacing.lg, alignItems: 'center',
+    borderRadius: radius.lg, paddingVertical: spacing.lg,
+    alignItems: 'center',
   },
   catIconWrap: { marginBottom: spacing.sm },
-  catName: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  catName: { fontSize: typography.captionSm.fontSize, fontWeight: '600', textAlign: 'center' },
 
-  // ─── FAB — prominent ───────────────────────────────────────
+  // ─── FAB ────────────────────────────────────────────────────
   fab: {
     position: 'absolute', bottom: spacing['2xl'] + spacing.sm, right: spacing.lg,
-    backgroundColor: '#4361EE', borderRadius: radius.full,
+    backgroundColor: colors.primary, borderRadius: radius.full,
     paddingHorizontal: spacing['2xl'], paddingVertical: spacing.md + 2,
-    shadowColor: '#4361EE', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
+    ...shadows.high,
   },
   fabText: { color: colors.white, fontSize: typography.bodyMd.fontSize, fontWeight: '700' },
 
