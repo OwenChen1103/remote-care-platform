@@ -10,7 +10,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -49,75 +49,6 @@ const ACTIVE_STATUSES = [
   'submitted', 'screening', 'candidate_proposed',
   'caregiver_confirmed', 'provider_confirmed', 'arranged', 'in_service',
 ];
-
-// ─── Service Info (descriptions, pricing, features) ──────────
-
-interface ServiceInfo {
-  subtitle: string;
-  priceRange: string;
-  duration: string;
-  features: string[];
-  featured: boolean; // top 4 get big cards
-}
-
-const SERVICE_INFO: Record<string, ServiceInfo> = {
-  escort_visit: {
-    subtitle: '專業管家全程陪伴看診，讓家人安心',
-    priceRange: 'NT$500 – 4,000',
-    duration: '2 – 8 小時',
-    features: ['專業證照', '接送服務', '醫囑紀錄'],
-    featured: true,
-  },
-  functional_assessment: {
-    subtitle: '到府基礎健康檢測，掌握身體狀況',
-    priceRange: '即將上線',
-    duration: '1 – 2 小時',
-    features: ['血壓血糖', '體組成', '專業報告'],
-    featured: true,
-  },
-  exercise_program: {
-    subtitle: '護理師/物理治療師指導居家運動',
-    priceRange: 'NT$800 – 2,500',
-    duration: '2 小時',
-    features: ['術後保養', '肌力訓練', '專業證照'],
-    featured: true,
-  },
-  home_cleaning: {
-    subtitle: '專業清潔人員到府打掃，安心舒適',
-    priceRange: 'NT$600/小時',
-    duration: '3 – 6 小時',
-    features: ['寵物友善', '彈性時段', '環境消毒'],
-    featured: true,
-  },
-  pre_visit_consult: {
-    subtitle: '看診前先了解狀況，不浪費門診時間',
-    priceRange: '洽詢報價',
-    duration: '30 – 60 分鐘',
-    features: ['線上諮詢', '問題整理'],
-    featured: false,
-  },
-  daily_living_support: {
-    subtitle: '日常生活陪伴與協助，溫暖守護',
-    priceRange: '洽詢報價',
-    duration: '依需求',
-    features: ['生活陪伴', '外出協助'],
-    featured: false,
-  },
-  nutrition_consult: {
-    subtitle: '專業營養師量身打造飲食建議',
-    priceRange: '洽詢報價',
-    duration: '1 小時',
-    features: ['飲食規劃', '營養分析'],
-    featured: false,
-  },
-  shopping_assist: {
-    subtitle: '代購日常用品與食材，省時省力',
-    priceRange: '洽詢報價',
-    duration: '依需求',
-    features: ['日用品', '食材採買'],
-    featured: false,
-  },
-};
 
 // ─── Service Icons ───────────────────────────────────────────
 

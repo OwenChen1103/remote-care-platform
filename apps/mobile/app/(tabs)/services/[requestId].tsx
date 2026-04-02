@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, spacing, radius, shadows } from '@/lib/theme';
 
 interface ServiceRequestDetail {
   id: string;

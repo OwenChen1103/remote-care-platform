@@ -11,7 +11,6 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
 import { TrendChart, type ChartSeries } from '@/components/ui/TrendChart';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';

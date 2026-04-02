@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { Text, TextInput, Platform } from 'react-native';
+import { Text, TextInput } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import {
@@ -18,33 +18,30 @@ SplashScreen.preventAutoHideAsync();
 function setDefaultFont() {
   const fontFamily = 'NotoSansTC_400Regular';
 
-  // Override Text default style
-  const origTextRender = (Text as any).render;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const textProto = (Text as any);
+  const origTextRender = textProto.render;
   if (origTextRender) {
-    (Text as any).render = function (props: any, ref: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    textProto.render = function (props: Record<string, unknown>, ref: unknown) {
       return origTextRender.call(this, {
         ...props,
         style: [{ fontFamily }, props.style],
       }, ref);
     };
-  } else {
-    // Fallback: override defaultProps
-    (Text as any).defaultProps = (Text as any).defaultProps || {};
-    (Text as any).defaultProps.style = [{ fontFamily }, (Text as any).defaultProps.style];
   }
 
-  // Override TextInput default style
-  const origInputRender = (TextInput as any).render;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inputProto = (TextInput as any);
+  const origInputRender = inputProto.render;
   if (origInputRender) {
-    (TextInput as any).render = function (props: any, ref: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inputProto.render = function (props: Record<string, unknown>, ref: unknown) {
       return origInputRender.call(this, {
         ...props,
         style: [{ fontFamily }, props.style],
       }, ref);
     };
-  } else {
-    (TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
-    (TextInput as any).defaultProps.style = [{ fontFamily }, (TextInput as any).defaultProps.style];
   }
 }
 

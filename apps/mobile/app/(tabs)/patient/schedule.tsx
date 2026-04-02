@@ -167,7 +167,6 @@ function ChartIcon({ color }: { color: string }) {
 }
 
 function NotificationIcon({ type }: { type: string }) {
-  const isUnimportant = type === 'measurement_reminder';
   const isWarning = type === 'abnormal_alert';
   const isAppointment = type === 'appointment_reminder';
   const isService = type === 'service_request_update';

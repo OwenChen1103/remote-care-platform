@@ -69,30 +69,6 @@ interface Notification {
   type: string;
 }
 
-interface ProviderReport {
-  date?: string;
-  blood_pressure?: string;
-  blood_glucose?: string;
-  weight?: string;
-  body_fat?: string;
-  heart_rate?: string;
-  blood_oxygen?: string;
-  cholesterol?: string;
-  medications?: string;
-  doctor_notes?: string;
-  next_visit?: string;
-  other_notes?: string;
-}
-
-interface CompletedService {
-  id: string;
-  status: string;
-  preferred_date: string;
-  provider_report: ProviderReport | null;
-  category: { name: string };
-  assigned_provider?: { name: string } | null;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────
 
 function formatAppointmentDate(dateStr: string): { month: string; day: string } {
