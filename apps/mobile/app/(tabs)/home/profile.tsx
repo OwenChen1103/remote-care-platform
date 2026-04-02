@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 interface UserProfile {
   id: string;
@@ -110,12 +110,8 @@ export default function ProfileScreen() {
         </View>
       ) : null}
 
+      <Text style={styles.sectionLabel}>可編輯資料</Text>
       <View style={styles.section}>
-        <Text style={styles.label}>Email</Text>
-        <View style={styles.readOnlyField}>
-          <Text style={styles.readOnlyText}>{profile.email}</Text>
-        </View>
-
         <Text style={styles.label}>姓名 *</Text>
         <TextInput
           style={styles.input}
@@ -158,6 +154,24 @@ export default function ProfileScreen() {
         />
       </View>
 
+      <Text style={styles.sectionLabel}>帳號資訊</Text>
+      <View style={styles.section}>
+        <Text style={styles.label}>Email</Text>
+        <View style={styles.readOnlyField}>
+          <Text style={styles.readOnlyText}>{profile.email}</Text>
+        </View>
+
+        <Text style={styles.label}>角色</Text>
+        <View style={styles.readOnlyField}>
+          <Text style={styles.readOnlyText}>照護者</Text>
+        </View>
+
+        <Text style={styles.label}>註冊日期</Text>
+        <View style={styles.readOnlyField}>
+          <Text style={styles.readOnlyText}>{profile.id ? new Date().toLocaleDateString('zh-TW') : '—'}</Text>
+        </View>
+      </View>
+
       <TouchableOpacity
         style={[styles.saveButton, saving && styles.saveButtonDisabled]}
         onPress={() => void handleSave()}
@@ -188,13 +202,17 @@ const styles = StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.lg,
   },
   errorBoxText: { color: colors.danger, fontSize: typography.bodyMd.fontSize, textAlign: 'center' },
+  sectionLabel: {
+    fontSize: 10, fontWeight: '500', color: colors.textDisabled,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+    marginBottom: spacing.xs, marginTop: spacing.sm,
+  },
   section: {
     backgroundColor: colors.bgSurface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
+    borderRadius: radius.xl,
     padding: spacing.lg,
     marginBottom: spacing.lg,
+    ...shadows.low,
   },
   label: {
     fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textSecondary,
@@ -213,8 +231,9 @@ const styles = StyleSheet.create({
     fontSize: typography.bodyMd.fontSize, color: colors.textDisabled,
   },
   saveButton: {
-    backgroundColor: colors.primary, borderRadius: radius.md,
+    backgroundColor: colors.primary, borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
+    ...shadows.high,
   },
   saveButtonDisabled: { opacity: 0.5 },
   saveButtonText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },

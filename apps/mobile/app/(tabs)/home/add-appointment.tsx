@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Text,
+  View,
   ScrollView,
   TextInput,
   TouchableOpacity,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 export default function AddAppointmentScreen() {
   const { recipientId } = useLocalSearchParams<{ recipientId: string }>();
@@ -81,62 +83,70 @@ export default function AddAppointmentScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.heading}>新增就醫行程</Text>
 
-      <Text style={styles.label}>行程標題 *</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="例如：台大醫院回診"
-        placeholderTextColor="#9ca3af"
-      />
+      {/* Card 1 — 基本資訊 */}
+      <Text style={styles.sectionLabel}>基本資訊</Text>
+      <View style={styles.card}>
+        <Text style={styles.label}>行程標題 *</Text>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="例如：台大醫院回診"
+          placeholderTextColor={colors.textDisabled}
+        />
 
-      <Text style={styles.label}>就診日期 *</Text>
-      <TextInput
-        style={styles.input}
-        value={dateStr}
-        onChangeText={setDateStr}
-        placeholder={`格式：${defaultHint}`}
-        placeholderTextColor="#9ca3af"
-        keyboardType={Platform.OS === 'ios' ? 'default' : 'default'}
-      />
+        <Text style={styles.label}>就診日期 *</Text>
+        <TextInput
+          style={styles.input}
+          value={dateStr}
+          onChangeText={setDateStr}
+          placeholder={`格式：${defaultHint}`}
+          placeholderTextColor={colors.textDisabled}
+          keyboardType={Platform.OS === 'ios' ? 'default' : 'default'}
+        />
 
-      <Text style={styles.label}>醫院名稱</Text>
-      <TextInput
-        style={styles.input}
-        value={hospitalName}
-        onChangeText={setHospitalName}
-        placeholder="例如：台大醫院"
-        placeholderTextColor="#9ca3af"
-      />
+        <Text style={styles.label}>醫院名稱</Text>
+        <TextInput
+          style={styles.input}
+          value={hospitalName}
+          onChangeText={setHospitalName}
+          placeholder="例如：台大醫院"
+          placeholderTextColor={colors.textDisabled}
+        />
 
-      <Text style={styles.label}>科別</Text>
-      <TextInput
-        style={styles.input}
-        value={department}
-        onChangeText={setDepartment}
-        placeholder="例如：心臟內科"
-        placeholderTextColor="#9ca3af"
-      />
+        <Text style={styles.label}>科別</Text>
+        <TextInput
+          style={styles.input}
+          value={department}
+          onChangeText={setDepartment}
+          placeholder="例如：心臟內科"
+          placeholderTextColor={colors.textDisabled}
+        />
 
-      <Text style={styles.label}>醫師姓名</Text>
-      <TextInput
-        style={styles.input}
-        value={doctorName}
-        onChangeText={setDoctorName}
-        placeholder="例如：陳醫師"
-        placeholderTextColor="#9ca3af"
-      />
+        <Text style={styles.label}>醫師姓名</Text>
+        <TextInput
+          style={styles.input}
+          value={doctorName}
+          onChangeText={setDoctorName}
+          placeholder="例如：陳醫師"
+          placeholderTextColor={colors.textDisabled}
+        />
+      </View>
 
-      <Text style={styles.label}>備註</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={note}
-        onChangeText={setNote}
-        placeholder="其他備註事項..."
-        placeholderTextColor="#9ca3af"
-        multiline
-        numberOfLines={3}
-      />
+      {/* Card 2 — 備註 */}
+      <Text style={styles.sectionLabel}>備註</Text>
+      <View style={styles.card}>
+        <Text style={styles.label}>備註</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          value={note}
+          onChangeText={setNote}
+          placeholder="其他備註事項..."
+          placeholderTextColor={colors.textDisabled}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
 
       <TouchableOpacity
         style={[styles.submitButton, submitting && styles.submitDisabled]}
@@ -150,27 +160,50 @@ export default function AddAppointmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  content: { padding: 16, paddingBottom: 40 },
-  heading: { fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '500', color: '#334155', marginBottom: 6, marginTop: 12 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { padding: spacing.lg, paddingBottom: 40 },
+  heading: { ...typography.headingLg, color: colors.textPrimary, marginBottom: spacing.xl },
+  sectionLabel: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.sm,
+  },
+  label: {
+    ...typography.bodyMd,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs + 2,
+    marginTop: spacing.md,
+  },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.bgSurfaceAlt,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    color: '#111827',
+    borderColor: colors.borderDefault,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    ...typography.headingSm,
+    fontWeight: '400',
+    color: colors.textPrimary,
   },
   textArea: { textAlignVertical: 'top', minHeight: 80 },
   submitButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing['2xl'],
+    ...shadows.low,
   },
   submitDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  submitText: { color: colors.white, ...typography.bodyLg, fontWeight: '600' },
 });

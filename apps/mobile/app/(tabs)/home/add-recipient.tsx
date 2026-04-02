@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
@@ -44,6 +45,17 @@ export default function AddRecipientScreen() {
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [notes, setNotes] = useState('');
+  // ─── Lifestyle habits ─────────────────────────────────────
+  const [waterIntake, setWaterIntake] = useState('');
+  const [exerciseFrequency, setExerciseFrequency] = useState('');
+  const [exerciseIntensity, setExerciseIntensity] = useState('');
+  const [starchIntake, setStarchIntake] = useState('');
+  const [proteinIntake, setProteinIntake] = useState('');
+  const [managerFillLifestyle, setManagerFillLifestyle] = useState(false);
+
+  // ─── Medical tags manager fill ────────────────────────────
+  const [managerFillMedical, setManagerFillMedical] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -77,6 +89,23 @@ export default function AddRecipientScreen() {
       if (relationship) data.relationship = relationship;
       if (selectedTags.length > 0) {
         data.medical_tags = selectedTags;
+      }
+      if (managerFillMedical) {
+        data.medical_tags = [...(selectedTags), '__manager_fill__'];
+      }
+      // Lifestyle habits
+      const lifestylePayload: Record<string, unknown> = {};
+      if (managerFillLifestyle) {
+        lifestylePayload.manager_fill = true;
+      } else {
+        if (waterIntake.trim()) lifestylePayload.water_intake = waterIntake.trim();
+        if (exerciseFrequency.trim()) lifestylePayload.exercise_frequency = exerciseFrequency.trim();
+        if (exerciseIntensity.trim()) lifestylePayload.exercise_intensity = exerciseIntensity.trim();
+        if (starchIntake.trim()) lifestylePayload.starch_intake = starchIntake.trim();
+        if (proteinIntake.trim()) lifestylePayload.protein_intake = proteinIntake.trim();
+      }
+      if (Object.keys(lifestylePayload).length > 0) {
+        data.lifestyle_habits = lifestylePayload;
       }
       if (address.trim()) data.address = address.trim();
       if (emergencyName.trim()) data.emergency_contact_name = emergencyName.trim();
@@ -245,6 +274,90 @@ export default function AddRecipientScreen() {
               <Text style={[styles.addTagText, !customTagInput.trim() && styles.addTagDisabled]}>新增</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Manager fill switch — medical */}
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>讓健康管家幫忙填寫病史</Text>
+            <Switch
+              value={managerFillMedical}
+              onValueChange={setManagerFillMedical}
+              trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
+              thumbColor={managerFillMedical ? colors.primary : colors.bgSurfaceAlt}
+              accessibilityLabel="讓健康管家幫忙填寫病史"
+            />
+          </View>
+        </View>
+
+        {/* ── Section: Lifestyle Habits ───────────────────── */}
+        <View style={styles.formCard}>
+          <Text style={styles.sectionLabel}>生活習慣</Text>
+
+          {/* Manager fill switch — lifestyle */}
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>讓健康管家幫忙填寫</Text>
+            <Switch
+              value={managerFillLifestyle}
+              onValueChange={setManagerFillLifestyle}
+              trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
+              thumbColor={managerFillLifestyle ? colors.primary : colors.bgSurfaceAlt}
+              accessibilityLabel="讓健康管家幫忙填寫生活習慣"
+            />
+          </View>
+
+          <Text style={styles.label}>每日喝水量</Text>
+          <TextInput
+            style={[styles.input, managerFillLifestyle && styles.inputDisabled]}
+            value={waterIntake}
+            onChangeText={setWaterIntake}
+            placeholder="例：2000ml"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+            accessibilityLabel="每日喝水量"
+          />
+
+          <Text style={styles.label}>運動頻次</Text>
+          <TextInput
+            style={[styles.input, managerFillLifestyle && styles.inputDisabled]}
+            value={exerciseFrequency}
+            onChangeText={setExerciseFrequency}
+            placeholder="例：每週3次"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+            accessibilityLabel="運動頻次"
+          />
+
+          <Text style={styles.label}>運動強度</Text>
+          <TextInput
+            style={[styles.input, managerFillLifestyle && styles.inputDisabled]}
+            value={exerciseIntensity}
+            onChangeText={setExerciseIntensity}
+            placeholder="例：低強度散步"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+            accessibilityLabel="運動強度"
+          />
+
+          <Text style={styles.label}>澱粉補充量</Text>
+          <TextInput
+            style={[styles.input, managerFillLifestyle && styles.inputDisabled]}
+            value={starchIntake}
+            onChangeText={setStarchIntake}
+            placeholder="例：每日半碗飯"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+            accessibilityLabel="澱粉補充量"
+          />
+
+          <Text style={styles.label}>蛋白質補充量</Text>
+          <TextInput
+            style={[styles.input, managerFillLifestyle && styles.inputDisabled]}
+            value={proteinIntake}
+            onChangeText={setProteinIntake}
+            placeholder="例：每日一顆蛋"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+            accessibilityLabel="蛋白質補充量"
+          />
         </View>
 
         {/* ── Section: Emergency Contact ──────────────────── */}
@@ -393,11 +506,37 @@ const styles = StyleSheet.create({
   chipText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '500' },
   chipTextActive: { color: colors.primaryText, fontWeight: '600' },
 
+  // ─── Switch Row ───────────────────────────────────────────
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.sm,
+  },
+  switchLabel: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
+    flex: 1,
+    marginRight: spacing.md,
+  },
+
+  // ─── Disabled input ───────────────────────────────────────
+  inputDisabled: {
+    opacity: 0.45,
+    backgroundColor: colors.bgSurfaceAlt,
+  },
+
   // ─── Submit ───────────────────────────────────────────────
   submitButton: {
-    backgroundColor: colors.primary, borderRadius: radius.md,
+    backgroundColor: colors.primary, borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
     marginTop: spacing.sm,
+    ...shadows.high,
   },
   submitDisabled: { opacity: 0.5 },
   submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 interface Appointment {
   id: string;
@@ -75,7 +76,7 @@ export default function AppointmentsScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>載入中...</Text>
       </View>
     );
@@ -94,7 +95,7 @@ export default function AppointmentsScreen() {
     const isPast = days < 0;
     const isToday = days === 0;
     const daysLabel = isToday ? '今天' : isPast ? `${Math.abs(days)} 天前` : `${days} 天後`;
-    const daysColor = isPast ? '#94a3b8' : isToday ? '#ef4444' : days <= 3 ? '#f59e0b' : '#22c55e';
+    const daysColor = isPast ? colors.textDisabled : isToday ? colors.danger : days <= 3 ? colors.warning : colors.success;
 
     return (
       <View style={[styles.card, isPast && styles.cardPast]}>
@@ -142,43 +143,45 @@ export default function AppointmentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  list: { padding: 16, paddingBottom: 80 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#ef4444', fontSize: 16 },
-  emptyText: { color: '#94a3b8', fontSize: 16 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  list: { padding: spacing.lg, paddingBottom: 80 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  loadingText: { marginTop: spacing.sm, color: colors.textSecondary, ...typography.bodyMd },
+  errorText: { color: colors.danger, ...typography.bodyLg },
+  emptyText: { color: colors.textDisabled, ...typography.bodyLg },
 
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.borderDefault,
+    ...shadows.low,
   },
   cardPast: { opacity: 0.6 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', flex: 1 },
-  daysLabel: { fontSize: 13, fontWeight: '600' },
-  cardDate: { fontSize: 14, color: '#2563eb', marginBottom: 6 },
-  cardDetail: { fontSize: 13, color: '#64748b', marginBottom: 2 },
-  cardNote: { fontSize: 12, color: '#94a3b8', marginTop: 6, fontStyle: 'italic' },
+  cardTitle: { ...typography.bodyLg, fontWeight: '600', color: colors.textPrimary, flex: 1 },
+  daysLabel: { ...typography.bodySm, fontWeight: '600' },
+  cardDate: { ...typography.bodyMd, color: colors.primary, marginBottom: spacing.sm - 2 },
+  cardDetail: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.xxs },
+  cardNote: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.sm - 2, fontStyle: 'italic' },
 
   addButton: {
     position: 'absolute',
-    bottom: 24,
-    left: 16,
-    right: 16,
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    paddingVertical: 14,
+    bottom: spacing['2xl'],
+    left: spacing.lg,
+    right: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingVertical: spacing.md + 2,
     alignItems: 'center',
+    ...shadows.high,
   },
-  addButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  addButtonText: { color: colors.white, ...typography.bodyLg, fontWeight: '600' },
 });
