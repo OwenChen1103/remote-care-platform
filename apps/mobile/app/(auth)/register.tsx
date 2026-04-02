@@ -11,7 +11,9 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth, ApiError } from '@/lib/auth-context';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 const ROLE_OPTIONS = [
   { key: 'caregiver' as const, label: '委託人（家屬）', desc: '為家人安排照護服務' },
@@ -67,82 +69,109 @@ export default function RegisterScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.inner}>
+      <LinearGradient
+        colors={['#F0EEFF', '#FAF9FC']}
+        style={StyleSheet.absoluteFill}
+      />
+      <ScrollView
+        contentContainerStyle={styles.inner}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>建立帳號</Text>
 
-        <Text style={styles.sectionLabel}>選擇身份</Text>
-        <View style={styles.roleRow}>
-          {ROLE_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[styles.roleCard, role === opt.key && styles.roleCardActive]}
-              onPress={() => setRole(opt.key)}
-            >
-              <Text style={[styles.roleLabel, role === opt.key && styles.roleLabelActive]}>
-                {opt.label}
-              </Text>
-              <Text style={[styles.roleDesc, role === opt.key && styles.roleDescActive]}>
-                {opt.desc}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Role selector */}
+        <View style={styles.roleSection}>
+          <Text style={styles.sectionLabel}>選擇身份</Text>
+          <View style={styles.roleColumn}>
+            {ROLE_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.roleCard, role === opt.key && styles.roleCardActive]}
+                onPress={() => setRole(opt.key)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.roleLabel, role === opt.key && styles.roleLabelActive]}>
+                  {opt.label}
+                </Text>
+                <Text style={[styles.roleDesc, role === opt.key && styles.roleDescActive]}>
+                  {opt.desc}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {/* Form card */}
+        <View style={styles.formCard}>
+          {error ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
 
-        <TextInput
-          style={styles.input}
-          placeholder="姓名"
-          value={name}
-          onChangeText={setName}
-          autoComplete="name"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="密碼（至少 8 字元，含大小寫與數字）"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="new-password"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="確認密碼"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="電話（選填）"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          autoComplete="tel"
-        />
+          <TextInput
+            style={styles.input}
+            placeholder="姓名"
+            placeholderTextColor={colors.textDisabled}
+            value={name}
+            onChangeText={setName}
+            autoComplete="name"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor={colors.textDisabled}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="密碼（至少 8 字元，含大小寫與數字）"
+            placeholderTextColor={colors.textDisabled}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="new-password"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="確認密碼"
+            placeholderTextColor={colors.textDisabled}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+          />
+          <TextInput
+            style={[styles.input, styles.inputLast]}
+            placeholder="電話（選填）"
+            placeholderTextColor={colors.textDisabled}
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            autoComplete="tel"
+          />
+        </View>
 
+        {/* Register button */}
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleRegister}
           disabled={loading}
+          activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.buttonText}>註冊</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.back()}>
+        {/* Back link */}
+        <TouchableOpacity onPress={() => router.back()} style={styles.linkWrapper}>
           <Text style={styles.link}>已有帳號？登入</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -151,53 +180,128 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
-  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', color: '#1f2937', marginBottom: 32 },
-  error: {
-    backgroundColor: '#fef2f2',
-    color: '#dc2626',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+  container: {
+    flex: 1,
+  },
+  inner: {
+    flexGrow: 1,
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: 56,
+    paddingBottom: 40,
+  },
+
+  // Title
+  title: {
+    ...typography.headingXl,
+    color: colors.textPrimary,
     textAlign: 'center',
-    fontSize: 14,
+    marginBottom: spacing['3xl'],
   },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 12,
+
+  // Role selector
+  roleSection: {
+    marginBottom: spacing['2xl'],
   },
-  button: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 16,
+  sectionLabel: {
+    ...typography.headingSm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  link: { color: '#3b82f6', textAlign: 'center', fontSize: 14 },
-  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  roleRow: { gap: 8, marginBottom: 16 },
+  roleColumn: {
+    gap: spacing.md,
+  },
   roleCard: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: colors.bgSurface,
+    borderRadius: 20,
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    ...shadows.low,
   },
   roleCardActive: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#eff6ff',
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
-  roleLabel: { fontSize: 15, fontWeight: '600', color: '#374151' },
-  roleLabelActive: { color: '#1d4ed8' },
-  roleDesc: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  roleDescActive: { color: '#3b82f6' },
+  roleLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  roleLabelActive: {
+    color: colors.primary,
+  },
+  roleDesc: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+  },
+  roleDescActive: {
+    color: colors.primaryText,
+  },
+
+  // Form card
+  formCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 28,
+    padding: spacing['2xl'],
+    marginBottom: spacing['2xl'],
+    ...shadows.high,
+  },
+
+  // Error
+  errorBox: {
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+
+  // Inputs
+  input: {
+    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.full,
+    borderWidth: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    fontSize: 15,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  inputLast: {
+    marginBottom: 0,
+  },
+
+  // Register button
+  button: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: spacing['2xl'],
+    ...shadows.high,
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  buttonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Back link
+  linkWrapper: {
+    alignItems: 'center',
+  },
+  link: {
+    color: colors.primaryText,
+    fontSize: 14,
+    fontWeight: '500',
+  },
 });
