@@ -13,7 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -250,8 +250,8 @@ export default function AiReportScreen() {
     const typeLabel = REPORT_TYPES.find((t) => t.key === report.report_type)?.label ?? report.report_type;
     const statusLabel = report.status_label === 'stable' ? '穩定'
       : report.status_label === 'attention' ? '需留意' : '建議就醫';
-    const statusColor = report.status_label === 'stable' ? '#15803D'
-      : report.status_label === 'attention' ? '#A16207' : '#DC2626';
+    const statusColor = report.status_label === 'stable' ? colors.success
+      : report.status_label === 'attention' ? colors.warning : colors.danger;
 
     const html = `
       <html>
@@ -302,114 +302,117 @@ export default function AiReportScreen() {
       {/* Page title */}
       <Text style={styles.pageTitle}>安心報</Text>
 
-      {/* Recipient selector */}
-      {recipients.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.selectorRow}
-          contentContainerStyle={styles.selectorContent}
-        >
-          {recipients.map((r) => {
-            const isActive = r.id === selectedRecipientId;
-            return (
-              <TouchableOpacity
-                key={r.id}
-                style={[styles.chip, isActive && styles.chipActive]}
-                onPress={() => setSelectedRecipientId(r.id)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`選擇 ${r.name}`}
-              >
-                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                  {r.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      )}
+      {/* Control card — recipient selector, mode toggle, type/task chips, generate button */}
+      <View style={styles.controlCard}>
+        {/* Recipient selector */}
+        {recipients.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.selectorRow}
+            contentContainerStyle={styles.selectorContent}
+          >
+            {recipients.map((r) => {
+              const isActive = r.id === selectedRecipientId;
+              return (
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.chip, isActive && styles.chipActive]}
+                  onPress={() => setSelectedRecipientId(r.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={`選擇 ${r.name}`}
+                >
+                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                    {r.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
 
-      {/* Mode toggle */}
-      <View style={styles.modeRow}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'report' && styles.modeActive]}
-          onPress={() => setMode('report')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: mode === 'report' }}
-        >
-          <Text style={[styles.modeText, mode === 'report' && styles.modeTextActive]}>報告</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'chat' && styles.modeActive]}
-          onPress={() => setMode('chat')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: mode === 'chat' }}
-        >
-          <Text style={[styles.modeText, mode === 'chat' && styles.modeTextActive]}>快速問答</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Report type / Chat task selector */}
-      {mode === 'report' ? (
-        <View style={styles.typeRow}>
-          {REPORT_TYPES.map((t) => {
-            const isActive = selectedType === t.key;
-            return (
-              <TouchableOpacity
-                key={t.key}
-                style={[styles.typeChip, isActive && styles.typeChipActive]}
-                onPress={() => setSelectedType(t.key)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-              >
-                <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        {/* Mode toggle */}
+        <View style={styles.modeRow}>
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'report' && styles.modeActive]}
+            onPress={() => setMode('report')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === 'report' }}
+          >
+            <Text style={[styles.modeText, mode === 'report' && styles.modeTextActive]}>報告</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'chat' && styles.modeActive]}
+            onPress={() => setMode('chat')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === 'chat' }}
+          >
+            <Text style={[styles.modeText, mode === 'chat' && styles.modeTextActive]}>快速問答</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <View style={styles.typeRow}>
-          {CHAT_TASKS.map((t) => {
-            const isActive = selectedTask === t.key;
-            return (
-              <TouchableOpacity
-                key={t.key}
-                style={[styles.typeChip, isActive && styles.typeChipActive]}
-                onPress={() => setSelectedTask(t.key)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-              >
-                <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
 
-      {/* Generate button */}
-      <TouchableOpacity
-        style={[styles.generateButton, generating && styles.generateButtonDisabled]}
-        disabled={generating || !selectedRecipientId}
-        onPress={() => void (mode === 'report' ? handleGenerateReport() : handleGenerateChat())}
-        accessibilityRole="button"
-        accessibilityLabel={generating ? 'AI 正在分析中' : (mode === 'report' ? '生成報告' : '生成')}
-      >
-        {generating ? (
-          <View style={styles.generatingRow}>
-            <ActivityIndicator size="small" color={colors.white} />
-            <Text style={styles.generateText}>AI 正在分析中...</Text>
+        {/* Report type / Chat task selector */}
+        {mode === 'report' ? (
+          <View style={styles.typeRow}>
+            {REPORT_TYPES.map((t) => {
+              const isActive = selectedType === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.typeChip, isActive && styles.typeChipActive]}
+                  onPress={() => setSelectedType(t.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         ) : (
-          <Text style={styles.generateText}>
-            {mode === 'report' ? '生成報告' : '生成'}
-          </Text>
+          <View style={styles.typeRow}>
+            {CHAT_TASKS.map((t) => {
+              const isActive = selectedTask === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.typeChip, isActive && styles.typeChipActive]}
+                  onPress={() => setSelectedTask(t.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         )}
-      </TouchableOpacity>
+
+        {/* Generate button */}
+        <TouchableOpacity
+          style={[styles.generateButton, generating && styles.generateButtonDisabled]}
+          disabled={generating || !selectedRecipientId}
+          onPress={() => void (mode === 'report' ? handleGenerateReport() : handleGenerateChat())}
+          accessibilityRole="button"
+          accessibilityLabel={generating ? 'AI 正在分析中' : (mode === 'report' ? '生成報告' : '生成')}
+        >
+          {generating ? (
+            <View style={styles.generatingRow}>
+              <ActivityIndicator size="small" color={colors.white} />
+              <Text style={styles.generateText}>AI 正在分析中...</Text>
+            </View>
+          ) : (
+            <Text style={styles.generateText}>
+              {mode === 'report' ? '生成報告' : '生成'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Rate limit — info banner, NOT error styling */}
       {rateLimited && (
@@ -605,6 +608,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
 
+  // ─── Control Card ─────────────────────────────────────────
+  controlCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.md,
+  },
+
   // ─── Recipient Selector ───────────────────────────────────
   selectorRow: {
     maxHeight: 44,
@@ -684,10 +696,10 @@ const styles = StyleSheet.create({
   // ─── Generate Button ──────────────────────────────────────
   generateButton: {
     backgroundColor: colors.primary,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
-    marginBottom: spacing.md,
+    ...shadows.low,
   },
   generateButtonDisabled: {
     opacity: 0.6,
