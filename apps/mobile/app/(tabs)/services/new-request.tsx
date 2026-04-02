@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   View,
   Text,
@@ -10,9 +11,10 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { TIME_SLOT_DISPLAY } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -36,10 +38,85 @@ const TIME_SLOT_OPTIONS = Object.entries(TIME_SLOT_DISPLAY).map(
   ([value, config]) => ({ value, label: config.label }),
 );
 
+// ─── Service Visual Info ──────────────────────────────────────
+
+const SERVICE_HERO: Record<string, { subtitle: string; priceRange: string; duration: string }> = {
+  escort_visit:          { subtitle: '專業管家全程陪伴看診，讓家人安心', priceRange: 'NT$500 – 4,000', duration: '2 – 8 小時' },
+  functional_assessment: { subtitle: '到府基礎健康檢測，掌握身體狀況', priceRange: '即將上線', duration: '1 – 2 小時' },
+  exercise_program:      { subtitle: '護理師/物理治療師指導居家運動', priceRange: 'NT$800 – 2,500', duration: '2 小時' },
+  home_cleaning:         { subtitle: '專業清潔人員到府打掃，安心舒適', priceRange: 'NT$600/小時', duration: '3 – 6 小時' },
+  pre_visit_consult:     { subtitle: '看診前先了解狀況，不浪費門診時間', priceRange: '洽詢報價', duration: '30 – 60 分鐘' },
+  daily_living_support:  { subtitle: '日常生活陪伴與協助，溫暖守護', priceRange: '洽詢報價', duration: '依需求' },
+  nutrition_consult:     { subtitle: '專業營養師量身打造飲食建議', priceRange: '洽詢報價', duration: '1 小時' },
+  shopping_assist:       { subtitle: '代購日常用品與食材，省時省力', priceRange: '洽詢報價', duration: '依需求' },
+};
+
+const SERVICE_CLR: Record<string, { icon: string; bg: string; accent: string }> = {
+  escort_visit:          { icon: '#E8707E', bg: '#FFF2F4', accent: '#FFD4DB' },
+  functional_assessment: { icon: '#7B71D4', bg: '#F2F0FF', accent: '#DDD8FF' },
+  exercise_program:      { icon: '#5BB98B', bg: '#F0F9F3', accent: '#C8ECD6' },
+  home_cleaning:         { icon: '#E8A44E', bg: '#FFF8EF', accent: '#FFE4C2' },
+  pre_visit_consult:     { icon: '#9B8FD8', bg: '#F5F3FF', accent: '#DDD8FF' },
+  daily_living_support:  { icon: '#6BAFCF', bg: '#F0F7FC', accent: '#C8E2F0' },
+  nutrition_consult:     { icon: '#6DB88A', bg: '#F0F8F2', accent: '#C8ECD6' },
+  shopping_assist:       { icon: '#D4789B', bg: '#FFF0F5', accent: '#FFD4E4' },
+};
+
+const SERVICE_ICON_PATHS: Record<string, (props: { size: number; color: string }) => React.ReactElement> = {
+  escort_visit: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2v8m-4-4h8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Rect x="3" y="14" width="18" height="8" rx="2" stroke={color} strokeWidth={1.5} fill="none" />
+    </Svg>
+  ),
+  functional_assessment: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M2 12h4l3-7 4 14 3-7h6" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  ),
+  exercise_program: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <SvgCircle cx="12" cy="5" r="2.5" stroke={color} strokeWidth={1.5} fill="none" />
+      <Path d="M12 9v5m-3 3l3-3 3 3m-6-5l-2-1m6 1l2-1" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  ),
+  home_cleaning: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 12l9-8 9 8" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M5 10v9a1 1 0 001 1h12a1 1 0 001-1v-9" stroke={color} strokeWidth={1.5} fill="none" />
+    </Svg>
+  ),
+  pre_visit_consult: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke={color} strokeWidth={1.5} fill="none" />
+    </Svg>
+  ),
+  daily_living_support: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M7 11c-1.5 0-3 1-3 3s1.5 3 3 3m10-6c1.5 0 3 1 3 3s-1.5 3-3 3" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Path d="M12 7v10m-3-5h6" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+  nutrition_consult: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2c-3 4-6 6-6 10a6 6 0 0012 0c0-4-3-6-6-10z" stroke={color} strokeWidth={1.5} fill="none" />
+      <Path d="M12 16v-4" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  ),
+  shopping_assist: ({ size, color }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke={color} strokeWidth={1.5} fill="none" />
+      <Path d="M3 6h18M16 10a4 4 0 01-8 0" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  ),
+};
+
 // ─── Component ────────────────────────────────────────────────
 
 export default function NewServiceRequestScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ categoryId?: string }>();
+
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +127,7 @@ export default function NewServiceRequestScreen() {
   const [recipientId, setRecipientId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [preferredDate, setPreferredDate] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [timeSlot, setTimeSlot] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
@@ -71,6 +149,26 @@ export default function NewServiceRequestScreen() {
     () => categories.find((c) => c.id === categoryId)?.code ?? '',
     [categories, categoryId],
   );
+
+  const estimatedPrice = useMemo(() => {
+    if (!serviceDuration) return null;
+    if (selectedCategoryCode === 'escort_visit') {
+      const base = 200 * serviceDuration;
+      const withCert = Math.round(base * 1.2);
+      const pickup = needsPickup ? 200 : 0; // assume ≤5km
+      return { low: base + pickup, high: withCert + pickup, note: needsPickup ? '含接送（5公里內）' : null };
+    }
+    if (selectedCategoryCode === 'exercise_program') {
+      const base = 400 * serviceDuration;
+      const withCert = Math.round(base * 1.6);
+      return { low: base, high: withCert, note: null };
+    }
+    if (selectedCategoryCode === 'home_cleaning') {
+      const total = 600 * serviceDuration;
+      return { low: total, high: total, note: null };
+    }
+    return null;
+  }, [selectedCategoryCode, serviceDuration, needsPickup]);
 
   // Reset category-specific fields when category changes
   useEffect(() => {
@@ -108,6 +206,13 @@ export default function NewServiceRequestScreen() {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  // Sync categoryId from URL params whenever they change
+  useEffect(() => {
+    if (params.categoryId) {
+      setCategoryId(params.categoryId);
+    }
+  }, [params.categoryId]);
 
   const doSubmit = async () => {
     setSubmitting(true);
@@ -152,7 +257,6 @@ export default function NewServiceRequestScreen() {
   };
 
   const handleSubmit = () => {
-    // Inline validation — sets error, does not use Alert
     if (!recipientId || !categoryId || !preferredDate || !location || !description) {
       setError('請填寫所有必填欄位');
       return;
@@ -184,10 +288,18 @@ export default function NewServiceRequestScreen() {
     );
   }
 
+  // ─── Derived for hero ─────────────────────────────────────
+
+  const heroInfo = SERVICE_HERO[selectedCategoryCode];
+  const heroClr = SERVICE_CLR[selectedCategoryCode] ?? { icon: colors.primary, bg: colors.primaryLight, accent: colors.primaryLight };
+  const HeroIcon = SERVICE_ICON_PATHS[selectedCategoryCode];
+  const selectedCategoryName = categories.find((c) => c.id === categoryId)?.name ?? '';
+
   // ─── Main Form ────────────────────────────────────────────
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, !categoryId && styles.contentCentered]}>
+
       {/* Error banner */}
       {error ? (
         <View style={styles.errorBox}>
@@ -195,397 +307,459 @@ export default function NewServiceRequestScreen() {
         </View>
       ) : null}
 
-      {/* Recipient Selection */}
-      <Text style={styles.label}>被照護者 *</Text>
-      <View style={styles.chipRow}>
-        {recipients.map((r) => {
-          const isActive = recipientId === r.id;
-          return (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setRecipientId(r.id)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`選擇 ${r.name}`}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                {r.name}
+      {/* ═══ Back button (when category selected) ═════════════ */}
+      {categoryId && heroInfo && (
+        <TouchableOpacity style={styles.backBtn} onPress={() => setCategoryId('')} activeOpacity={0.7}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+            <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.textTertiary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </TouchableOpacity>
+      )}
+
+      {/* ═══ Service Hero Header ═══════════════════════════════ */}
+      {categoryId && heroInfo ? (
+        <View style={[styles.heroCard, { backgroundColor: heroClr.bg }]}>
+          <View style={styles.heroTop}>
+            <View style={[styles.heroIconCircle, { backgroundColor: heroClr.accent }]}>
+              {HeroIcon ? <HeroIcon size={24} color={heroClr.icon} /> : null}
+            </View>
+            <View style={styles.heroPriceWrap}>
+              <Text style={[styles.heroPrice, { color: heroClr.icon }]}>{heroInfo.priceRange}</Text>
+              <Text style={styles.heroDuration}>{heroInfo.duration}</Text>
+            </View>
+          </View>
+          <Text style={styles.heroName}>{selectedCategoryName}</Text>
+          <Text style={styles.heroSubtitle}>{heroInfo.subtitle}</Text>
+        </View>
+      ) : (
+        /* ── Category Selector (when no category selected) ── */
+        <View style={styles.cardContainer}>
+          <Text style={styles.cardTitle}>選擇服務類別</Text>
+          <View style={styles.categoryGrid}>
+            {categories.map((cat) => {
+              const clr = SERVICE_CLR[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight, accent: colors.primaryLight };
+              const CatIcon = SERVICE_ICON_PATHS[cat.code];
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.categoryCard, { backgroundColor: clr.bg }]}
+                  onPress={() => setCategoryId(cat.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.catIconSmall, { backgroundColor: clr.accent }]}>
+                    {CatIcon ? <CatIcon size={16} color={clr.icon} /> : null}
+                  </View>
+                  <Text style={[styles.categoryName, { color: clr.icon }]}>{cat.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* ═══ Form Cards (only show when category is selected) ══ */}
+      {categoryId ? (
+        <>
+          {/* ── Card 1: 受服務者 ────────────────────── */}
+          <View style={styles.cardContainer}>
+            <Text style={styles.cardTitle}>受服務者</Text>
+            <View style={styles.chipRow}>
+              {recipients.map((r) => {
+                const isActive = recipientId === r.id;
+                return (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[styles.chip, isActive && styles.chipActive]}
+                    onPress={() => setRecipientId(r.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{r.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* ── Card 2: 預約資訊 ────────────────────── */}
+          <View style={styles.cardContainer}>
+            <Text style={styles.cardTitle}>預約資訊</Text>
+
+            <Text style={styles.label}>期望日期 *</Text>
+            <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
+              <Text style={preferredDate ? styles.dateButtonText : styles.dateButtonPlaceholder}>
+                {preferredDate || '選擇日期'}
               </Text>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path d="M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zM16 2v4M8 2v4M3 10h18" stroke={colors.textTertiary} strokeWidth={1.5} strokeLinecap="round" />
+              </Svg>
             </TouchableOpacity>
-          );
-        })}
-      </View>
+            {showDatePicker && (
+              <DateTimePicker
+                value={preferredDate ? new Date(preferredDate) : new Date()}
+                mode="date"
+                display="spinner"
+                minimumDate={new Date()}
+                onChange={(_event, date) => {
+                  setShowDatePicker(false);
+                  if (date) {
+                    const yyyy = date.getFullYear();
+                    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const dd = date.getDate().toString().padStart(2, '0');
+                    setPreferredDate(`${yyyy}-${mm}-${dd}`);
+                  }
+                }}
+              />
+            )}
 
-      {/* Category Selection */}
-      <Text style={styles.label}>服務類別 *</Text>
-      <View style={styles.categoryGrid}>
-        {categories.map((cat) => {
-          const isActive = categoryId === cat.id;
-          return (
-            <TouchableOpacity
-              key={cat.id}
-              style={[styles.categoryCard, isActive && styles.categoryCardActive]}
-              onPress={() => setCategoryId(cat.id)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`選擇 ${cat.name}`}
-            >
-              <Text style={[styles.categoryName, isActive && styles.categoryNameActive]}>
-                {cat.name}
-              </Text>
-              {cat.description && (
-                <Text style={styles.categoryDesc} numberOfLines={2}>
-                  {cat.description}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+            <Text style={styles.label}>時段</Text>
+            <View style={styles.chipRow}>
+              {TIME_SLOT_OPTIONS.map((slot) => {
+                const isActive = timeSlot === slot.value;
+                return (
+                  <TouchableOpacity
+                    key={slot.value}
+                    style={[styles.chip, isActive && styles.chipActive]}
+                    onPress={() => setTimeSlot(timeSlot === slot.value ? '' : slot.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{slot.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-      {/* Preferred Date */}
-      <Text style={styles.label}>期望日期 * (YYYY-MM-DD)</Text>
-      <TextInput
-        style={styles.input}
-        value={preferredDate}
-        onChangeText={setPreferredDate}
-        placeholder="2026-04-01"
-        placeholderTextColor={colors.textDisabled}
-        accessibilityLabel="期望日期"
-      />
+            <Text style={styles.label}>服務地點 *</Text>
+            <TextInput
+              style={styles.input}
+              value={location}
+              onChangeText={setLocation}
+              placeholder="台北市信義區..."
+              placeholderTextColor={colors.textDisabled}
+            />
 
-      {/* Time Slot */}
-      <Text style={styles.label}>時段（選填）</Text>
-      <View style={styles.chipRow}>
-        {TIME_SLOT_OPTIONS.map((slot) => {
-          const isActive = timeSlot === slot.value;
-          return (
-            <TouchableOpacity
-              key={slot.value}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setTimeSlot(timeSlot === slot.value ? '' : slot.value)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={slot.label}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                {slot.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Location */}
-      <Text style={styles.label}>服務地點 *</Text>
-      <TextInput
-        style={styles.input}
-        value={location}
-        onChangeText={setLocation}
-        placeholder="台北市信義區..."
-        placeholderTextColor={colors.textDisabled}
-        accessibilityLabel="服務地點"
-      />
-
-      {/* ── Category-specific fields ────────────────────────── */}
-
-      {/* Escort Visit: departure / destination / department / doctor / pickup / gender */}
-      {selectedCategoryCode === 'escort_visit' && (
-        <View style={styles.dynamicSection}>
-          <Text style={styles.dynamicSectionTitle}>陪診詳細資訊</Text>
-
-          <Text style={styles.label}>出發地</Text>
-          <TextInput
-            style={styles.input}
-            value={departureLocation}
-            onChangeText={setDepartureLocation}
-            placeholder="接送出發地址（選填）"
-            placeholderTextColor={colors.textDisabled}
-          />
-
-          <Text style={styles.label}>目的地（醫院）</Text>
-          <TextInput
-            style={styles.input}
-            value={destination}
-            onChangeText={setDestination}
-            placeholder="醫院名稱或地址"
-            placeholderTextColor={colors.textDisabled}
-          />
-
-          <Text style={styles.label}>掛號科別</Text>
-          <TextInput
-            style={styles.input}
-            value={department}
-            onChangeText={setDepartment}
-            placeholder="例：心臟內科"
-            placeholderTextColor={colors.textDisabled}
-          />
-
-          <Text style={styles.label}>醫師姓名</Text>
-          <TextInput
-            style={styles.input}
-            value={doctorName}
-            onChangeText={setDoctorName}
-            placeholder="選填"
-            placeholderTextColor={colors.textDisabled}
-          />
-
-          <Text style={styles.label}>掛號號碼</Text>
-          <TextInput
-            style={styles.input}
-            value={registrationNumber}
-            onChangeText={setRegistrationNumber}
-            placeholder="選填"
-            placeholderTextColor={colors.textDisabled}
-            keyboardType="number-pad"
-          />
-
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>需要接送</Text>
-            <Switch
-              value={needsPickup}
-              onValueChange={setNeedsPickup}
-              trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
-              thumbColor={needsPickup ? colors.primary : colors.textDisabled}
-              accessibilityLabel="需要接送"
+            <Text style={styles.label}>需求描述 *</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="請描述您的服務需求..."
+              placeholderTextColor={colors.textDisabled}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
             />
           </View>
 
-          <Text style={styles.label}>服務人員性別偏好</Text>
-          <View style={styles.chipRow}>
-            {[
-              { value: '', label: '不限' },
-              { value: 'female', label: '女性' },
-              { value: 'male', label: '男性' },
-            ].map((opt) => {
-              const isActive = preferredGender === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setPreferredGender(opt.value)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
+          {/* ── Card 3: Escort Visit — category-specific fields ── */}
+          {selectedCategoryCode === 'escort_visit' && (
+            <View style={styles.dynamicSection}>
+              <Text style={styles.dynamicSectionTitle}>陪診詳細資訊</Text>
+
+              <Text style={styles.label}>出發地</Text>
+              <TextInput
+                style={styles.input}
+                value={departureLocation}
+                onChangeText={setDepartureLocation}
+                placeholder="接送出發地址（選填）"
+                placeholderTextColor={colors.textDisabled}
+              />
+
+              <Text style={styles.label}>目的地（醫院）</Text>
+              <TextInput
+                style={styles.input}
+                value={destination}
+                onChangeText={setDestination}
+                placeholder="醫院名稱或地址"
+                placeholderTextColor={colors.textDisabled}
+              />
+
+              <Text style={styles.label}>掛號科別</Text>
+              <TextInput
+                style={styles.input}
+                value={department}
+                onChangeText={setDepartment}
+                placeholder="例：心臟內科"
+                placeholderTextColor={colors.textDisabled}
+              />
+
+              <Text style={styles.label}>醫師姓名</Text>
+              <TextInput
+                style={styles.input}
+                value={doctorName}
+                onChangeText={setDoctorName}
+                placeholder="選填"
+                placeholderTextColor={colors.textDisabled}
+              />
+
+              <Text style={styles.label}>掛號號碼</Text>
+              <TextInput
+                style={styles.input}
+                value={registrationNumber}
+                onChangeText={setRegistrationNumber}
+                placeholder="選填"
+                placeholderTextColor={colors.textDisabled}
+                keyboardType="number-pad"
+              />
+
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>需要接送</Text>
+                <Switch
+                  value={needsPickup}
+                  onValueChange={setNeedsPickup}
+                  trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
+                  thumbColor={needsPickup ? colors.primary : colors.textDisabled}
+                  accessibilityLabel="需要接送"
+                />
+              </View>
+
+              <Text style={styles.label}>服務人員性別偏好</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: '', label: '不限' },
+                  { value: 'female', label: '女性' },
+                  { value: 'male', label: '男性' },
+                ].map((opt) => {
+                  const isActive = preferredGender === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setPreferredGender(opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>服務時數</Text>
+              <View style={styles.chipRow}>
+                {[2, 4, 8].map((h) => {
+                  const isActive = serviceDuration === h;
+                  return (
+                    <TouchableOpacity
+                      key={h}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setServiceDuration(isActive ? null : h)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* ── Card 3: Exercise Program — category-specific fields ── */}
+          {selectedCategoryCode === 'exercise_program' && (
+            <View style={styles.dynamicSection}>
+              <Text style={styles.dynamicSectionTitle}>運動養生詳細資訊</Text>
+
+              <Text style={styles.label}>運動類型</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: 'post_surgery', label: '術後保養' },
+                  { value: 'muscle_training', label: '肌力訓練' },
+                  { value: 'general', label: '一般運動' },
+                ].map((opt) => {
+                  const isActive = exerciseType === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setExerciseType(isActive ? '' : opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>服務人員性別偏好</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: '', label: '不限' },
+                  { value: 'female', label: '女性' },
+                  { value: 'male', label: '男性' },
+                ].map((opt) => {
+                  const isActive = preferredGender === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setPreferredGender(opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>服務時數</Text>
+              <View style={styles.chipRow}>
+                {[2].map((h) => {
+                  const isActive = serviceDuration === h;
+                  return (
+                    <TouchableOpacity
+                      key={h}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setServiceDuration(isActive ? null : h)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* ── Card 3: Home Cleaning — category-specific fields ── */}
+          {selectedCategoryCode === 'home_cleaning' && (
+            <View style={styles.dynamicSection}>
+              <Text style={styles.dynamicSectionTitle}>居家打掃詳細資訊</Text>
+
+              <Text style={styles.label}>空間坪數</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: '0-10', label: '10 坪以下' },
+                  { value: '20-30', label: '20-30 坪' },
+                  { value: '30-40', label: '30-40 坪' },
+                  { value: '40-50', label: '40-50 坪' },
+                ].map((opt) => {
+                  const isActive = spaceSize === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setSpaceSize(isActive ? '' : opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>有養寵物</Text>
+                <Switch
+                  value={hasPets}
+                  onValueChange={setHasPets}
+                  trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
+                  thumbColor={hasPets ? colors.primary : colors.textDisabled}
+                  accessibilityLabel="有養寵物"
+                />
+              </View>
+
+              <Text style={styles.label}>服務人員性別偏好</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: '', label: '不限' },
+                  { value: 'female', label: '女性' },
+                  { value: 'male', label: '男性' },
+                ].map((opt) => {
+                  const isActive = preferredGender === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setPreferredGender(opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>服務時數</Text>
+              <View style={styles.chipRow}>
+                {[3, 4, 5, 6].map((h) => {
+                  const isActive = serviceDuration === h;
+                  return (
+                    <TouchableOpacity
+                      key={h}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setServiceDuration(isActive ? null : h)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* ── Price Estimation ─────────────────────────────── */}
+          {estimatedPrice && (
+            <View style={styles.priceCard}>
+              <Text style={styles.priceTitle}>預估金額</Text>
+              <Text style={styles.priceValue}>
+                {estimatedPrice.low === estimatedPrice.high
+                  ? `NT$ ${estimatedPrice.low.toLocaleString()}`
+                  : `NT$ ${estimatedPrice.low.toLocaleString()} – ${estimatedPrice.high.toLocaleString()}`}
+              </Text>
+              {estimatedPrice.note && <Text style={styles.priceNote}>{estimatedPrice.note}</Text>}
+              <Text style={styles.priceDisclaimer}>實際金額依服務人員資歷與證照調整</Text>
+            </View>
+          )}
+
+          {/* ── Submit + Reset ────────────────────────────────── */}
+          <View style={styles.submitRow}>
+            <TouchableOpacity
+              style={styles.resetButton}
+              onPress={() => {
+                Alert.alert('重新選擇', '確定要清空目前的填寫內容嗎？', [
+                  { text: '取消', style: 'cancel' },
+                  {
+                    text: '確定清空',
+                    style: 'destructive',
+                    onPress: () => {
+                      setCategoryId('');
+                      setPreferredDate('');
+                      setTimeSlot('');
+                      setLocation('');
+                      setDescription('');
+                      setDepartureLocation('');
+                      setDestination('');
+                      setServiceDuration(null);
+                      setNeedsPickup(false);
+                      setPreferredGender('');
+                      setDepartment('');
+                      setDoctorName('');
+                      setRegistrationNumber('');
+                      setSpaceSize('');
+                      setHasPets(false);
+                      setExerciseType('');
+                      setError('');
+                    },
+                  },
+                ]);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="重新選擇"
+            >
+              <Text style={styles.resetButtonText}>重新選擇</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting}
+              accessibilityRole="button"
+              accessibilityLabel={submitting ? '送出中' : '送出服務需求'}
+            >
+              <Text style={styles.submitButtonText}>{submitting ? '送出中...' : '送出需求'}</Text>
+            </TouchableOpacity>
           </View>
+        </>
+      ) : null}
 
-          <Text style={styles.label}>服務時數</Text>
-          <View style={styles.chipRow}>
-            {[2, 4, 8].map((h) => {
-              const isActive = serviceDuration === h;
-              return (
-                <TouchableOpacity
-                  key={h}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setServiceDuration(isActive ? null : h)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* Exercise Program: type / gender / duration */}
-      {selectedCategoryCode === 'exercise_program' && (
-        <View style={styles.dynamicSection}>
-          <Text style={styles.dynamicSectionTitle}>運動養生詳細資訊</Text>
-
-          <Text style={styles.label}>運動類型</Text>
-          <View style={styles.chipRow}>
-            {[
-              { value: 'post_surgery', label: '術後保養' },
-              { value: 'muscle_training', label: '肌力訓練' },
-              { value: 'general', label: '一般運動' },
-            ].map((opt) => {
-              const isActive = exerciseType === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setExerciseType(isActive ? '' : opt.value)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>服務人員性別偏好</Text>
-          <View style={styles.chipRow}>
-            {[
-              { value: '', label: '不限' },
-              { value: 'female', label: '女性' },
-              { value: 'male', label: '男性' },
-            ].map((opt) => {
-              const isActive = preferredGender === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setPreferredGender(opt.value)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>服務時數</Text>
-          <View style={styles.chipRow}>
-            {[2].map((h) => {
-              const isActive = serviceDuration === h;
-              return (
-                <TouchableOpacity
-                  key={h}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setServiceDuration(isActive ? null : h)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* Home Cleaning: space size / pets / gender / duration */}
-      {selectedCategoryCode === 'home_cleaning' && (
-        <View style={styles.dynamicSection}>
-          <Text style={styles.dynamicSectionTitle}>居家打掃詳細資訊</Text>
-
-          <Text style={styles.label}>空間坪數</Text>
-          <View style={styles.chipRow}>
-            {[
-              { value: '0-10', label: '10 坪以下' },
-              { value: '20-30', label: '20-30 坪' },
-              { value: '30-40', label: '30-40 坪' },
-              { value: '40-50', label: '40-50 坪' },
-            ].map((opt) => {
-              const isActive = spaceSize === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setSpaceSize(isActive ? '' : opt.value)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>有養寵物</Text>
-            <Switch
-              value={hasPets}
-              onValueChange={setHasPets}
-              trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
-              thumbColor={hasPets ? colors.primary : colors.textDisabled}
-              accessibilityLabel="有養寵物"
-            />
-          </View>
-
-          <Text style={styles.label}>服務人員性別偏好</Text>
-          <View style={styles.chipRow}>
-            {[
-              { value: '', label: '不限' },
-              { value: 'female', label: '女性' },
-              { value: 'male', label: '男性' },
-            ].map((opt) => {
-              const isActive = preferredGender === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setPreferredGender(opt.value)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>服務時數</Text>
-          <View style={styles.chipRow}>
-            {[3, 4, 5, 6].map((h) => {
-              const isActive = serviceDuration === h;
-              return (
-                <TouchableOpacity
-                  key={h}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setServiceDuration(isActive ? null : h)}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h} 小時</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* Description */}
-      <Text style={styles.label}>需求描述 *</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={description}
-        onChangeText={setDescription}
-        placeholder="請描述您的服務需求..."
-        placeholderTextColor={colors.textDisabled}
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-        accessibilityLabel="需求描述"
-      />
-
-      {/* Submit + Reset */}
-      <View style={styles.submitRow}>
-        <TouchableOpacity
-          style={styles.resetButton}
-          onPress={() => {
-            Alert.alert('重新選擇', '確定要清空目前的填寫內容嗎？', [
-              { text: '取消', style: 'cancel' },
-              { text: '確定清空', style: 'destructive', onPress: () => {
-                // Keep recipientId selected (it's a "who" selection, not form content)
-                setCategoryId('');
-                setPreferredDate('');
-                setTimeSlot('');
-                setLocation('');
-                setDescription('');
-                setDepartureLocation('');
-                setDestination('');
-                setServiceDuration(null);
-                setNeedsPickup(false);
-                setPreferredGender('');
-                setDepartment('');
-                setDoctorName('');
-                setRegistrationNumber('');
-                setSpaceSize('');
-                setHasPets(false);
-                setExerciseType('');
-                setError('');
-              }},
-            ]);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="重新選擇"
-        >
-          <Text style={styles.resetButtonText}>重新選擇</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-          accessibilityRole="button"
-          accessibilityLabel={submitting ? '送出中' : '送出服務需求'}
-        >
-          <Text style={styles.submitButtonText}>{submitting ? '送出中...' : '送出需求'}</Text>
-        </TouchableOpacity>
-      </View>
     </ScrollView>
   );
 }
@@ -593,13 +767,19 @@ export default function NewServiceRequestScreen() {
 // ─── Styles ───────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bgScreen,
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    marginBottom: spacing.md,
   },
+  backBtnText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing['3xl'] + spacing.sm,
+  },
+  contentCentered: {
+    flexGrow: 1,
+    justifyContent: 'center' as const,
   },
   center: {
     flex: 1,
@@ -627,6 +807,71 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // ─── Hero Card ────────────────────────────────────────────
+  heroCard: {
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.sm,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  heroIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroPriceWrap: {
+    alignItems: 'flex-end',
+  },
+  heroPrice: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+  },
+  heroDuration: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+  },
+  heroName: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+    lineHeight: 20,
+  },
+  heroChange: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    marginTop: spacing.xs,
+  },
+
+  // ─── Card Containers ──────────────────────────────────────
+  cardContainer: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.sm,
+  },
+  cardTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+
   // ─── Labels ───────────────────────────────────────────────
   label: {
     fontSize: typography.bodyMd.fontSize,
@@ -636,7 +881,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
 
-  // ─── Chips (Recipient + Time Slot) ────────────────────────
+  // ─── Chips ────────────────────────────────────────────────
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -644,8 +889,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.lg,
+    borderColor: colors.borderDefault,
+    borderRadius: radius.full,
     paddingHorizontal: spacing.lg - spacing.xxs,
     paddingVertical: spacing.sm,
     backgroundColor: colors.bgSurface,
@@ -672,43 +917,36 @@ const styles = StyleSheet.create({
   categoryCard: {
     flexBasis: '48%',
     flexGrow: 1,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     padding: spacing.md,
-    backgroundColor: colors.bgSurface,
+    alignItems: 'center',
   },
-  categoryCardActive: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    backgroundColor: colors.primaryLight,
+  catIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
   },
   categoryName: {
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.xxs,
-  },
-  categoryNameActive: {
-    color: colors.primaryText,
-  },
-  categoryDesc: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textDisabled,
+    textAlign: 'center',
   },
 
-  // ─── Dynamic Category Section ────────────────────────────
+  // ─── Dynamic Category Section ─────────────────────────────
   dynamicSection: {
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
     backgroundColor: colors.bgSurface,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     padding: spacing.lg,
+    ...shadows.low,
+    marginBottom: spacing.sm,
   },
   dynamicSectionTitle: {
     fontSize: typography.headingSm.fontSize,
-    fontWeight: typography.headingSm.fontWeight,
+    fontWeight: '700',
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
@@ -725,11 +963,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
+  // ─── Date Button ──────────────────────────────────────────
+  dateButton: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: colors.bgSurfaceAlt, borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.sm, padding: spacing.md,
+  },
+  dateButtonText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary },
+  dateButtonPlaceholder: { fontSize: typography.bodyMd.fontSize, color: colors.textDisabled },
+
   // ─── Text Inputs ──────────────────────────────────────────
   input: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: colors.bgSurfaceAlt,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: colors.borderDefault,
     borderRadius: radius.sm,
     padding: spacing.md,
     fontSize: typography.bodyMd.fontSize,
@@ -739,7 +986,37 @@ const styles = StyleSheet.create({
     minHeight: 100,
   },
 
-  // ─── Submit + Reset ──────────────────────────────────────
+  // ─── Price Estimation Card ────────────────────────────────
+  priceCard: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+    alignItems: 'center',
+  },
+  priceTitle: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
+    color: colors.primaryText,
+    marginBottom: spacing.xs,
+  },
+  priceValue: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  priceNote: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.primaryText,
+    marginTop: spacing.xs,
+  },
+  priceDisclaimer: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginTop: spacing.sm,
+  },
+
+  // ─── Submit + Reset ───────────────────────────────────────
   submitRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -748,11 +1025,12 @@ const styles = StyleSheet.create({
   resetButton: {
     flex: 1,
     backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.borderStrong,
+    ...shadows.high,
   },
   resetButtonText: {
     color: colors.textSecondary,
@@ -762,9 +1040,10 @@ const styles = StyleSheet.create({
   submitButton: {
     flex: 2,
     backgroundColor: colors.primary,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
+    ...shadows.high,
   },
   submitButtonDisabled: {
     opacity: 0.6,

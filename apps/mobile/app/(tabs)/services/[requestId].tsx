@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 interface ServiceRequestDetail {
   id: string;
@@ -148,7 +149,7 @@ export default function ServiceRequestDetailScreen() {
   };
 
   if (loading) {
-    return <ActivityIndicator style={styles.loader} size="large" color="#2563EB" />;
+    return <ActivityIndicator style={styles.loader} size="large" color={colors.primary} />;
   }
 
   if (error || !request) {
@@ -164,8 +165,8 @@ export default function ServiceRequestDetailScreen() {
 
   const status = STATUS_CONFIG[request.status] ?? {
     label: request.status,
-    color: '#6B7280',
-    bg: '#F3F4F6',
+    color: colors.textTertiary,
+    bg: colors.bgSurfaceAlt,
   };
   const canCancel = CANCELLABLE.includes(request.status);
 
@@ -299,7 +300,7 @@ function StatusTimeline({ request }: { request: ServiceRequestDetail }) {
   return (
     <View>
       {TIMELINE_STEPS.map((step, idx) => {
-        const cfg = STATUS_CONFIG[step] ?? { label: step, color: '#6B7280', bg: '#F3F4F6' };
+        const cfg = STATUS_CONFIG[step] ?? { label: step, color: colors.textTertiary, bg: colors.bgSurfaceAlt };
         const isPast = !isCancelled && idx <= currentIdx;
         const isCurrent = !isCancelled && idx === currentIdx;
         const timestamp = timeMap[step];
@@ -313,13 +314,13 @@ function StatusTimeline({ request }: { request: ServiceRequestDetail }) {
                 styles.timelineDot,
                 isPast
                   ? { backgroundColor: cfg.color }
-                  : { backgroundColor: '#E5E7EB' },
-                isCurrent && { borderWidth: 2, borderColor: cfg.color, backgroundColor: '#FFFFFF' },
+                  : { backgroundColor: colors.borderDefault },
+                isCurrent && { borderWidth: 2, borderColor: cfg.color, backgroundColor: colors.white },
               ]} />
               {!isLast && (
                 <View style={[
                   styles.timelineLine,
-                  isPast ? { backgroundColor: cfg.color } : { backgroundColor: '#E5E7EB' },
+                  isPast ? { backgroundColor: cfg.color } : { backgroundColor: colors.borderDefault },
                 ]} />
               )}
             </View>
@@ -327,7 +328,7 @@ function StatusTimeline({ request }: { request: ServiceRequestDetail }) {
             <View style={styles.timelineContent}>
               <Text style={[
                 styles.timelineLabel,
-                isPast ? { color: '#111827', fontWeight: '600' } : { color: '#9CA3AF' },
+                isPast ? { color: colors.textPrimary, fontWeight: '600' } : { color: colors.textDisabled },
               ]}>
                 {cfg.label}
               </Text>
@@ -343,10 +344,10 @@ function StatusTimeline({ request }: { request: ServiceRequestDetail }) {
       {isCancelled && (
         <View style={styles.timelineRow}>
           <View style={styles.timelineLeft}>
-            <View style={[styles.timelineDot, { backgroundColor: STATUS_CONFIG.cancelled?.color ?? '#DC2626' }]} />
+            <View style={[styles.timelineDot, { backgroundColor: STATUS_CONFIG.cancelled?.color ?? colors.danger }]} />
           </View>
           <View style={styles.timelineContent}>
-            <Text style={[styles.timelineLabel, { color: '#DC2626', fontWeight: '600' }]}>
+            <Text style={[styles.timelineLabel, { color: colors.danger, fontWeight: '600' }]}>
               已取消
             </Text>
           </View>
@@ -404,85 +405,84 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  content: { padding: 16, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { padding: spacing.lg, paddingBottom: 40 },
   loader: { flex: 1, justifyContent: 'center' },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { color: '#DC2626', fontSize: 14, marginBottom: 12 },
-  linkText: { color: '#2563EB', fontSize: 14, textDecorationLine: 'underline' },
+  errorText: { color: colors.danger, fontSize: 14, marginBottom: spacing.md },
+  linkText: { color: colors.primary, fontSize: 14, textDecorationLine: 'underline' },
   statusRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
-  statusBadge: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 },
+  statusBadge: { borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   statusText: { fontSize: 14, fontWeight: '600' },
-  dateText: { fontSize: 13, color: '#9CA3AF' },
+  dateText: { fontSize: 13, color: colors.textDisabled },
   section: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.low,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.md },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: spacing.xs + 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: colors.bgSurfaceAlt,
   },
-  infoLabel: { fontSize: 14, color: '#6B7280' },
-  infoValue: { fontSize: 14, color: '#111827', fontWeight: '500', maxWidth: '60%' as unknown as number, textAlign: 'right' },
-  descriptionText: { fontSize: 14, color: '#374151', lineHeight: 22 },
-  noteText: { fontSize: 14, color: '#6B7280', lineHeight: 20 },
+  infoLabel: { fontSize: 14, color: colors.textTertiary },
+  infoValue: { fontSize: 14, color: colors.textPrimary, fontWeight: '500', maxWidth: '60%' as unknown as number, textAlign: 'right' },
+  descriptionText: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
+  noteText: { fontSize: 14, color: colors.textTertiary, lineHeight: 20 },
   cancelButton: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.full,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   cancelButtonDisabled: { opacity: 0.6 },
-  cancelButtonText: { color: '#DC2626', fontSize: 15, fontWeight: '600' },
+  cancelButtonText: { color: colors.danger, fontSize: 15, fontWeight: '600' },
   // ─── Provider Photo ──────────────────────────────────────
   providerPhotoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
   providerPhoto: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F3F4F6',
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurfaceAlt,
   },
   providerPhotoFallback: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: '#DBEAFE',
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   providerPhotoInitial: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: colors.primaryText,
   },
   providerPhotoInfo: { flex: 1 },
   providerPhotoName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
   },
   providerPhotoLevel: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.textTertiary,
     marginTop: 2,
   },
 
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
   timelineDot: {
     width: 10,
     height: 10,
-    borderRadius: 5,
+    borderRadius: radius.full,
     marginTop: 4,
   },
   timelineLine: {
@@ -509,37 +509,37 @@ const styles = StyleSheet.create({
   },
   timelineContent: {
     flex: 1,
-    paddingLeft: 8,
-    paddingBottom: 12,
+    paddingLeft: spacing.sm,
+    paddingBottom: spacing.md,
   },
   timelineLabel: {
     fontSize: 14,
   },
   timelineTime: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: colors.textDisabled,
     marginTop: 2,
   },
 
   confirmButtons: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
   confirmButton: {
     flex: 1,
-    backgroundColor: '#DCFCE7',
-    borderRadius: 12,
+    backgroundColor: colors.successLight,
+    borderRadius: radius.full,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  confirmButtonText: { color: '#15803D', fontSize: 15, fontWeight: '600' },
+  confirmButtonText: { color: colors.success, fontSize: 15, fontWeight: '600' },
   rejectButton: {
     flex: 1,
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.full,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  rejectButtonText: { color: '#DC2626', fontSize: 15, fontWeight: '600' },
+  rejectButtonText: { color: colors.danger, fontSize: 15, fontWeight: '600' },
 });
