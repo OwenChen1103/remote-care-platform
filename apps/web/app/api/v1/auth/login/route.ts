@@ -49,8 +49,7 @@ export async function POST(request: NextRequest) {
       },
       token,
     });
-  } catch (err) {
-    console.error('[LOGIN ERROR]', err);
+  } catch {
     return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
   }
 }
