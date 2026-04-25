@@ -1,18 +1,21 @@
 {
   "expo": {
-    "name": "遠端照護",
-    "slug": "remote-care-mobile",
-    "version": "0.1.0",
+    "name": "WhoCares",
+    "slug": "wedocare-app",
+    "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "remote-care",
+    "scheme": "wedocare",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.remotecare.mobile"
+      "bundleIdentifier": "co.wedocare.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.remotecare.mobile",
+      "package": "co.wedocare.app",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       }
@@ -22,7 +25,11 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "${EXPO_PUBLIC_API_URL}"
+      "apiUrl": "${EXPO_PUBLIC_API_URL}",
+      "router": {},
+      "eas": {
+        "projectId": "841f262f-fcbd-458f-93e3-441c3d25970d"
+      }
     }
   }
 }
