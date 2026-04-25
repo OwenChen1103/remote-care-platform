@@ -4,7 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "eas-build-pre-install": "cd ../../packages/shared && npm run build",
+    "eas-build-pre-install": "cd ../../packages/shared && npm install && npm run build",
     "dev": "expo start",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit",
