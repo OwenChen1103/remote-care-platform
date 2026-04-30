@@ -7,15 +7,17 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   Switch,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { TIME_SLOT_DISPLAY } from '@remote-care/shared';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -207,12 +209,14 @@ export default function NewServiceRequestScreen() {
     void fetchData();
   }, [fetchData]);
 
-  // Sync categoryId from URL params whenever they change
-  useEffect(() => {
-    if (params.categoryId) {
-      setCategoryId(params.categoryId);
-    }
-  }, [params.categoryId]);
+  // Sync categoryId from URL params on every focus.
+  // If user navigates without categoryId param (e.g. tapping "開始安排照顧" on home),
+  // reset to '' to show the category selection grid.
+  useFocusEffect(
+    useCallback(() => {
+      setCategoryId(params.categoryId ?? '');
+    }, [params.categoryId]),
+  );
 
   const doSubmit = async () => {
     setSubmitting(true);
@@ -279,14 +283,7 @@ export default function NewServiceRequestScreen() {
 
   // ─── Loading ──────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   // ─── Derived for hero ─────────────────────────────────────
 
@@ -310,21 +307,38 @@ export default function NewServiceRequestScreen() {
       {/* ═══ Back button (when category selected) ═════════════ */}
       {categoryId && heroInfo && (
         <TouchableOpacity style={styles.backBtn} onPress={() => setCategoryId('')} activeOpacity={0.7}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.textTertiary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+            <Path d="M19 12H5M12 19l-7-7 7-7" stroke={colors.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
+          <Text style={styles.backBtnText}>選擇其他服務</Text>
         </TouchableOpacity>
       )}
 
       {/* ═══ Service Hero Header ═══════════════════════════════ */}
       {categoryId && heroInfo ? (
-        <View style={[styles.heroCard, { backgroundColor: heroClr.bg }]}>
+        <View style={styles.heroCard}>
+          {/* Layer 1: gradient base from category color */}
+          <LinearGradient
+            colors={[heroClr.bg, '#FFFFFF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Layer 2: halo orbs (will be blurred by BlurView below) */}
+          <View style={styles.heroHaloTopRight} />
+          <View style={styles.heroHaloBottomLeft} />
+          {/* Layer 3: BlurView softens orbs into fog */}
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
           <View style={styles.heroTop}>
             <View style={[styles.heroIconCircle, { backgroundColor: heroClr.accent }]}>
               {HeroIcon ? <HeroIcon size={24} color={heroClr.icon} /> : null}
             </View>
-            <View style={styles.heroPriceWrap}>
-              <Text style={[styles.heroPrice, { color: heroClr.icon }]}>{heroInfo.priceRange}</Text>
+            <View style={styles.heroDurationChip}>
+              <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                <SvgCircle cx="12" cy="12" r="10" stroke={colors.textTertiary} strokeWidth={1.8} />
+                <Path d="M12 6v6l4 2" stroke={colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" />
+              </Svg>
               <Text style={styles.heroDuration}>{heroInfo.duration}</Text>
             </View>
           </View>
@@ -333,23 +347,28 @@ export default function NewServiceRequestScreen() {
         </View>
       ) : (
         /* ── Category Selector (when no category selected) ── */
-        <View style={styles.cardContainer}>
-          <Text style={styles.cardTitle}>選擇服務類別</Text>
+        <View>
+          <Text style={styles.selectTitle}>選擇服務類別</Text>
+          <Text style={styles.selectSubtitle}>請選擇您需要的服務，我們將為您安排</Text>
           <View style={styles.categoryGrid}>
             {categories.map((cat) => {
               const clr = SERVICE_CLR[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight, accent: colors.primaryLight };
               const CatIcon = SERVICE_ICON_PATHS[cat.code];
+              const heroData = SERVICE_HERO[cat.code];
               return (
                 <TouchableOpacity
                   key={cat.id}
-                  style={[styles.categoryCard, { backgroundColor: clr.bg }]}
+                  style={styles.categoryCard}
                   onPress={() => setCategoryId(cat.id)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.catIconSmall, { backgroundColor: clr.accent }]}>
-                    {CatIcon ? <CatIcon size={16} color={clr.icon} /> : null}
+                  <View style={[styles.catIconSmall, { backgroundColor: clr.bg }]}>
+                    {CatIcon ? <CatIcon size={20} color={clr.icon} /> : null}
                   </View>
-                  <Text style={[styles.categoryName, { color: clr.icon }]}>{cat.name}</Text>
+                  <Text style={styles.categoryName}>{cat.name}</Text>
+                  {heroData?.subtitle && (
+                    <Text style={styles.categoryDesc} numberOfLines={2}>{heroData.subtitle}</Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -506,8 +525,8 @@ export default function NewServiceRequestScreen() {
                 <Switch
                   value={needsPickup}
                   onValueChange={setNeedsPickup}
-                  trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
-                  thumbColor={needsPickup ? colors.primary : colors.textDisabled}
+                  trackColor={{ false: colors.borderStrong, true: colors.accent }}
+                  thumbColor={colors.white}
                   accessibilityLabel="需要接送"
                 />
               </View>
@@ -650,8 +669,8 @@ export default function NewServiceRequestScreen() {
                 <Switch
                   value={hasPets}
                   onValueChange={setHasPets}
-                  trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
-                  thumbColor={hasPets ? colors.primary : colors.textDisabled}
+                  trackColor={{ false: colors.borderStrong, true: colors.accent }}
+                  thumbColor={colors.white}
                   accessibilityLabel="有養寵物"
                 />
               </View>
@@ -698,14 +717,23 @@ export default function NewServiceRequestScreen() {
 
           {/* ── Price Estimation ─────────────────────────────── */}
           {estimatedPrice && (
-            <View style={styles.priceCard}>
-              <Text style={styles.priceTitle}>預估金額</Text>
-              <Text style={styles.priceValue}>
-                {estimatedPrice.low === estimatedPrice.high
-                  ? `NT$ ${estimatedPrice.low.toLocaleString()}`
-                  : `NT$ ${estimatedPrice.low.toLocaleString()} – ${estimatedPrice.high.toLocaleString()}`}
-              </Text>
-              {estimatedPrice.note && <Text style={styles.priceNote}>{estimatedPrice.note}</Text>}
+            <View>
+              <View style={styles.priceCard}>
+                <View style={styles.priceIconWrap}>
+                  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                    <Path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </View>
+                <View style={styles.priceContentCol}>
+                  <Text style={styles.priceTitle}>預估金額</Text>
+                  <Text style={styles.priceValue}>
+                    {estimatedPrice.low === estimatedPrice.high
+                      ? `NT$ ${estimatedPrice.low.toLocaleString()}`
+                      : `NT$ ${estimatedPrice.low.toLocaleString()} – ${estimatedPrice.high.toLocaleString()}`}
+                  </Text>
+                  {estimatedPrice.note && <Text style={styles.priceNote}>{estimatedPrice.note}</Text>}
+                </View>
+              </View>
               <Text style={styles.priceDisclaimer}>實際金額依服務人員資歷與證照調整</Text>
             </View>
           )}
@@ -748,13 +776,20 @@ export default function NewServiceRequestScreen() {
               <Text style={styles.resetButtonText}>重新選擇</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+              style={[styles.submitButtonWrap, submitting && styles.submitButtonDisabled]}
               onPress={handleSubmit}
               disabled={submitting}
               accessibilityRole="button"
               accessibilityLabel={submitting ? '送出中' : '送出服務需求'}
             >
-              <Text style={styles.submitButtonText}>{submitting ? '送出中...' : '送出需求'}</Text>
+              <LinearGradient
+                colors={[colors.primary, colors.accent]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.submitButton}
+              >
+                <Text style={styles.submitButtonText}>{submitting ? '送出中...' : '送出需求'}</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </>
@@ -771,8 +806,13 @@ const styles = StyleSheet.create({
   backBtn: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
     marginBottom: spacing.md,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + spacing.xxs,
+    alignSelf: 'flex-start',
   },
-  backBtnText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
+  backBtnText: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, fontWeight: '500' },
   content: {
     padding: spacing.lg,
     paddingBottom: spacing['3xl'] + spacing.sm,
@@ -811,8 +851,25 @@ const styles = StyleSheet.create({
   heroCard: {
     borderRadius: radius.xl,
     padding: spacing.lg,
-    ...shadows.low,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.15)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -60, right: -60,
+    width: 180, height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -50, left: -50,
+    width: 160, height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
   heroTop: {
     flexDirection: 'row',
@@ -827,17 +884,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroPriceWrap: {
-    alignItems: 'flex-end',
-  },
-  heroPrice: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '700',
+  heroDurationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 1,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
   },
   heroDuration: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textTertiary,
-    marginTop: spacing.xxs,
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   heroName: {
     fontSize: typography.headingMd.fontSize,
@@ -862,8 +923,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurface,
     borderRadius: radius.xl,
     padding: spacing.lg,
-    ...shadows.low,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
   },
   cardTitle: {
     fontSize: typography.headingSm.fontSize,
@@ -896,19 +958,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurface,
   },
   chipActive: {
-    borderColor: colors.primaryText,
     backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
   },
   chipText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textTertiary,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   chipTextActive: {
     color: colors.primaryText,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
-  // ─── Category Grid ────────────────────────────────────────
+  // ─── Category Selection ───────────────────────────────────
+  selectTitle: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  selectSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: spacing.lg,
+  },
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -917,32 +992,41 @@ const styles = StyleSheet.create({
   categoryCard: {
     flexBasis: '48%',
     flexGrow: 1,
+    backgroundColor: colors.bgSurface,
     borderRadius: radius.xl,
-    padding: spacing.md,
-    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
   },
   catIconSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.md,
   },
   categoryName: {
     fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  categoryDesc: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: 4,
+    lineHeight: 16,
   },
 
   // ─── Dynamic Category Section ─────────────────────────────
   dynamicSection: {
-    marginTop: spacing.sm,
     backgroundColor: colors.bgSurface,
     borderRadius: radius.xl,
     padding: spacing.lg,
-    ...shadows.low,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
   },
   dynamicSectionTitle: {
     fontSize: typography.headingSm.fontSize,
@@ -952,22 +1036,26 @@ const styles = StyleSheet.create({
   },
   switchRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     marginTop: spacing.lg,
-    paddingVertical: spacing.sm,
+    gap: spacing.md,
   },
   switchLabel: {
+    flex: 1,
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.secondaryText,
   },
 
   // ─── Date Button ──────────────────────────────────────────
   dateButton: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: colors.bgSurfaceAlt, borderWidth: 1, borderColor: colors.borderDefault,
-    borderRadius: radius.sm, padding: spacing.md,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md + 2,
   },
   dateButtonText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary },
   dateButtonPlaceholder: { fontSize: typography.bodyMd.fontSize, color: colors.textDisabled },
@@ -977,8 +1065,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgSurfaceAlt,
     borderWidth: 1,
     borderColor: colors.borderDefault,
-    borderRadius: radius.sm,
-    padding: spacing.md,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md + 2,
     fontSize: typography.bodyMd.fontSize,
     color: colors.textPrimary,
   },
@@ -988,17 +1077,28 @@ const styles = StyleSheet.create({
 
   // ─── Price Estimation Card ────────────────────────────────
   priceCard: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.bgSurface,
     borderRadius: radius.xl,
     padding: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.15)',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
   },
+  priceIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  priceContentCol: { flex: 1 },
   priceTitle: {
-    fontSize: typography.caption.fontSize,
+    fontSize: typography.captionSm.fontSize,
     fontWeight: '600',
-    color: colors.primaryText,
-    marginBottom: spacing.xs,
+    color: colors.textTertiary,
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   priceValue: {
     fontSize: typography.headingLg.fontSize,
@@ -1007,13 +1107,14 @@ const styles = StyleSheet.create({
   },
   priceNote: {
     fontSize: typography.captionSm.fontSize,
-    color: colors.primaryText,
-    marginTop: spacing.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   priceDisclaimer: {
     fontSize: typography.captionSm.fontSize,
     color: colors.textDisabled,
     marginTop: spacing.sm,
+    textAlign: 'center',
   },
 
   // ─── Submit + Reset ───────────────────────────────────────
@@ -1024,33 +1125,40 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     flex: 1,
-    backgroundColor: colors.bgSurfaceAlt,
+    backgroundColor: colors.bgSurface,
     borderRadius: radius.full,
     paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    ...shadows.high,
+    borderColor: colors.borderDefault,
   },
   resetButtonText: {
     color: colors.textSecondary,
-    fontSize: typography.bodyLg.fontSize,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
   },
-  submitButton: {
+  submitButtonWrap: {
     flex: 2,
-    backgroundColor: colors.primary,
     borderRadius: radius.full,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  submitButton: {
     paddingVertical: spacing.lg - spacing.xxs,
     alignItems: 'center',
-    ...shadows.high,
+    justifyContent: 'center',
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
   submitButtonText: {
     color: colors.white,
-    fontSize: typography.bodyLg.fontSize,
-    fontWeight: '600',
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 });

@@ -5,14 +5,14 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { NOTIFICATION_TYPE_DISPLAY } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -27,6 +27,78 @@ interface Notification {
   created_at: string;
 }
 
+// ─── Type → SVG icon + color ──────────────────────────────────
+
+interface IconConfig {
+  bg: string;
+  fg: string;
+  render: (color: string) => React.ReactElement;
+}
+
+const TYPE_ICONS: Record<string, IconConfig> = {
+  measurement_reminder: {
+    bg: '#E5F2FB',
+    fg: '#1B6DA0',
+    render: (c) => (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Circle cx="12" cy="12" r="10" stroke={c} strokeWidth={1.8} />
+        <Path d="M12 6v6l4 2" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    ),
+  },
+  abnormal_alert: {
+    bg: '#FDECEA',
+    fg: '#D9534F',
+    render: (c) => (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Path d="M12 2L2 22h20L12 2z" stroke={c} strokeWidth={1.8} strokeLinejoin="round" />
+        <Path d="M12 9v5M12 17h.01" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    ),
+  },
+  appointment_reminder: {
+    bg: '#EDF7E8',
+    fg: '#3F7F2E',
+    render: (c) => (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Rect x="3" y="5" width="18" height="16" rx="2" stroke={c} strokeWidth={1.8} />
+        <Path d="M3 9h18M8 3v4M16 3v4" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    ),
+  },
+  service_request_update: {
+    bg: '#F0EEFF',
+    fg: '#5B52E0',
+    render: (c) => (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Rect x="6" y="4" width="12" height="18" rx="2" stroke={c} strokeWidth={1.8} />
+        <Path d="M9 2h6v4H9z" stroke={c} strokeWidth={1.8} />
+        <Path d="M9 12h6M9 16h4" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+      </Svg>
+    ),
+  },
+  ai_report_ready: {
+    bg: '#FEF3D9',
+    fg: '#B07000',
+    render: (c) => (
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+        <Path d="M12 2l2.5 6.5L21 10l-5 4.5L17 22l-5-3-5 3 1-7.5L3 10l6.5-1.5L12 2z" stroke={c} strokeWidth={1.6} strokeLinejoin="round" />
+      </Svg>
+    ),
+  },
+};
+
+const DEFAULT_ICON: IconConfig = {
+  bg: colors.bgSurfaceAlt,
+  fg: colors.textTertiary,
+  render: (c) => (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M13.7 21a2 2 0 01-3.4 0" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+};
+
 // ─── Helpers ──────────────────────────────────────────────────
 
 function formatTime(dateStr: string): string {
@@ -39,13 +111,44 @@ function formatTime(dateStr: string): string {
   if (diffMin < 60) return `${diffMin} 分鐘前`;
   const diffHours = Math.floor(diffMin / 60);
   if (diffHours < 24) return `${diffHours} 小時前`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays} 天前`;
-  return d.toLocaleDateString('zh-TW');
+  return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
 }
 
-function getTypeIcon(type: string): string {
-  return NOTIFICATION_TYPE_DISPLAY[type]?.icon ?? '🔔';
+function getDateGroup(dateStr: string): '今天' | '昨天' | '本週' | '更早' {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((today.getTime() - targetDay.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return '今天';
+  if (diffDays === 1) return '昨天';
+  if (diffDays < 7) return '本週';
+  return '更早';
+}
+
+interface ListSection {
+  type: 'header' | 'item';
+  key: string;
+  title?: string;
+  notification?: Notification;
+}
+
+function buildSections(notifications: Notification[]): ListSection[] {
+  const groups: Record<string, Notification[]> = { 今天: [], 昨天: [], 本週: [], 更早: [] };
+  notifications.forEach((n) => {
+    const g = getDateGroup(n.created_at);
+    groups[g]!.push(n);
+  });
+  const sections: ListSection[] = [];
+  (['今天', '昨天', '本週', '更早'] as const).forEach((g) => {
+    if (groups[g]!.length > 0) {
+      sections.push({ type: 'header', key: `h-${g}`, title: g });
+      groups[g]!.forEach((n) => {
+        sections.push({ type: 'item', key: n.id, notification: n });
+      });
+    }
+  });
+  return sections;
 }
 
 // ─── Component ────────────────────────────────────────────────
@@ -62,11 +165,7 @@ export default function NotificationsScreen() {
       const result = await api.get<Notification[]>('/notifications?limit=50');
       setNotifications(result);
     } catch (e) {
-      if (e instanceof ApiError) {
-        setError(e.message);
-      } else {
-        setError('載入失敗，請稍後再試');
-      }
+      setError(e instanceof ApiError ? e.message : '載入失敗，請稍後再試');
     }
   }, []);
 
@@ -82,112 +181,102 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   }, [fetchNotifications]);
 
-  useEffect(() => {
-    void loadInitial();
-  }, [loadInitial]);
+  useEffect(() => { void loadInitial(); }, [loadInitial]);
 
   const markAsRead = useCallback(async (id: string) => {
     try {
       await api.put(`/notifications/${id}/read`, {});
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
-      );
-    } catch {
-      // Non-critical
-    }
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    } catch { /* */ }
   }, []);
 
   const markAllRead = useCallback(async () => {
     try {
       await api.put('/notifications/read-all', {});
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    } catch {
-      // Non-critical
-    }
+    } catch { /* */ }
   }, []);
 
-  const hasUnread = notifications.some((n) => !n.is_read);
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  // ─── Loading ──────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
-  }
-
-  // ─── Error ────────────────────────────────────────────────
+  if (loading) return <LoadingScreen />;
 
   if (error) {
     return (
-      <View style={styles.center}>
+      <View style={s.center}>
         <ErrorState message={error} onRetry={() => void loadInitial()} />
       </View>
     );
   }
 
-  // ─── Main Render ──────────────────────────────────────────
+  const sections = buildSections(notifications);
 
   return (
-    <View style={styles.container}>
-      {/* Mark all as read bar */}
-      {hasUnread && (
-        <TouchableOpacity
-          style={styles.markAllBar}
-          onPress={() => void markAllRead()}
-          accessibilityLabel="全部標為已讀"
-        >
-          <Text style={styles.markAllText}>全部標為已讀</Text>
-        </TouchableOpacity>
+    <View style={s.container}>
+      {/* Top action bar — only show when there are unread items */}
+      {unreadCount > 0 && (
+        <View style={s.topBar}>
+          <Text style={s.topBarText}>
+            <Text style={s.unreadCount}>{unreadCount}</Text> 則未讀
+          </Text>
+          <TouchableOpacity
+            onPress={() => void markAllRead()}
+            style={s.markAllBtn}
+            accessibilityLabel="全部標為已讀"
+          >
+            <Text style={s.markAllText}>全部標為已讀</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {/* Notification list or empty state */}
+      {/* List */}
       {notifications.length === 0 ? (
-        <EmptyState
-          title="尚無通知"
-          description="當有新的量測提醒、異常通知或服務更新時，會在這裡顯示。"
-        />
+        <View style={s.emptyWrap}>
+          <EmptyState
+            title="尚無通知"
+            description="當有新的量測提醒、異常通知或服務更新時，會在這裡顯示。"
+          />
+        </View>
       ) : (
         <FlatList
-          data={notifications}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          data={sections}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={s.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.primary} />
           }
-          renderItem={({ item }) => (
-            <Card
-              style={[styles.notificationCard, !item.is_read && styles.notificationCardUnread]}
-              onPress={!item.is_read ? () => void markAsRead(item.id) : undefined}
-            >
-              {/* Icon */}
-              <View style={styles.iconContainer}>
-                <Text style={styles.icon}>{getTypeIcon(item.type)}</Text>
-              </View>
-
-              {/* Content */}
-              <View style={styles.cardContent}>
-                <View style={styles.cardHeader}>
-                  <Text
-                    style={[styles.cardTitle, !item.is_read && styles.cardTitleUnread]}
-                    numberOfLines={1}
-                  >
-                    {item.title}
-                  </Text>
-                  <Text style={styles.cardTime}>{formatTime(item.created_at)}</Text>
+          renderItem={({ item }) => {
+            if (item.type === 'header') {
+              return <Text style={s.sectionHeader}>{item.title}</Text>;
+            }
+            const n = item.notification!;
+            const cfg = TYPE_ICONS[n.type] ?? DEFAULT_ICON;
+            const typeLabel = NOTIFICATION_TYPE_DISPLAY[n.type]?.label ?? '通知';
+            return (
+              <TouchableOpacity
+                style={[s.card, !n.is_read && s.cardUnread]}
+                onPress={!n.is_read ? () => void markAsRead(n.id) : undefined}
+                activeOpacity={n.is_read ? 1 : 0.7}
+              >
+                <View style={[s.iconWrap, { backgroundColor: cfg.bg }]}>
+                  {cfg.render(cfg.fg)}
                 </View>
-                <Text style={styles.cardBody} numberOfLines={2}>
-                  {item.body}
-                </Text>
-              </View>
-
-              {/* Unread dot */}
-              {!item.is_read && <View style={styles.unreadDot} />}
-            </Card>
-          )}
+                <View style={s.content}>
+                  <View style={s.headerRow}>
+                    <Text style={[s.typeLabel, { color: cfg.fg }]}>{typeLabel}</Text>
+                    <Text style={s.time}>{formatTime(n.created_at)}</Text>
+                  </View>
+                  <Text style={[s.title, !n.is_read && s.titleUnread]} numberOfLines={1}>
+                    {n.title}
+                  </Text>
+                  <Text style={s.body} numberOfLines={2}>
+                    {n.body}
+                  </Text>
+                </View>
+                {!n.is_read && <View style={s.unreadDot} />}
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
     </View>
@@ -196,106 +285,123 @@ export default function NotificationsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bgScreen,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    backgroundColor: colors.bgScreen,
-  },
-  loadingText: {
-    marginTop: spacing.sm,
-    fontSize: typography.bodySm.fontSize,
-    color: colors.textTertiary,
-  },
-  list: {
-    padding: spacing.lg,
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  emptyWrap: { flex: 1, justifyContent: 'center' },
 
-  // ─── Mark All Bar ─────────────────────────────────────────
-  markAllBar: {
-    backgroundColor: colors.primaryLight,
-    paddingVertical: spacing.sm + spacing.xxs,
-    paddingHorizontal: spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderDefault,
-  },
-  markAllText: {
-    color: colors.primaryText,
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-
-  // ─── Notification Card ────────────────────────────────────
-  notificationCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: spacing.lg - spacing.xxs,
-    marginBottom: spacing.sm,
-  },
-  notificationCardUnread: {
-    backgroundColor: colors.infoLight,
-  },
-
-  // ─── Icon ─────────────────────────────────────────────────
-  iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.bgSurfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-    marginTop: spacing.xxs,
-  },
-  icon: {
-    fontSize: 18,
-  },
-
-  // ─── Content ──────────────────────────────────────────────
-  cardContent: {
-    flex: 1,
-  },
-  cardHeader: {
+  // Top bar — pill style
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  cardTitle: {
-    fontSize: typography.headingSm.fontSize,
+  topBarText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  unreadCount: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  markAllBtn: {
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.2)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + spacing.xxs,
+  },
+  markAllText: {
+    color: colors.primaryText,
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+  },
+
+  // List
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing['3xl'] },
+
+  // Section header (今天 / 昨天 / 本週 / 更早)
+  sectionHeader: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingLeft: 4,
+  },
+
+  // Card
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.bgSurface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  cardUnread: {
+    backgroundColor: colors.bgSurface,
+    borderColor: 'rgba(46,141,201,0.25)',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+
+  // Icon
+  iconWrap: {
+    width: 36, height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Content
+  content: { flex: 1 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  typeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  time: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+  },
+  title: {
+    fontSize: typography.bodySm.fontSize,
     fontWeight: '500',
     color: colors.textSecondary,
-    flex: 1,
+    marginBottom: 2,
   },
-  cardTitleUnread: {
+  titleUnread: {
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  cardTime: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textDisabled,
-    marginLeft: spacing.sm,
-  },
-  cardBody: {
-    fontSize: typography.bodySm.fontSize,
+  body: {
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
-    lineHeight: typography.bodySm.fontSize * 1.5,
+    lineHeight: 17,
   },
 
-  // ─── Unread Dot ───────────────────────────────────────────
+  // Unread dot
   unreadDot: {
-    width: 8,
-    height: 8,
+    width: 8, height: 8,
     borderRadius: 4,
     backgroundColor: colors.primary,
-    marginLeft: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: 6,
   },
 });

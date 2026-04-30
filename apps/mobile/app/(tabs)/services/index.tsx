@@ -5,16 +5,17 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -112,6 +113,17 @@ const SERVICE_COLORS: Record<string, { icon: string; bg: string; accent: string 
   shopping_assist:       { icon: '#D4789B', bg: '#FFF0F5', accent: '#FFD4E4' },
 };
 
+// ─── Section icons ────────────────────────────────────────────
+
+function IconClock() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <SvgCircle cx="12" cy="12" r="10" stroke={colors.primary} strokeWidth={1.8} />
+      <Path d="M12 6v6l4 2" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────
 
 export default function ServicesScreen() {
@@ -152,7 +164,7 @@ export default function ServicesScreen() {
     return r.status === filter;
   });
 
-  // No longer split featured/other — all 8 in one grid
+  const activeCount = requests.filter((r) => ACTIVE_STATUSES.includes(r.status)).length;
 
   // ─── Error State ──────────────────────────────────────────
 
@@ -167,18 +179,40 @@ export default function ServicesScreen() {
   // ─── Loading State ────────────────────────────────────────
 
   if (loading && requests.length === 0 && categories.length === 0) {
-    return (
-      <View style={s.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={s.loadingText}>載入中...</Text>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   // ─── Main Render ──────────────────────────────────────────
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+
+      {/* ═══ Hero Card ════════════════════════════════════════ */}
+      <View style={s.heroWrap}>
+        <View style={s.hero}>
+          <LinearGradient
+            colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={s.heroHaloTopRight} />
+          <View style={s.heroHaloBottomLeft} />
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+          <View style={s.heroContent}>
+            <Text style={s.heroTagline}>WHOCARES SERVICES</Text>
+            <Text style={s.heroSubtitle}>8 種專業服務，由我們為您家人安心安排</Text>
+            {activeCount > 0 && (
+              <View style={s.heroBadge}>
+                <View style={s.heroBadgeDot} />
+                <Text style={s.heroBadgeText}>{activeCount} 筆需求處理中</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
 
       {/* ═══ Service Quick Links (2×4 grid) ══════════════════ */}
       {categories.length > 0 && (
@@ -188,9 +222,14 @@ export default function ServicesScreen() {
               const clr = SERVICE_COLORS[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight, accent: colors.primaryLight };
               const IconComp = SERVICE_ICONS[cat.code];
               return (
-                <TouchableOpacity key={cat.id} style={[s.catCard, { backgroundColor: clr.bg }]} onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)} activeOpacity={0.7}>
-                  <View style={s.catIconWrap}>
-                    {IconComp && <IconComp size={22} color={clr.icon} />}
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[s.catCard, { backgroundColor: clr.bg }]}
+                  onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.catIconWrap, { backgroundColor: clr.accent }]}>
+                    {IconComp && <IconComp size={20} color={clr.icon} />}
                   </View>
                   <Text style={[s.catName, { color: clr.icon }]}>{cat.name}</Text>
                 </TouchableOpacity>
@@ -200,16 +239,26 @@ export default function ServicesScreen() {
         </View>
       )}
 
-      {/* ═══ Request History (main content) ═══════════════════ */}
+      {/* ═══ Request History ══════════════════════════════════ */}
       <View style={s.historySection}>
-        <TouchableOpacity
-          style={s.historyHeader}
-          onPress={() => setShowAllRequests((v) => !v)}
-          activeOpacity={0.7}
-        >
-          <Text style={s.historySectionTitle}>需求紀錄</Text>
-          <Text style={s.historyToggle}>{showAllRequests ? '收合' : `${requests.length} 筆 →`}</Text>
-        </TouchableOpacity>
+        <View style={s.sectionHeader}>
+          <IconClock />
+          <Text style={s.sectionLabel}>需求紀錄</Text>
+          {requests.length > 0 && (
+            <TouchableOpacity onPress={() => setShowAllRequests((v) => !v)} activeOpacity={0.7} style={s.toggleBtn}>
+              <Text style={s.toggleText}>{showAllRequests ? '收合' : `${requests.length} 筆`}</Text>
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d={showAllRequests ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'}
+                  stroke={colors.primaryText}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {showAllRequests && (
           <>
@@ -223,6 +272,7 @@ export default function ServicesScreen() {
                       key={opt.value}
                       style={[s.filterChip, isActive && s.filterChipActive]}
                       onPress={() => setFilter(opt.value)}
+                      activeOpacity={0.7}
                     >
                       <Text style={[s.filterChipText, isActive && s.filterChipTextActive]}>{opt.label}</Text>
                     </TouchableOpacity>
@@ -240,16 +290,35 @@ export default function ServicesScreen() {
                 <EmptyState title="沒有符合的需求" description="試試其他篩選條件。" />
               </View>
             ) : (
-              filteredRequests.map((item) => (
-                <Card key={item.id} style={s.requestCard} onPress={() => router.push(`/(tabs)/services/${item.id}`)}>
-                  <View style={s.cardHeader}>
-                    <Text style={s.categoryName}>{item.category.name}</Text>
-                    <StatusPill status={item.status} type="serviceRequest" />
-                  </View>
-                  <Text style={s.recipientName}>{item.recipient.name}</Text>
-                  <Text style={s.meta}>期望日期：{new Date(item.preferred_date).toLocaleDateString('zh-TW')}</Text>
-                </Card>
-              ))
+              filteredRequests.map((item) => {
+                const clr = SERVICE_COLORS[item.category.code] ?? { icon: colors.primary, bg: colors.primaryLight, accent: colors.primaryLight };
+                const ItemIcon = SERVICE_ICONS[item.category.code];
+                const dateStr = new Date(item.preferred_date).toLocaleDateString('zh-TW');
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={s.requestCard}
+                    onPress={() => router.push(`/(tabs)/services/${item.id}`)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[s.requestIconWrap, { backgroundColor: clr.bg }]}>
+                      {ItemIcon ? <ItemIcon size={20} color={clr.icon} /> : null}
+                    </View>
+                    <View style={s.requestBody}>
+                      <View style={s.requestTopRow}>
+                        <Text style={s.requestCategory} numberOfLines={1}>{item.category.name}</Text>
+                        <StatusPill status={item.status} type="serviceRequest" />
+                      </View>
+                      <Text style={s.requestRecipient} numberOfLines={1}>
+                        {item.recipient.name} · {dateStr}
+                      </Text>
+                    </View>
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                      <Path d="M9 6l6 6-6 6" stroke={colors.textDisabled} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </TouchableOpacity>
+                );
+              })
             )}
           </>
         )}
@@ -266,42 +335,177 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgScreen },
   scrollContent: { paddingBottom: spacing['3xl'] },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.bgScreen },
-  loadingText: { marginTop: spacing.sm, fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
+
+  // ─── Hero Card ────────────────────────────────────────────
+  heroWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+  },
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+  },
+  heroTagline: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 2,
+  },
+  heroTitle: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 4,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    marginTop: spacing.xxs,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.18)',
+  },
+  heroBadgeDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: colors.accent,
+  },
+  heroBadgeText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
 
   // ─── Category Grid (2×4) ─────────────────────────────────
-  catGridWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.md },
+  catGridWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   catCard: {
     width: '22%' as unknown as number, flexGrow: 1,
-    borderRadius: radius.lg, paddingVertical: spacing.lg,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md + 2,
     alignItems: 'center',
   },
-  catIconWrap: { marginBottom: spacing.sm },
-  catName: { fontSize: typography.captionSm.fontSize, fontWeight: '600', textAlign: 'center' },
+  catIconWrap: {
+    width: 36, height: 36,
+    borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  catName: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 
   // ─── History Section ────────────────────────────────────
   historySection: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
-  historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
-  historySectionTitle: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary },
-  historyToggle: { fontSize: typography.bodySm.fontSize, color: colors.primaryText, fontWeight: '600' },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    paddingLeft: spacing.xs,
+  },
+  sectionLabel: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
+    flex: 1,
+  },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  toggleText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
 
-  // ─── Filter Chips ───────────────────────────────────────
-  filterRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  // ─── Filter Chips (consistent with add/edit pages) ──────
+  filterRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md, flexWrap: 'wrap' },
   filterChip: {
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderRadius: radius.full, borderWidth: 1, borderColor: colors.borderDefault,
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.borderDefault,
     backgroundColor: colors.bgSurface,
   },
-  filterChipActive: { borderColor: colors.primaryText, backgroundColor: colors.primaryLight },
-  filterChipText: { fontSize: typography.caption.fontSize, color: colors.textTertiary },
-  filterChipTextActive: { color: colors.primaryText, fontWeight: '600' },
+  filterChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  filterChipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '700',
+  },
 
-  // ─── Request Card ───────────────────────────────────────
-  requestCard: { marginBottom: spacing.sm, padding: spacing.md },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
-  categoryName: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
-  recipientName: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginBottom: spacing.xxs },
-  meta: { fontSize: typography.caption.fontSize, color: colors.textDisabled },
+  // ─── Request Card (richer with icon) ────────────────────
+  requestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  requestIconWrap: {
+    width: 44, height: 44,
+    borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestBody: { flex: 1, gap: 4 },
+  requestTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  requestCategory: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  requestRecipient: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+  },
 
   // ─── Empty ──────────────────────────────────────────────
   emptyWrap: { paddingVertical: spacing.xl },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,12 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { GLUCOSE_TIMING_DISPLAY } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -21,6 +24,31 @@ type GlucoseTiming = 'before_meal' | 'after_meal' | 'fasting' | 'random';
 const TIMING_OPTIONS: { value: GlucoseTiming; label: string }[] = Object.entries(
   GLUCOSE_TIMING_DISPLAY,
 ).map(([value, config]) => ({ value: value as GlucoseTiming, label: config.label }));
+
+// ─── Icons ────────────────────────────────────────────────────
+
+function IconHeart({ size = 20, color = colors.danger }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconDrop({ size = 20, color = colors.warning }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2C8 6 5 9 5 14a7 7 0 0014 0c0-5-3-8-7-12z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconNote({ size = 16, color = colors.textTertiary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M14 3v6h6M8 13h8M8 17h5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────
 
@@ -42,6 +70,20 @@ export default function AddMeasurementScreen() {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      const urlType = initialType === 'blood_glucose' ? 'blood_glucose' : 'blood_pressure';
+      setType(urlType);
+      setSystolic('');
+      setDiastolic('');
+      setHeartRate('');
+      setGlucoseValue('');
+      setGlucoseTiming('fasting');
+      setNote('');
+      setError('');
+    }, [initialType]),
+  );
 
   async function handleSubmit() {
     setError('');
@@ -115,84 +157,104 @@ export default function AddMeasurementScreen() {
   }
 
   const isBP = type === 'blood_pressure';
+  const heroTagline = isBP ? 'BLOOD PRESSURE' : 'BLOOD GLUCOSE';
+  const heroSubtitle = isBP ? '記錄血壓量測值' : '記錄血糖量測值';
 
   return (
-    <ScrollView style={styles.container}>
-      {/* ── Header Zone ──────────────────────────────────────── */}
-      <View style={styles.headerZone}>
-        <Text style={styles.title}>新增量測</Text>
+    <ScrollView style={s.container} contentContainerStyle={s.content}>
+      {/* ─── Hero ───────────────────────────────────────────── */}
+      <View style={s.hero}>
+        <LinearGradient
+          colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.heroHaloTopRight} />
+        <View style={s.heroHaloBottomLeft} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-        {/* Type toggle */}
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleChip, isBP && styles.toggleChipActive]}
-            onPress={() => setType('blood_pressure')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: isBP }}
-          >
-            <Text style={[styles.toggleText, isBP && styles.toggleTextActive]}>血壓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleChip, !isBP && styles.toggleChipActive]}
-            onPress={() => setType('blood_glucose')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: !isBP }}
-          >
-            <Text style={[styles.toggleText, !isBP && styles.toggleTextActive]}>血糖</Text>
-          </TouchableOpacity>
+        <View style={s.heroContent}>
+          <View style={s.heroIconWrap}>
+            {isBP ? <IconHeart size={20} /> : <IconDrop size={20} />}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heroTagline}>{heroTagline}</Text>
+            <Text style={s.heroSubtitle}>{heroSubtitle}</Text>
+          </View>
         </View>
       </View>
 
-      <View style={styles.content}>
-        {/* Error */}
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
+      {/* ─── Type toggle ───────────────────────────────────── */}
+      <View style={s.toggleRow}>
+        <TouchableOpacity
+          style={[s.toggleChip, isBP && s.toggleChipActive]}
+          onPress={() => setType('blood_pressure')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: isBP }}
+          activeOpacity={0.7}
+        >
+          <Text style={[s.toggleText, isBP && s.toggleTextActive]}>血壓</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.toggleChip, !isBP && s.toggleChipActive]}
+          onPress={() => setType('blood_glucose')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !isBP }}
+          activeOpacity={0.7}
+        >
+          <Text style={[s.toggleText, !isBP && s.toggleTextActive]}>血糖</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* ── Measurement Fields Card ────────────────────── */}
-        <View style={styles.formCard}>
-          <Text style={styles.sectionLabel}>{isBP ? '血壓數值' : '血糖數值'}</Text>
+      {/* ─── Error ──────────────────────────────────────────── */}
+      {error ? (
+        <View style={s.errorBox}>
+          <Text style={s.errorText}>{error}</Text>
+        </View>
+      ) : null}
 
-          {isBP ? (
-            <>
-              <View style={styles.bpRow}>
-                <View style={styles.bpField}>
-                  <Text style={styles.label}>收縮壓 *</Text>
-                  <TextInput
-                    style={styles.inputLarge}
-                    value={systolic}
-                    onChangeText={setSystolic}
-                    keyboardType="numeric"
-                    placeholder="120"
-                    placeholderTextColor={colors.textDisabled}
-                    accessibilityLabel="收縮壓"
-                    maxLength={3}
-                  />
-                  <Text style={styles.unit}>mmHg</Text>
-                </View>
-                <Text style={styles.bpSeparator}>/</Text>
-                <View style={styles.bpField}>
-                  <Text style={styles.label}>舒張壓 *</Text>
-                  <TextInput
-                    style={styles.inputLarge}
-                    value={diastolic}
-                    onChangeText={setDiastolic}
-                    keyboardType="numeric"
-                    placeholder="80"
-                    placeholderTextColor={colors.textDisabled}
-                    accessibilityLabel="舒張壓"
-                    maxLength={3}
-                  />
-                  <Text style={styles.unit}>mmHg</Text>
-                </View>
-              </View>
-
-              <Text style={styles.label}>心率（選填）</Text>
-              <View style={styles.inlineInput}>
+      {/* ─── Measurement Card ───────────────────────────────── */}
+      <View style={s.card}>
+        {isBP ? (
+          <>
+            <View style={s.bpRow}>
+              <View style={s.bpField}>
+                <Text style={s.fieldLabel}>收縮壓 <Text style={s.required}>*</Text></Text>
                 <TextInput
-                  style={styles.inputSmall}
+                  style={s.inputLarge}
+                  value={systolic}
+                  onChangeText={setSystolic}
+                  keyboardType="numeric"
+                  placeholder="120"
+                  placeholderTextColor={colors.textDisabled}
+                  accessibilityLabel="收縮壓"
+                  maxLength={3}
+                />
+                <Text style={s.unit}>mmHg</Text>
+              </View>
+              <View style={s.bpField}>
+                <Text style={s.fieldLabel}>舒張壓 <Text style={s.required}>*</Text></Text>
+                <TextInput
+                  style={s.inputLarge}
+                  value={diastolic}
+                  onChangeText={setDiastolic}
+                  keyboardType="numeric"
+                  placeholder="80"
+                  placeholderTextColor={colors.textDisabled}
+                  accessibilityLabel="舒張壓"
+                  maxLength={3}
+                />
+                <Text style={s.unit}>mmHg</Text>
+              </View>
+            </View>
+
+            <View style={s.field}>
+              <Text style={s.fieldLabel}>心率（選填）</Text>
+              <View style={s.inlineInput}>
+                <TextInput
+                  style={s.inputSmall}
                   value={heartRate}
                   onChangeText={setHeartRate}
                   keyboardType="numeric"
@@ -201,15 +263,17 @@ export default function AddMeasurementScreen() {
                   accessibilityLabel="心率"
                   maxLength={3}
                 />
-                <Text style={styles.unit}>bpm</Text>
+                <Text style={s.unit}>bpm</Text>
               </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.label}>血糖值 *</Text>
-              <View style={styles.inlineInput}>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={s.field}>
+              <Text style={s.fieldLabel}>血糖值 <Text style={s.required}>*</Text></Text>
+              <View style={s.inlineInput}>
                 <TextInput
-                  style={styles.inputSmall}
+                  style={s.inputSmall}
                   value={glucoseValue}
                   onChangeText={setGlucoseValue}
                   keyboardType="numeric"
@@ -218,164 +282,295 @@ export default function AddMeasurementScreen() {
                   accessibilityLabel="血糖值"
                   maxLength={3}
                 />
-                <Text style={styles.unit}>mg/dL</Text>
+                <Text style={s.unit}>mg/dL</Text>
               </View>
+            </View>
 
-              <Text style={styles.label}>量測時機 *</Text>
-              <View style={styles.timingRow}>
+            <View style={[s.field, { marginBottom: 0 }]}>
+              <Text style={s.fieldLabel}>量測時機 <Text style={s.required}>*</Text></Text>
+              <View style={s.timingRow}>
                 {TIMING_OPTIONS.map(({ value, label }) => {
                   const isActive = glucoseTiming === value;
                   return (
                     <TouchableOpacity
                       key={value}
-                      style={[styles.timingChip, isActive && styles.timingChipActive]}
+                      style={[s.timingChip, isActive && s.timingChipActive]}
                       onPress={() => setGlucoseTiming(value)}
                       accessibilityRole="button"
                       accessibilityState={{ selected: isActive }}
                       accessibilityLabel={label}
+                      activeOpacity={0.7}
                     >
-                      <Text style={[styles.timingText, isActive && styles.timingTextActive]}>
-                        {label}
-                      </Text>
+                      <Text style={[s.timingText, isActive && s.timingTextActive]}>{label}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            </>
-          )}
-        </View>
-
-        {/* ── Note Card ──────────────────────────────────── */}
-        <View style={styles.formCard}>
-          <Text style={styles.sectionLabel}>備註</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={note}
-            onChangeText={setNote}
-            multiline
-            numberOfLines={2}
-            placeholder="選填，可記錄用藥或身體狀況"
-            placeholderTextColor={colors.textDisabled}
-            textAlignVertical="top"
-            accessibilityLabel="備註"
-          />
-        </View>
-
-        {/* Submit */}
-        <TouchableOpacity
-          style={[styles.submitButton, saving && styles.submitDisabled]}
-          onPress={() => void handleSubmit()}
-          disabled={saving}
-          accessibilityRole="button"
-          accessibilityLabel={saving ? '儲存中' : '儲存量測紀錄'}
-        >
-          <Text style={styles.submitText}>{saving ? '儲存中...' : '儲存'}</Text>
-        </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
+
+      {/* ─── Note section ───────────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconNote />
+        <Text style={s.sectionTitle}>備註</Text>
+      </View>
+      <View style={s.card}>
+        <TextInput
+          style={s.textArea}
+          value={note}
+          onChangeText={setNote}
+          multiline
+          numberOfLines={3}
+          placeholder="選填，可記錄用藥或身體狀況"
+          placeholderTextColor={colors.textDisabled}
+          textAlignVertical="top"
+          accessibilityLabel="備註"
+        />
+      </View>
+
+      {/* ─── Submit (gradient) ──────────────────────────────── */}
+      <TouchableOpacity
+        style={[s.submitWrap, saving && { opacity: 0.6 }]}
+        onPress={() => void handleSubmit()}
+        disabled={saving}
+        accessibilityRole="button"
+        accessibilityLabel={saving ? '儲存中' : '完成記錄'}
+        activeOpacity={0.85}
+      >
+        <LinearGradient
+          colors={[colors.primary, colors.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={s.submitBtn}
+        >
+          <Text style={s.submitText}>{saving ? '儲存中...' : '完成記錄'}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgScreen },
-  headerZone: {
-    backgroundColor: colors.bgSurface,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    ...shadows.low,
-  },
-  title: {
-    fontSize: typography.headingMd.fontSize, fontWeight: '700',
-    color: colors.textPrimary, marginBottom: spacing.md,
-  },
-  content: { padding: spacing.lg },
+  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] + spacing.lg, gap: spacing.md },
 
-  // ─── Toggle ───────────────────────────────────────────────
+  // ─── Hero ─────────────────────────────────────────────────
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+  },
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 2,
+  },
+  heroIconWrap: {
+    width: 44, height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.04)',
+  },
+  heroTagline: {
+    fontSize: 10, fontWeight: '700',
+    color: colors.primary, letterSpacing: 2,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: spacing.xxs,
+  },
+
+  // ─── Type Toggle ─────────────────────────────────────────
   toggleRow: { flexDirection: 'row', gap: spacing.sm },
   toggleChip: {
-    flex: 1, paddingVertical: spacing.sm + spacing.xxs, borderRadius: radius.sm,
-    backgroundColor: colors.bgSurfaceAlt, alignItems: 'center',
+    flex: 1,
+    paddingVertical: spacing.sm + spacing.xxs,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    alignItems: 'center',
   },
-  toggleChipActive: { backgroundColor: colors.primaryLight },
-  toggleText: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textTertiary },
-  toggleTextActive: { color: colors.primaryText },
+  toggleChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  toggleText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  toggleTextActive: {
+    color: colors.primaryText,
+    fontWeight: '700',
+  },
 
   // ─── Error ────────────────────────────────────────────────
   errorBox: {
-    backgroundColor: colors.dangerLight, borderRadius: radius.sm,
-    padding: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderWidth: 1, borderColor: 'rgba(217,83,79,0.2)',
   },
-  errorText: { color: colors.danger, fontSize: typography.bodyMd.fontSize, textAlign: 'center' },
+  errorText: { color: colors.danger, fontSize: typography.bodySm.fontSize, textAlign: 'center' },
 
-  // ─── Form Card ────────────────────────────────────────────
-  formCard: {
-    backgroundColor: colors.bgSurface, borderRadius: radius.md,
+  // ─── Section header ──────────────────────────────────────
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingLeft: spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
+  },
+
+  // ─── Card ────────────────────────────────────────────────
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
     borderWidth: 1, borderColor: colors.borderDefault,
-    padding: spacing.lg, marginBottom: spacing.md,
-    ...shadows.low,
-  },
-  sectionLabel: {
-    fontSize: 10, fontWeight: '500', color: colors.textDisabled,
-    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.md,
-  },
-  label: {
-    fontSize: typography.bodySm.fontSize, fontWeight: '600',
-    color: colors.textSecondary, marginBottom: spacing.sm, marginTop: spacing.md,
+    padding: spacing.lg,
   },
 
-  // ─── BP Row (side by side) ────────────────────────────────
-  bpRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
-  bpField: { flex: 1 },
-  bpSeparator: {
-    fontSize: typography.headingLg.fontSize, fontWeight: '300',
-    color: colors.textDisabled, paddingBottom: spacing.md,
+  // ─── Field ───────────────────────────────────────────────
+  field: { marginBottom: spacing.md },
+  fieldLabel: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  required: { color: colors.danger },
+
+  // ─── BP Row ──────────────────────────────────────────────
+  bpRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  bpField: {
+    flex: 1,
+    alignItems: 'center',
   },
 
-  // ─── Inputs ───────────────────────────────────────────────
-  input: {
-    backgroundColor: colors.bgScreen, borderWidth: 1, borderColor: colors.borderDefault,
-    borderRadius: radius.sm, padding: spacing.md,
-    fontSize: typography.bodyMd.fontSize, color: colors.textPrimary,
-  },
+  // ─── Inputs ──────────────────────────────────────────────
   inputLarge: {
-    backgroundColor: colors.bgScreen, borderWidth: 1, borderColor: colors.borderDefault,
-    borderRadius: radius.sm, padding: spacing.md,
-    fontSize: typography.headingLg.fontSize, fontWeight: '700',
-    color: colors.textPrimary, textAlign: 'center',
+    backgroundColor: colors.bgScreen,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    width: '100%',
   },
   inputSmall: {
-    backgroundColor: colors.bgScreen, borderWidth: 1, borderColor: colors.borderDefault,
-    borderRadius: radius.sm, padding: spacing.md,
-    fontSize: typography.headingMd.fontSize, fontWeight: '600',
-    color: colors.textPrimary, width: 100, textAlign: 'center',
+    backgroundColor: colors.bgScreen,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    width: 110,
+    textAlign: 'center',
   },
-  inlineInput: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  unit: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
-  textArea: { minHeight: 60, textAlignVertical: 'top' },
+  inlineInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  unit: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
+    fontWeight: '500',
+  },
+  textArea: {
+    backgroundColor: colors.bgScreen,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
 
-  // ─── Timing Chips ─────────────────────────────────────────
+  // ─── Timing Chips (pill style) ───────────────────────────
   timingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   timingChip: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + spacing.xxs,
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderStrong,
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.borderDefault,
     backgroundColor: colors.bgSurface,
   },
-  timingChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryText },
-  timingText: { fontSize: typography.bodyMd.fontSize, color: colors.textSecondary, fontWeight: '500' },
-  timingTextActive: { color: colors.primaryText, fontWeight: '600' },
-
-  // ─── Submit ───────────────────────────────────────────────
-  submitButton: {
-    backgroundColor: colors.primary, borderRadius: radius.full,
-    paddingVertical: spacing.lg - spacing.xxs, alignItems: 'center',
-    marginTop: spacing.sm,
-    ...shadows.high,
+  timingChipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
   },
-  submitDisabled: { opacity: 0.5 },
-  submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },
+  timingText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  timingTextActive: {
+    color: colors.primaryText,
+    fontWeight: '700',
+  },
+
+  // ─── Submit ──────────────────────────────────────────────
+  submitWrap: {
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  submitBtn: {
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  submitText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
 });

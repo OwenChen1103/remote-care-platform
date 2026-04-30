@@ -5,17 +5,20 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Switch,
-  TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Svg, { Circle } from 'react-native-svg';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius } from '@/lib/theme';
+import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { calculateHealthScore, HEALTH_LEVEL_LABELS } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -133,7 +136,7 @@ export default function RecipientDetailScreen() {
   const [bpStats, setBpStats] = useState<MeasurementStats | null>(null);
   const [bgStats, setBgStats] = useState<MeasurementStats | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [editingTime, setEditingTime] = useState<Record<string, string>>({});
+  const [pickingTimeFor, setPickingTimeFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -204,24 +207,14 @@ export default function RecipientDetailScreen() {
     }
   }, [recipientId]);
 
-  const saveReminderTime = useCallback(async (type: string) => {
-    const time = editingTime[type];
-    if (!time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-      Alert.alert('格式錯誤', '時間格式須為 HH:mm（例如 08:00）');
-      return;
-    }
+  const saveReminderTime = useCallback(async (type: string, time: string) => {
     try {
       const updated = await api.put<Reminder>(`/recipients/${recipientId}/reminders/${type}`, { reminder_time: time });
       setReminders((prev) => prev.map((r) => (r.reminder_type === type ? updated : r)));
-      setEditingTime((prev) => {
-        const next = { ...prev };
-        delete next[type];
-        return next;
-      });
     } catch {
       Alert.alert('更新失敗', '無法更新提醒時間，請稍後再試');
     }
-  }, [recipientId, editingTime]);
+  }, [recipientId]);
 
   useEffect(() => {
     void fetchRecipient();
@@ -229,14 +222,7 @@ export default function RecipientDetailScreen() {
 
   // ─── Loading ───────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   // ─── Error ─────────────────────────────────────────────────────
 
@@ -258,78 +244,95 @@ export default function RecipientDetailScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
-      {/* ═══ 1. Profile Hero Card ═══════════════════════════════ */}
-      <Card style={styles.profileCard}>
-        <View style={styles.profileTop}>
-          <View style={styles.profileIdentity}>
-            <View style={styles.profileAvatar}>
-              <Text style={styles.profileAvatarText}>{getInitial(recipient.name)}</Text>
-            </View>
-            <View style={styles.profileNameBlock}>
-              <View style={styles.profileNameRow}>
-                <Text style={styles.profileName}>{recipient.name}</Text>
-                {recipient.date_of_birth && (
-                  <Text style={styles.profileAge}>{calculateAge(recipient.date_of_birth)} 歲</Text>
+      {/* ═══ 1. Profile Hero Card — gradient + halos + frosted ═════ */}
+      <View style={styles.profileCard}>
+        <LinearGradient
+          colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+          locations={[0, 0.6, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.heroHaloTopRight} />
+        <View style={styles.heroHaloBottomLeft} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+        <View style={styles.profileContent}>
+          <View style={styles.profileTop}>
+            <View style={styles.profileIdentity}>
+              <View style={styles.profileAvatar}>
+                <Text style={styles.profileAvatarText}>{getInitial(recipient.name)}</Text>
+              </View>
+              <View style={styles.profileNameBlock}>
+                <View style={styles.profileNameRow}>
+                  <Text style={styles.profileName}>{recipient.name}</Text>
+                  {recipient.date_of_birth && (
+                    <Text style={styles.profileAge}>{calculateAge(recipient.date_of_birth)} 歲</Text>
+                  )}
+                </View>
+                {recipient.medical_tags.length > 0 && (
+                  <View style={styles.profileTagsRow}>
+                    {recipient.medical_tags.map((tag) => (
+                      <View key={tag} style={styles.profileTag}>
+                        <Text style={styles.profileTagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
                 )}
               </View>
-              {recipient.medical_tags.length > 0 && (
-                <View style={styles.profileTagsRow}>
-                  {recipient.medical_tags.map((tag) => (
-                    <View key={tag} style={styles.profileTag}>
-                      <Text style={styles.profileTagText}>{tag}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
             </View>
+
+            {/* Edit icon button — top right */}
+            <TouchableOpacity
+              style={styles.editIconButton}
+              onPress={() => router.push(`/(tabs)/home/${recipientId}/edit`)}
+              accessibilityLabel="編輯照護對象資料"
+              activeOpacity={0.7}
+            >
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                <Path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" stroke={colors.primaryText} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+              <Text style={styles.editIconText}>編輯</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Edit icon button — top right */}
-          <TouchableOpacity
-            style={styles.editIconButton}
-            onPress={() => router.push(`/(tabs)/home/${recipientId}/edit`)}
-            accessibilityLabel="編輯照護對象資料"
-          >
-            <Text style={styles.editIconText}>編輯</Text>
-          </TouchableOpacity>
+          {/* Mini info grid inside profile card */}
+          <View style={styles.profileInfoGrid}>
+            <View style={styles.profileInfoItem}>
+              <Text style={styles.profileInfoLabel}>性別</Text>
+              <Text style={styles.profileInfoValue}>{formatGender(recipient.gender)}</Text>
+            </View>
+            <View style={styles.profileInfoDivider} />
+            <View style={styles.profileInfoItem}>
+              <Text style={styles.profileInfoLabel}>生日</Text>
+              <Text style={styles.profileInfoValue}>
+                {recipient.date_of_birth
+                  ? new Date(recipient.date_of_birth).toLocaleDateString('zh-TW')
+                  : '-'}
+              </Text>
+            </View>
+            {recipient.emergency_contact_name && (
+              <>
+                <View style={styles.profileInfoDivider} />
+                <View style={styles.profileInfoItem}>
+                  <Text style={styles.profileInfoLabel}>緊急聯絡</Text>
+                  <Text style={styles.profileInfoValue} numberOfLines={1}>
+                    {recipient.emergency_contact_name}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* Notes — only if present */}
+          {recipient.notes ? (
+            <View style={styles.profileNotes}>
+              <Text style={styles.profileNotesLabel}>備註</Text>
+              <Text style={styles.profileNotesText}>{recipient.notes}</Text>
+            </View>
+          ) : null}
         </View>
-
-        {/* Mini info grid inside profile card */}
-        <View style={styles.profileInfoGrid}>
-          <View style={styles.profileInfoItem}>
-            <Text style={styles.profileInfoLabel}>性別</Text>
-            <Text style={styles.profileInfoValue}>{formatGender(recipient.gender)}</Text>
-          </View>
-          <View style={styles.profileInfoDivider} />
-          <View style={styles.profileInfoItem}>
-            <Text style={styles.profileInfoLabel}>生日</Text>
-            <Text style={styles.profileInfoValue}>
-              {recipient.date_of_birth
-                ? new Date(recipient.date_of_birth).toLocaleDateString('zh-TW')
-                : '-'}
-            </Text>
-          </View>
-          {recipient.emergency_contact_name && (
-            <>
-              <View style={styles.profileInfoDivider} />
-              <View style={styles.profileInfoItem}>
-                <Text style={styles.profileInfoLabel}>緊急聯絡</Text>
-                <Text style={styles.profileInfoValue} numberOfLines={1}>
-                  {recipient.emergency_contact_name}
-                </Text>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* Notes — only if present */}
-        {recipient.notes ? (
-          <View style={styles.profileNotes}>
-            <Text style={styles.profileNotesLabel}>備註</Text>
-            <Text style={styles.profileNotesText}>{recipient.notes}</Text>
-          </View>
-        ) : null}
-      </Card>
+      </View>
 
       {/* ═══ 2. Health Overview Card + Score Ring ═════════════════ */}
       {(latestReport || bpStats || bgStats) && (() => {
@@ -424,39 +427,61 @@ export default function RecipientDetailScreen() {
         );
       })()}
 
-      {/* ═══ 3. Quick Actions ═══════════════════════════════════ */}
+      {/* ═══ 3. Quick Actions — 2×2 with icons ════════════════ */}
       <View style={styles.actionsSection}>
         <Text style={styles.sectionTitle}>快捷操作</Text>
         <View style={styles.actionsGrid}>
-          {/* Primary actions — health recording */}
           <TouchableOpacity
-            style={styles.actionCardPrimary}
+            style={styles.actionCard}
             onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_pressure`)}
             activeOpacity={0.7}
           >
+            <View style={[styles.actionIconWrap, { backgroundColor: '#FDECEA' }]}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke="#D9534F" strokeWidth={1.8} strokeLinejoin="round" />
+              </Svg>
+            </View>
             <Text style={styles.actionLabel}>記錄血壓</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={styles.actionCardPrimary}
+            style={styles.actionCard}
             onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipientId}&type=blood_glucose`)}
             activeOpacity={0.7}
           >
+            <View style={[styles.actionIconWrap, { backgroundColor: '#FEF3D9' }]}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 2C8 6 5 9 5 14a7 7 0 0014 0c0-5-3-8-7-12z" stroke="#B07000" strokeWidth={1.8} strokeLinejoin="round" />
+              </Svg>
+            </View>
             <Text style={styles.actionLabel}>記錄血糖</Text>
           </TouchableOpacity>
-          {/* Secondary actions */}
+
           <TouchableOpacity
-            style={styles.actionCardSecondary}
+            style={styles.actionCard}
             onPress={() => router.push(`/(tabs)/health/trends?recipientId=${recipientId}`)}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionLabelSecondary}>看趨勢</Text>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#E5F2FB' }]}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                <Path d="M3 17l5-5 4 4 8-8M16 8h5v5" stroke="#1B6DA0" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </View>
+            <Text style={styles.actionLabel}>看趨勢</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={styles.actionCardSecondary}
+            style={styles.actionCard}
             onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipientId}`)}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionLabelSecondary}>行程管理</Text>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#EDF7E8' }]}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                <Rect x="3" y="5" width="18" height="16" rx="2" stroke="#3F7F2E" strokeWidth={1.8} />
+                <Path d="M3 9h18M8 3v4M16 3v4" stroke="#3F7F2E" strokeWidth={1.8} strokeLinecap="round" />
+              </Svg>
+            </View>
+            <Text style={styles.actionLabel}>行程管理</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -554,44 +579,58 @@ export default function RecipientDetailScreen() {
           <Text style={styles.sectionTitle}>量測提醒</Text>
           {reminders.map((r) => {
             const label = r.reminder_type === 'morning' ? '早上提醒' : '晚上提醒';
-            const isEditing = editingTime[r.reminder_type] !== undefined;
+            const isPicking = pickingTimeFor === r.reminder_type;
+            const [hh, mm] = r.reminder_time.split(':').map((s) => parseInt(s, 10));
+            const dateValue = new Date();
+            dateValue.setHours(hh ?? 8, mm ?? 0, 0, 0);
             return (
-              <Card key={r.reminder_type} style={styles.reminderCard}>
-                <View style={styles.reminderRow}>
+              <View key={r.reminder_type} style={styles.reminderCard}>
+                <View style={styles.reminderHeaderRow}>
+                  <View style={styles.reminderIconWrap}>
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Circle cx="12" cy="12" r="10" stroke={colors.primary} strokeWidth={1.8} />
+                      <Path d="M12 6v6l4 2" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+                    </Svg>
+                  </View>
                   <Text style={styles.reminderLabel}>{label}</Text>
                   <Switch
                     value={r.is_enabled}
                     onValueChange={(val) => void toggleReminder(r.reminder_type, val)}
-                    trackColor={{ false: colors.borderStrong, true: colors.primaryLight }}
-                    thumbColor={r.is_enabled ? colors.primary : colors.textDisabled}
+                    trackColor={{ false: colors.borderStrong, true: colors.accent }}
+                    thumbColor={colors.white}
                   />
                 </View>
-                <View style={styles.reminderTimeRow}>
-                  {isEditing ? (
-                    <>
-                      <TextInput
-                        style={styles.timeInput}
-                        value={editingTime[r.reminder_type]}
-                        onChangeText={(text) => setEditingTime((prev) => ({ ...prev, [r.reminder_type]: text }))}
-                        placeholder="HH:mm"
-                        keyboardType="numbers-and-punctuation"
-                        maxLength={5}
-                      />
-                      <TouchableOpacity style={styles.timeSaveButton} onPress={() => void saveReminderTime(r.reminder_type)}>
-                        <Text style={styles.timeSaveText}>儲存</Text>
+                <TouchableOpacity
+                  style={styles.reminderTimeBtn}
+                  onPress={() => setPickingTimeFor(isPicking ? null : r.reminder_type)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.reminderTimeLabel}>提醒時間</Text>
+                  <Text style={styles.reminderTime}>{r.reminder_time}</Text>
+                </TouchableOpacity>
+                {isPicking && (
+                  <View>
+                    <DateTimePicker
+                      value={dateValue}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(event, selected) => {
+                        if (Platform.OS === 'android') setPickingTimeFor(null);
+                        if (selected) {
+                          const newH = String(selected.getHours()).padStart(2, '0');
+                          const newM = String(selected.getMinutes()).padStart(2, '0');
+                          void saveReminderTime(r.reminder_type, `${newH}:${newM}`);
+                        }
+                      }}
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity style={styles.timeDoneBtn} onPress={() => setPickingTimeFor(null)}>
+                        <Text style={styles.timeDoneText}>完成</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => setEditingTime((prev) => { const next = { ...prev }; delete next[r.reminder_type]; return next; })}>
-                        <Text style={styles.timeCancelText}>取消</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity onPress={() => setEditingTime((prev) => ({ ...prev, [r.reminder_type]: r.reminder_time }))}>
-                      <Text style={styles.reminderTime}>{r.reminder_time}</Text>
-                      <Text style={styles.reminderTimeHint}>點擊修改時間</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </Card>
+                    )}
+                  </View>
+                )}
+              </View>
             );
           })}
         </View>
@@ -623,9 +662,35 @@ const styles = StyleSheet.create({
 
   // ─── Profile Hero Card ─────────────────────────────────────
   profileCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    marginBottom: spacing.xl,
+    ...shadows.low,
+  },
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -40,
+    right: -50,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -60,
+    left: -40,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  profileContent: {
     paddingVertical: spacing.xl,
     paddingHorizontal: spacing.xl,
-    marginBottom: spacing.xl,
   },
   profileTop: {
     flexDirection: 'row',
@@ -687,15 +752,20 @@ const styles = StyleSheet.create({
     color: colors.primaryText,
   },
   editIconButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgSurfaceAlt,
+    paddingVertical: spacing.sm - 1,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
   },
   editIconText: {
     fontSize: typography.bodySm.fontSize,
-    fontWeight: '500',
-    color: colors.textTertiary,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 
   // Mini info grid
@@ -853,21 +923,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.md,
   },
-  actionCardPrimary: {
-    flex: 1,
-    minWidth: '45%' as unknown as number,
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  actionCardSecondary: {
+  actionCard: {
     flex: 1,
     minWidth: '45%' as unknown as number,
     backgroundColor: colors.bgSurface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.borderDefault,
     paddingVertical: spacing.lg,
@@ -875,15 +935,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  actionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionLabel: {
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
-    color: colors.primaryText,
-  },
-  actionLabelSecondary: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
 
   // ─── Measurements ──────────────────────────────────────────
@@ -1016,59 +1078,62 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   reminderCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
   },
-  reminderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  reminderLabel: {
-    fontSize: typography.headingSm.fontSize,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  reminderTimeRow: {
-    marginTop: spacing.sm,
+  reminderHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  reminderTime: {
-    fontSize: typography.headingLg.fontSize,
-    fontWeight: '700',
-    color: colors.textPrimary,
+  reminderIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  reminderTimeHint: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-    marginTop: spacing.xxs,
-  },
-  timeInput: {
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: typography.headingSm.fontSize,
+  reminderLabel: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
     color: colors.textPrimary,
-    width: 80,
-    textAlign: 'center',
   },
-  timeSaveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
+  reminderTimeBtn: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
+  },
+  reminderTimeLabel: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+  },
+  reminderTime: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  timeDoneBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    marginTop: spacing.sm,
   },
-  timeSaveText: {
+  timeDoneText: {
     color: colors.white,
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
-  },
-  timeCancelText: {
-    color: colors.textTertiary,
-    fontSize: typography.bodyMd.fontSize,
   },
 });

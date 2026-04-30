@@ -14,9 +14,11 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { ErrorState } from '@/components/ui/ErrorState';
 
@@ -42,7 +44,6 @@ interface FollowUpSession {
   userMessage: string; routedTask: string; responseSummary: string; depth: number;
 }
 
-// Chat message for the conversation view
 interface ChatMessage {
   id: string;
   role: 'user' | 'ai' | 'system';
@@ -57,13 +58,52 @@ interface ChatMessage {
 const MAX_FOLLOWUP_DEPTH = 2;
 
 const SUGGESTED_TASKS = [
-  { key: 'health_summary', label: '整理近況安心報', kind: 'report' as const },
-  { key: 'trend_analysis', label: '解讀健康趨勢', kind: 'report' as const },
-  { key: 'visit_prep', label: '準備看診清單', kind: 'report' as const },
-  { key: 'family_update', label: '寫給家人的摘要', kind: 'report' as const },
-  { key: 'trend_explanation', label: '用白話說趨勢', kind: 'chat' as const },
-  { key: 'visit_questions', label: '看診該問什麼', kind: 'chat' as const },
+  { key: 'health_summary',    label: '整理近況安心報', kind: 'report' as const },
+  { key: 'trend_analysis',    label: '解讀健康趨勢',   kind: 'report' as const },
+  { key: 'visit_prep',        label: '準備看診清單',   kind: 'report' as const },
+  { key: 'family_update',     label: '寫給家人的摘要', kind: 'report' as const },
+  { key: 'trend_explanation', label: '用白話說趨勢',   kind: 'chat' as const },
+  { key: 'visit_questions',   label: '看診該問什麼',   kind: 'chat' as const },
 ] as const;
+
+// Per-task icon — uniform brand color, no per-task tints
+const TASK_ICON: Record<string, (size: number, color: string) => React.ReactElement> = {
+  health_summary: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  ),
+  trend_analysis: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 17l5-5 4 4 8-8M16 8h5v5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  ),
+  visit_prep: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="4" y="3" width="16" height="18" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M9 8h6M9 12h6M9 16h4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+  family_update: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="9" cy="8" r="3.5" stroke={color} strokeWidth={1.8} />
+      <Circle cx="17" cy="9" r="2.5" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M14 20c0-2.5 2-4.5 4.5-4.5s2.5 0 2.5 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+  trend_explanation: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M8 9h8M8 13h5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+  visit_questions: (size, color) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={1.8} />
+      <Path d="M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 17h.01" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  ),
+};
 
 const TASK_LABELS: Record<string, string> = {
   health_summary: '安心報', trend_analysis: '趨勢解讀', visit_prep: '看診準備',
@@ -105,8 +145,6 @@ export default function AiAssistantScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const welcomeShownForRef = useRef<string | null>(null);
 
-  // ─── Helpers ────────────────────────────────────────────────
-
   const clearFollowUp = useCallback(() => { followUpRef.current = null; setFollowUpDepth(0); }, []);
   const updateFollowUp = useCallback((userMsg: string, task: string, result: Record<string, unknown>) => {
     const depth = (followUpRef.current?.depth ?? -1) + 1;
@@ -141,7 +179,7 @@ export default function AiAssistantScreen() {
     }, [selectedRecipientId]),
   );
 
-  // Welcome message — only show once per recipient (not on every recipients array update)
+  // Welcome message — only show once per recipient
   useEffect(() => {
     if (!selectedRecipientId || selectedRecipientId === welcomeShownForRef.current) return;
     const name = recipients.find((r) => r.id === selectedRecipientId)?.name;
@@ -156,7 +194,7 @@ export default function AiAssistantScreen() {
   }, [selectedRecipientId, recipients]);
 
   const handleSelectRecipient = (id: string) => {
-    welcomeShownForRef.current = null; // allow new welcome message
+    welcomeShownForRef.current = null;
     setSelectedRecipientId(id);
     setError(''); setRateLimited(false); setFreeText('');
     clearFollowUp();
@@ -168,7 +206,6 @@ export default function AiAssistantScreen() {
     if (!selectedRecipientId || generating) return;
     if (!isFollowUp) clearFollowUp();
 
-    // Add user bubble
     addMessage({ role: 'user', text: task.label });
     scrollToBottom();
 
@@ -297,25 +334,53 @@ export default function AiAssistantScreen() {
     </>
   );
 
+  const AIAvatar = () => (
+    <View style={s.aiAvatarWrap}>
+      <Text style={s.aiAvatarText}>AI</Text>
+    </View>
+  );
+
   // ─── Render ─────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
-      {/* ── Header ──────────────────────────────── */}
-      <View style={s.header}>
-        <Text style={s.headerTitle}>AI 照護助理</Text>
-        {recipients.length > 1 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.headerChips}>
-            {recipients.map((r) => {
-              const active = r.id === selectedRecipientId;
-              return (
-                <TouchableOpacity key={r.id} style={[s.chip, active && s.chipActive]} onPress={() => handleSelectRecipient(r.id)} activeOpacity={0.7}>
-                  <Text style={[s.chipText, active && s.chipTextActive]}>{r.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
+      {/* ── Hero (matches services hero) ─────────────── */}
+      <View style={s.heroWrap}>
+        <View style={s.hero}>
+          <LinearGradient
+            colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={s.heroHaloTopRight} />
+          <View style={s.heroHaloBottomLeft} />
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+          <View style={s.heroContent}>
+            <Text style={s.heroTagline}>WHOCARES AI</Text>
+            <Text style={s.heroSubtitle}>幫您看懂家人的健康變化</Text>
+
+            {recipients.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recipientChips} style={s.recipientScroll}>
+                {recipients.map((r) => {
+                  const active = r.id === selectedRecipientId;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[s.chip, active && s.chipActive]}
+                      onPress={() => handleSelectRecipient(r.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.chipText, active && s.chipTextActive]}>{r.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* ── Chat Area ───────────────────────────── */}
@@ -341,7 +406,7 @@ export default function AiAssistantScreen() {
           // AI bubble
           return (
             <View key={msg.id} style={s.aiRow}>
-              <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+              <AIAvatar />
               <View style={s.aiBubble}>
                 {/* Plain text message */}
                 {msg.text && !msg.report && !msg.assistantResult && (
@@ -357,6 +422,9 @@ export default function AiAssistantScreen() {
                     </View>
                     {renderBubbleContent({ summary: msg.report.summary, reasons: msg.report.reasons, suggestions: msg.report.suggestions }, msg.report.disclaimer, msg.report.is_fallback)}
                     <TouchableOpacity style={s.shareBtn} onPress={() => void handleShare(buildShareText(msg))} activeOpacity={0.7}>
+                      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                        <Path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" stroke={colors.primaryText} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
                       <Text style={s.shareBtnText}>分享給家人</Text>
                     </TouchableOpacity>
                   </>
@@ -371,6 +439,9 @@ export default function AiAssistantScreen() {
                     </View>
                     {renderBubbleContent(msg.assistantResult.result, msg.assistantResult.disclaimer, msg.assistantResult.is_fallback)}
                     <TouchableOpacity style={s.shareBtn} onPress={() => void handleShare(buildShareText(msg))} activeOpacity={0.7}>
+                      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                        <Path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" stroke={colors.primaryText} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
                       <Text style={s.shareBtnText}>分享給家人</Text>
                     </TouchableOpacity>
                   </>
@@ -383,7 +454,7 @@ export default function AiAssistantScreen() {
         {/* Generating indicator */}
         {generating && (
           <View style={s.aiRow}>
-            <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+            <AIAvatar />
             <View style={s.aiBubbleTyping}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={s.typingText}>正在整理...</Text>
@@ -391,23 +462,36 @@ export default function AiAssistantScreen() {
           </View>
         )}
 
-        {/* Error / Rate limit */}
+        {/* Rate limit */}
         {rateLimited && (
           <View style={s.aiRow}>
-            <View style={s.aiAvatar}><Text style={s.aiAvatarText}>AI</Text></View>
+            <AIAvatar />
             <View style={s.aiBubbleWarn}><Text style={s.warnText}>已達更新上限，請稍後再試</Text></View>
           </View>
         )}
         {error ? <View style={s.errorWrap}><ErrorState message={error} /></View> : null}
 
-        {/* Suggested tasks (landing only) — 2×3 grid */}
+        {/* Suggested tasks (landing only) — colored cards with icons */}
         {isLanding && selectedRecipientId && (
-          <View style={s.suggestGrid}>
-            {SUGGESTED_TASKS.map((task) => (
-              <TouchableOpacity key={task.key} style={s.suggestChip} onPress={() => void executeChipTask(task, false)} disabled={generating} activeOpacity={0.7}>
-                <Text style={s.suggestChipText}>{task.label}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={s.suggestSection}>
+            <Text style={s.suggestSectionTitle}>建議從這裡開始</Text>
+            <View style={s.suggestGrid}>
+              {SUGGESTED_TASKS.map((task) => {
+                const renderIcon = TASK_ICON[task.key];
+                return (
+                  <TouchableOpacity
+                    key={task.key}
+                    style={s.suggestCard}
+                    onPress={() => void executeChipTask(task, false)}
+                    disabled={generating}
+                    activeOpacity={0.7}
+                  >
+                    {renderIcon ? renderIcon(18, colors.primary) : null}
+                    <Text style={s.suggestCardText}>{task.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -415,22 +499,30 @@ export default function AiAssistantScreen() {
         {followUpChips.length > 0 && !generating && (
           <View style={s.followUpRow}>
             {followUpChips.map((label) => (
-              <TouchableOpacity key={label} style={s.suggestChip} onPress={() => void executeFollowUpChip(label)} activeOpacity={0.7}>
-                <Text style={s.suggestChipText}>{label}</Text>
+              <TouchableOpacity
+                key={label}
+                style={s.followUpChip}
+                onPress={() => void executeFollowUpChip(label)}
+                activeOpacity={0.7}
+              >
+                <Text style={s.followUpChipText}>{label}</Text>
+                <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                  <Path d="M9 6l6 6-6 6" stroke={colors.textTertiary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
               </TouchableOpacity>
             ))}
           </View>
         )}
       </ScrollView>
 
-      {/* ── Input Bar (fixed bottom) ────────────── */}
+      {/* ── Input Bar ──────────────────────────── */}
       <View style={s.inputBar}>
         <View style={s.inputWrap}>
           <TextInput
             style={s.input}
             value={freeText}
             onChangeText={setFreeText}
-            placeholder={`問問 ${selectedName} 的健康狀況...`}
+            placeholder={selectedName ? `問問 ${selectedName} 的健康狀況...` : '請選擇被照護者'}
             placeholderTextColor={colors.textDisabled}
             maxLength={500}
             editable={!generating}
@@ -440,15 +532,23 @@ export default function AiAssistantScreen() {
           />
         </View>
         <TouchableOpacity
-          style={[s.sendBtn, (!freeText.trim() || generating) && s.sendBtnDisabled]}
+          style={[s.sendBtnWrap, (!freeText.trim() || generating) && { opacity: 0.4 }]}
           onPress={() => void executeFreeText()}
           disabled={!freeText.trim() || generating}
           accessibilityLabel="送出"
+          activeOpacity={0.85}
         >
-          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-            <Path d="M22 2L11 13" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-            <Path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          </Svg>
+          <LinearGradient
+            colors={[colors.primary, colors.accent]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.sendBtn}
+          >
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+              <Path d="M22 2L11 13" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -460,111 +560,333 @@ export default function AiAssistantScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgScreen },
 
-  // ─── Header ─────────────────────────────────────────────
-  header: {
-    backgroundColor: colors.bgSurface, paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm, paddingBottom: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.borderDefault,
+  // ─── Hero Card (matches services hero) ──────────────────
+  heroWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
   },
-  headerTitle: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
-  headerChips: { gap: spacing.sm },
-  chip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.bgSurfaceAlt },
-  chipActive: { backgroundColor: colors.primary },
-  chipText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, fontWeight: '600' },
-  chipTextActive: { color: colors.white, fontWeight: '700' },
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+  },
+  heroTagline: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 2,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    marginTop: spacing.xxs,
+  },
+  recipientScroll: {
+    marginTop: spacing.md,
+  },
+  recipientChips: { gap: spacing.sm },
+  chip: {
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+  },
+  chipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  chipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  chipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '700',
+  },
 
   // ─── Chat Area ──────────────────────────────────────────
   chatArea: { flex: 1 },
   chatContent: { padding: spacing.lg, paddingBottom: spacing.md },
 
   // ─── User Bubble ────────────────────────────────────────
-  userRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.md },
-  userBubble: {
-    backgroundColor: colors.primary, borderRadius: radius.xl,
-    borderBottomRightRadius: spacing.xs,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    maxWidth: '75%',
+  userRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: spacing.md,
   },
-  userBubbleText: { fontSize: typography.bodyMd.fontSize, color: colors.white, lineHeight: 20 },
+  userBubble: {
+    maxWidth: '78%',
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    borderBottomRightRadius: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  userBubbleText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.white,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
 
   // ─── AI Bubble ──────────────────────────────────────────
-  aiRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, gap: spacing.sm },
-  aiAvatar: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+  aiRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
   },
-  aiAvatarText: { fontSize: 11, fontWeight: '700', color: colors.primaryText },
+  aiAvatarWrap: {
+    width: 32, height: 32,
+    borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  aiAvatarText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primaryText,
+    letterSpacing: 0.5,
+  },
   aiBubble: {
-    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
-    borderBottomLeftRadius: spacing.xs,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    maxWidth: '80%', ...shadows.low,
+    flex: 1,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    borderTopLeftRadius: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    maxWidth: '85%',
   },
   aiBubbleTyping: {
-    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, ...shadows.low,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.xl,
+    borderTopLeftRadius: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  typingText: { fontSize: typography.bodySm.fontSize, color: colors.textDisabled },
+  typingText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
   aiBubbleWarn: {
-    backgroundColor: colors.warningLight, borderRadius: radius.xl,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.xl,
+    borderTopLeftRadius: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(232,162,59,0.25)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flex: 1,
   },
-  warnText: { fontSize: typography.bodySm.fontSize, color: colors.warning },
+  warnText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.warning,
+    fontWeight: '600',
+  },
 
   // ─── Bubble Content ─────────────────────────────────────
-  bubbleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  bubbleTypeLabel: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.textTertiary },
-  bubbleText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary, lineHeight: 22, marginBottom: spacing.sm },
-  bubbleSection: { marginBottom: spacing.sm, paddingTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault },
-  bubbleSectionLabel: { fontSize: typography.captionSm.fontSize, fontWeight: '600', color: colors.textTertiary, marginBottom: spacing.xs },
-  bubbleItem: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, lineHeight: 20 },
-  bubbleClosing: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary, marginTop: spacing.xs },
-  bubbleDisclaimer: { fontSize: 10, color: colors.textDisabled, marginTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderDefault, paddingTop: spacing.sm },
-  fallbackNote: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, fontStyle: 'italic', marginBottom: spacing.xs },
-  shareBtn: { backgroundColor: colors.primaryLight, borderRadius: radius.full, paddingVertical: spacing.sm, alignItems: 'center', marginTop: spacing.md },
-  shareBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.primaryText },
+  bubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  bubbleTypeLabel: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  bubbleText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    lineHeight: 22,
+    marginBottom: spacing.sm,
+  },
+  bubbleSection: {
+    marginBottom: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderDefault,
+  },
+  bubbleSectionLabel: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    marginBottom: spacing.xs,
+    letterSpacing: 0.3,
+  },
+  bubbleItem: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  bubbleClosing: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
+  },
+  bubbleDisclaimer: {
+    fontSize: 10,
+    color: colors.textDisabled,
+    marginTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderDefault,
+    paddingTop: spacing.sm,
+    lineHeight: 14,
+  },
+  fallbackNote: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    fontStyle: 'italic',
+    marginBottom: spacing.xs,
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  shareBtnText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
 
-  // ─── Suggested Tasks Grid (2×3) ──────────────────────────
+  // ─── Suggested Tasks (landing) ──────────────────────────
+  suggestSection: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    paddingLeft: 32 + spacing.sm,
+  },
+  suggestSectionTitle: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+  },
   suggestGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
-    marginBottom: spacing.md, paddingLeft: 32 + spacing.sm, // align with bubble (avatar width + gap)
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
+  suggestCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 2,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  suggestCardText: {
+    flex: 1,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+
+  // ─── Follow-up chips ─────────────────────────────────────
   followUpRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
-    marginBottom: spacing.md, paddingLeft: 32 + spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    paddingLeft: 32 + spacing.sm,
   },
-  suggestChip: {
-    backgroundColor: colors.bgSurface, borderWidth: 1, borderColor: colors.borderDefault,
-    borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  followUpChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
   },
-  suggestChipText: { fontSize: typography.caption.fontSize, fontWeight: '500', color: colors.textPrimary },
+  followUpChipText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
 
   // ─── Error ──────────────────────────────────────────────
   errorWrap: { marginBottom: spacing.md },
 
-  // ─── Input Bar (fixed bottom) ───────────────────────────
+  // ─── Input Bar ──────────────────────────────────────────
   inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
     backgroundColor: colors.bgSurface,
-    borderTopWidth: 1, borderTopColor: colors.borderDefault,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
   },
   inputWrap: {
-    flex: 1, backgroundColor: colors.bgSurfaceAlt, borderRadius: 20,
+    flex: 1,
+    backgroundColor: colors.bgScreen,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
     paddingHorizontal: spacing.lg,
-    minHeight: 40, maxHeight: 100,
+    minHeight: 44,
+    maxHeight: 110,
     justifyContent: 'center',
   },
   input: {
-    fontSize: typography.bodyMd.fontSize, color: colors.textPrimary,
-    paddingVertical: spacing.sm,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    paddingVertical: spacing.sm + 2,
     lineHeight: 20,
   },
-  sendBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center',
-    ...shadows.low,
+  sendBtnWrap: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  sendBtnDisabled: { opacity: 0.3 },
+  sendBtn: {
+    width: '100%', height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

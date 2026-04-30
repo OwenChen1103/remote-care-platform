@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,33 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+
+// Status color mapping for hero card tints
+const STATUS_TINT: Record<string, { halo: string; gradientStart: string; gradientEnd: string }> = {
+  stable: {
+    halo: 'rgba(93,169,69,0.35)',
+    gradientStart: '#EDF7E8',
+    gradientEnd: '#F8FAFC',
+  },
+  attention: {
+    halo: 'rgba(232,162,59,0.30)',
+    gradientStart: '#FEF3D9',
+    gradientEnd: '#F8FAFC',
+  },
+  consult_doctor: {
+    halo: 'rgba(217,83,79,0.25)',
+    gradientStart: '#FDECEA',
+    gradientEnd: '#F8FAFC',
+  },
+};
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -92,6 +113,24 @@ export default function AiReportScreen() {
   const [history, setHistory] = useState<HistoricalReport[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Load a historical report into the hero card (replaces current report)
+  const loadHistoricalReport = useCallback((h: HistoricalReport) => {
+    if (!selectedRecipientId) return;
+    setReport({
+      ...h,
+      recipient_id: selectedRecipientId,
+      detail: {},
+      is_fallback: false,
+    });
+    setSelectedType(h.report_type);
+    setError('');
+    setRateLimited(false);
+    // Scroll to top so user sees the loaded hero card
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [selectedRecipientId]);
+
   // Fetch recipients
   useEffect(() => {
     void (async () => {
@@ -107,21 +146,36 @@ export default function AiReportScreen() {
     })();
   }, [selectedRecipientId]);
 
-  // Fetch history when recipient changes
+  // Fetch history when recipient changes; auto-load latest matching report
   const fetchHistory = useCallback(async () => {
     if (!selectedRecipientId) return;
     setHistoryLoading(true);
+    // Clear old content immediately so user sees loading state, not stale data
+    setReport(null);
+    setChatResult(null);
+    setError('');
+    setRateLimited(false);
     try {
       const result = await api.get<HistoricalReport[]>(
         `/ai/reports?recipient_id=${selectedRecipientId}&limit=10`,
       );
       setHistory(result);
+      // Auto-load the latest report of currently selected type as the displayed report
+      const latestForType = result.find((r) => r.report_type === selectedType);
+      if (latestForType && mode === 'report') {
+        setReport({
+          ...latestForType,
+          recipient_id: selectedRecipientId,
+          detail: {},
+          is_fallback: false,
+        });
+      }
     } catch {
       // Non-critical
     } finally {
       setHistoryLoading(false);
     }
-  }, [selectedRecipientId]);
+  }, [selectedRecipientId, selectedType, mode]);
 
   useEffect(() => {
     void fetchHistory();
@@ -297,292 +351,242 @@ export default function AiReportScreen() {
 
   // ─── Render ──────────────────────────────────────────────────
 
+  const tint = report ? (STATUS_TINT[report.status_label] ?? STATUS_TINT.stable!) : STATUS_TINT.stable!;
+  const recipientName = recipients.find((r) => r.id === selectedRecipientId)?.name ?? '';
+  const reportTypeLabel = REPORT_TYPES.find((t) => t.key === selectedType)?.label ?? '';
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Page title */}
-      <Text style={styles.pageTitle}>安心報</Text>
+    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
+      {/* ── Recipient selector (page title is in nav) ───────── */}
+      {recipients.length > 1 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipientChips}>
+          {recipients.map((r) => {
+            const isActive = r.id === selectedRecipientId;
+            return (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.recipientChip, isActive && styles.recipientChipActive]}
+                onPress={() => setSelectedRecipientId(r.id)}
+              >
+                <Text style={[styles.recipientChipText, isActive && styles.recipientChipTextActive]}>
+                  {r.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
-      {/* Control card — recipient selector, mode toggle, type/task chips, generate button */}
-      <View style={styles.controlCard}>
-        {/* Recipient selector */}
-        {recipients.length > 1 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.selectorRow}
-            contentContainerStyle={styles.selectorContent}
-          >
-            {recipients.map((r) => {
-              const isActive = r.id === selectedRecipientId;
-              return (
-                <TouchableOpacity
-                  key={r.id}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setSelectedRecipientId(r.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                  accessibilityLabel={`選擇 ${r.name}`}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                    {r.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
+      {/* ── Hero Report Card ──────────────────────────────────── */}
+      {report && (
+        <View style={styles.heroCard}>
+          <LinearGradient
+            colors={[tint.gradientStart, tint.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[styles.heroHaloTopRight, { backgroundColor: tint.halo }]} />
+          <View style={[styles.heroHaloBottomLeft, { backgroundColor: 'rgba(255,255,255,0.6)' }]} />
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-        {/* Mode toggle */}
-        <View style={styles.modeRow}>
-          <TouchableOpacity
-            style={[styles.modeButton, mode === 'report' && styles.modeActive]}
-            onPress={() => setMode('report')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: mode === 'report' }}
-          >
-            <Text style={[styles.modeText, mode === 'report' && styles.modeTextActive]}>報告</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeButton, mode === 'chat' && styles.modeActive]}
-            onPress={() => setMode('chat')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: mode === 'chat' }}
-          >
-            <Text style={[styles.modeText, mode === 'chat' && styles.modeTextActive]}>快速問答</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Report type / Chat task selector */}
-        {mode === 'report' ? (
-          <View style={styles.typeRow}>
-            {REPORT_TYPES.map((t) => {
-              const isActive = selectedType === t.key;
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[styles.typeChip, isActive && styles.typeChipActive]}
-                  onPress={() => setSelectedType(t.key)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ) : (
-          <View style={styles.typeRow}>
-            {CHAT_TASKS.map((t) => {
-              const isActive = selectedTask === t.key;
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[styles.typeChip, isActive && styles.typeChipActive]}
-                  onPress={() => setSelectedTask(t.key)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Generate button */}
-        <TouchableOpacity
-          style={[styles.generateButton, generating && styles.generateButtonDisabled]}
-          disabled={generating || !selectedRecipientId}
-          onPress={() => void (mode === 'report' ? handleGenerateReport() : handleGenerateChat())}
-          accessibilityRole="button"
-          accessibilityLabel={generating ? 'AI 正在分析中' : (mode === 'report' ? '生成報告' : '生成')}
-        >
-          {generating ? (
-            <View style={styles.generatingRow}>
-              <ActivityIndicator size="small" color={colors.white} />
-              <Text style={styles.generateText}>AI 正在分析中...</Text>
+          <View style={styles.heroContent}>
+            <View style={styles.heroStatusRow}>
+              <StatusPill status={report.status_label} type="aiHealth" />
+              <Text style={styles.heroTimestamp}>
+                {new Date(report.generated_at).toLocaleDateString('zh-TW', { month: 'long', day: 'numeric' })} 生成
+              </Text>
             </View>
-          ) : (
-            <Text style={styles.generateText}>
-              {mode === 'report' ? '生成報告' : '生成'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
 
-      {/* Rate limit — info banner, NOT error styling */}
-      {rateLimited && (
-        <View style={styles.rateLimitBanner}>
-          <Text style={styles.rateLimitText}>
-            {mode === 'report' ? '已達到報告生成上限，請稍後再試' : '已達到 AI 對話上限，請稍後再試'}
-          </Text>
+            <Text style={styles.heroName}>{recipientName}</Text>
+            <Text style={styles.heroType}>{reportTypeLabel}</Text>
+            <Text style={styles.heroSummary}>{report.summary}</Text>
+
+            {report.reasons.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>觀察重點</Text>
+                {report.reasons.map((r, i) => (
+                  <View key={i} style={styles.bulletItem}>
+                    <View style={styles.bulletDot} />
+                    <Text style={styles.bulletText}>{r}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {report.suggestions.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>照護建議</Text>
+                {report.suggestions.map((s, i) => (
+                  <View key={i} style={styles.bulletItem}>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" style={{ marginTop: 4 }}>
+                      <Path d="M5 12h14M13 6l6 6-6 6" stroke={colors.accent} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                    <Text style={[styles.bulletText, { marginLeft: 10 }]}>{s}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {report.is_fallback && (
+              <Text style={styles.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>
+            )}
+
+            <Text style={styles.disclaimer}>{report.disclaimer}</Text>
+
+            <View style={styles.actionRow}>
+              {Platform.OS !== 'web' && (
+                <TouchableOpacity
+                  style={styles.actionPrimary}
+                  onPress={() => void handleDownloadPdf()}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={[colors.primary, colors.accent]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.actionPrimaryInner}
+                  >
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                      <Path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke={colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                    <Text style={styles.actionPrimaryText}>下載 PDF</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.actionSecondary}
+                onPress={() => void handleShare(buildShareText())}
+                activeOpacity={0.7}
+              >
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                  <Path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" stroke={colors.primaryText} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <Text style={styles.actionSecondaryText}>分享</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       )}
 
-      {/* Error — with retry */}
+      {/* Loading (fetching latest report) */}
+      {historyLoading && !report && !generating && (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>正在載入最新報告...</Text>
+        </View>
+      )}
+
+      {/* Generating (creating new report) */}
+      {generating && !report && (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>AI 正在分析中...</Text>
+          <Text style={styles.loadingSub}>請稍候，即將完成</Text>
+        </View>
+      )}
+
+      {/* Empty (no loading, no report) */}
+      {!report && !generating && !historyLoading && !error && !rateLimited && (
+        <View style={styles.emptyWrap}>
+          <EmptyState title="尚無報告" description="選擇下方類型，點擊「生成報告」開始。" />
+        </View>
+      )}
       {error ? (
         <View style={styles.errorContainer}>
           <ErrorState
             message={error}
-            onRetry={() => void (lastFailedAction === 'chat' ? handleGenerateChat() : handleGenerateReport())}
+            onRetry={() => void handleGenerateReport()}
           />
         </View>
       ) : null}
-
-      {/* Empty state */}
-      {!report && !chatResult && !generating && !error && !rateLimited && (
-        <EmptyState
-          title="尚無報告"
-          description="選擇報告類型後，點擊「生成報告」開始。"
-        />
+      {rateLimited && (
+        <View style={styles.rateLimitBanner}>
+          <Text style={styles.rateLimitText}>已達到報告生成上限，請稍後再試</Text>
+        </View>
       )}
 
-      {/* Report result */}
-      {report && (
-        <Card style={styles.reportCard}>
-          {/* Status pill */}
-          <View style={styles.reportStatusRow}>
-            <StatusPill status={report.status_label} type="aiHealth" />
-          </View>
+      {/* ── Control Toolbar ──────────────────────────────────── */}
+      <View style={styles.toolbar}>
+        <Text style={styles.toolbarTitle}>選擇報告類型</Text>
 
-          {/* Summary */}
-          <Text style={styles.reportSummary}>{report.summary}</Text>
-
-          {/* Reasons */}
-          {report.reasons.length > 0 && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>原因</Text>
-              {report.reasons.map((r, i) => (
-                <Text key={i} style={styles.reportItem}>• {r}</Text>
-              ))}
-            </View>
-          )}
-
-          {/* Suggestions */}
-          {report.suggestions.length > 0 && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>建議</Text>
-              {report.suggestions.map((s, i) => (
-                <Text key={i} style={styles.reportItem}>• {s}</Text>
-              ))}
-            </View>
-          )}
-
-          {/* Fallback note */}
-          {report.is_fallback && (
-            <Text style={styles.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>
-          )}
-
-          {/* Disclaimer — always visible, non-dismissible */}
-          <Text style={styles.disclaimer}>{report.disclaimer}</Text>
-
-          {/* Share + PDF */}
-          <View style={styles.shareRow}>
-            <TouchableOpacity
-              style={styles.shareButton}
-              onPress={() => void handleShare(buildShareText())}
-              accessibilityLabel="分享報告"
-            >
-              <Text style={styles.shareText}>分享</Text>
-            </TouchableOpacity>
-            {Platform.OS !== 'web' && (
+        <View style={styles.typeRow}>
+          {REPORT_TYPES.map((t) => {
+            const isActive = selectedType === t.key;
+            return (
               <TouchableOpacity
-                style={styles.pdfButton}
-                onPress={() => void handleDownloadPdf()}
-                accessibilityLabel="下載 PDF"
+                key={t.key}
+                style={[styles.typeChip, isActive && styles.typeChipActive]}
+                onPress={() => setSelectedType(t.key)}
               >
-                <Text style={styles.pdfText}>下載 PDF</Text>
+                <Text style={[styles.typeChipText, isActive && styles.typeChipTextActive]}>{t.label}</Text>
               </TouchableOpacity>
-            )}
-          </View>
-        </Card>
-      )}
+            );
+          })}
+        </View>
 
-      {/* Chat result */}
-      {chatResult && (
-        <Card style={styles.reportCard}>
-          {typeof chatResult.result.explanation === 'string' && (
-            <Text style={styles.reportSummary}>{chatResult.result.explanation}</Text>
-          )}
-          {typeof chatResult.result.message === 'string' && (
-            <Text style={styles.reportSummary}>{chatResult.result.message}</Text>
-          )}
-          {Array.isArray(chatResult.result.key_points) && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>重點</Text>
-              {(chatResult.result.key_points as string[]).map((p, i) => (
-                <Text key={i} style={styles.reportItem}>• {p}</Text>
-              ))}
-            </View>
-          )}
-          {Array.isArray(chatResult.result.highlights) && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>重點</Text>
-              {(chatResult.result.highlights as string[]).map((h, i) => (
-                <Text key={i} style={styles.reportItem}>• {h}</Text>
-              ))}
-            </View>
-          )}
-          {Array.isArray(chatResult.result.questions) && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>建議問題</Text>
-              {(chatResult.result.questions as string[]).map((q, i) => (
-                <Text key={i} style={styles.reportItem}>• {q}</Text>
-              ))}
-            </View>
-          )}
-          {Array.isArray(chatResult.result.reminders) && (
-            <View style={styles.reportSection}>
-              <Text style={styles.reportSectionLabel}>提醒</Text>
-              {(chatResult.result.reminders as string[]).map((r, i) => (
-                <Text key={i} style={styles.reportItem}>• {r}</Text>
-              ))}
-            </View>
-          )}
-
-          {chatResult.is_fallback && (
-            <Text style={styles.fallbackNote}>（AI 暫時無法回應，以上為預設文字）</Text>
-          )}
-
-          <Text style={styles.disclaimer}>{chatResult.disclaimer}</Text>
-
-          <TouchableOpacity
-            style={styles.shareButton}
-            onPress={() => void handleShare(buildShareText())}
-            accessibilityLabel="分享問答結果"
+        <TouchableOpacity
+          style={[styles.generateWrap, generating && styles.generateButtonDisabled]}
+          disabled={generating || !selectedRecipientId}
+          onPress={() => void handleGenerateReport()}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={[colors.primary, colors.accent]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.generateButton}
           >
-            <Text style={styles.shareText}>分享</Text>
-          </TouchableOpacity>
-        </Card>
-      )}
+            {generating ? (
+              <View style={styles.generatingRow}>
+                <ActivityIndicator size="small" color={colors.white} />
+                <Text style={styles.generateText}>AI 正在分析中...</Text>
+              </View>
+            ) : (
+              <Text style={styles.generateText}>
+                {report ? '重新生成報告' : '生成報告'}
+              </Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
-      {/* History */}
+      {/* ── History ──────────────────────────────────────────── */}
       {history.length > 0 && (
         <View style={styles.historySection}>
           <Text style={styles.historyTitle}>歷史報告</Text>
           {historyLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            history.map((h) => (
-              <Card key={h.id} style={styles.historyCard}>
-                <View style={styles.historyHeader}>
-                  <Text style={styles.historyType}>
-                    {REPORT_TYPES.find((t) => t.key === h.report_type)?.label ?? h.report_type}
-                  </Text>
-                  <StatusPill status={h.status_label} type="aiHealth" />
-                  <Text style={styles.historyDate}>
-                    {new Date(h.generated_at).toLocaleDateString('zh-TW')}
-                  </Text>
-                </View>
-                <Text style={styles.historySummary} numberOfLines={2}>
-                  {h.summary}
-                </Text>
-              </Card>
-            ))
+            history.map((h) => {
+              const date = new Date(h.generated_at);
+              const isCurrent = report?.id === h.id;
+              return (
+                <TouchableOpacity
+                  key={h.id}
+                  style={[styles.historyCard, isCurrent && styles.historyCardActive]}
+                  onPress={() => loadHistoricalReport(h)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`查看 ${date.toLocaleDateString('zh-TW')} 的報告`}
+                >
+                  <View style={styles.historyDateCol}>
+                    <Text style={styles.historyDay}>{date.getDate()}</Text>
+                    <Text style={styles.historyMonth}>{date.getMonth() + 1}月</Text>
+                  </View>
+                  <View style={styles.historyDivider} />
+                  <View style={styles.historyContent}>
+                    <View style={styles.historyTopRow}>
+                      <Text style={styles.historyType}>
+                        {REPORT_TYPES.find((t) => t.key === h.report_type)?.label ?? h.report_type}
+                      </Text>
+                      <StatusPill status={h.status_label} type="aiHealth" />
+                    </View>
+                    <Text style={styles.historySummary} numberOfLines={2}>{h.summary}</Text>
+                  </View>
+                  <Text style={styles.historyArrow}>›</Text>
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
       )}
@@ -590,262 +594,344 @@ export default function AiReportScreen() {
   );
 }
 
+
 // ─── Styles ───────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bgScreen,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing['3xl'] + spacing.sm,
-  },
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] + spacing.sm, gap: spacing.md },
+
+  // ─── Compact Header ──────────────────────────────────────
+  header: { gap: spacing.sm, marginBottom: spacing.xs },
   pageTitle: {
-    fontSize: typography.headingXl.fontSize,
-    fontWeight: typography.headingXl.fontWeight,
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.lg,
   },
-
-  // ─── Control Card ─────────────────────────────────────────
-  controlCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    ...shadows.low,
-    marginBottom: spacing.md,
-  },
-
-  // ─── Recipient Selector ───────────────────────────────────
-  selectorRow: {
-    maxHeight: 44,
-    marginBottom: spacing.md,
-  },
-  selectorContent: {
-    gap: spacing.sm,
-  },
-  chip: {
+  recipientChips: { gap: spacing.sm, paddingVertical: 2 },
+  recipientChip: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
   },
-  chipActive: {
-    backgroundColor: colors.primaryLight,
-  },
-  chipText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textSecondary,
-  },
-  chipTextActive: {
-    color: colors.primaryText,
-    fontWeight: '600',
-  },
+  recipientChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary, borderWidth: 1.5 },
+  recipientChipText: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, fontWeight: '500' },
+  recipientChipTextActive: { color: colors.primaryText, fontWeight: '700' },
 
-  // ─── Mode Toggle ──────────────────────────────────────────
-  modeRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+  // ─── Hero Report Card ────────────────────────────────────
+  heroCard: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    position: 'relative',
   },
-  modeButton: {
-    flex: 1,
-    paddingVertical: spacing.sm + spacing.xxs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgSurfaceAlt,
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -60, right: -60,
+    width: 200, height: 200,
+    borderRadius: 100,
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -50, left: -50,
+    width: 170, height: 170,
+    borderRadius: 85,
+  },
+  heroContent: {
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  heroStatusRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  modeActive: {
-    backgroundColor: colors.primaryLight,
+  heroTimestamp: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
   },
-  modeText: {
-    fontSize: typography.bodyMd.fontSize,
+  heroName: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: spacing.xs,
+  },
+  heroType: {
+    fontSize: typography.captionSm.fontSize,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.primary,
+    marginTop: -spacing.xs - 2,
   },
-  modeTextActive: {
-    color: colors.primaryText,
+  heroSummary: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    lineHeight: 24,
+    marginTop: spacing.xs,
   },
 
-  // ─── Type / Task Chips ────────────────────────────────────
-  typeRow: {
+  // ─── Sections (reasons / suggestions) ────────────────────
+  section: { gap: spacing.xs, marginTop: spacing.xs },
+  sectionLabel: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    marginBottom: spacing.xs,
+  },
+  bulletItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    alignItems: 'flex-start',
+    paddingVertical: 4,
   },
-  typeChip: {
-    paddingHorizontal: spacing.lg - spacing.xxs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.bgSurfaceAlt,
+  bulletDot: {
+    width: 5, height: 5, borderRadius: 2.5,
+    backgroundColor: colors.primary,
+    marginTop: 8,
+    marginRight: 10,
   },
-  typeChipActive: {
-    backgroundColor: colors.primaryLight,
-  },
-  typeChipText: {
+  bulletText: {
+    flex: 1,
     fontSize: typography.bodySm.fontSize,
     color: colors.textSecondary,
-  },
-  typeChipTextActive: {
-    color: colors.primaryText,
-    fontWeight: '600',
+    lineHeight: 21,
   },
 
-  // ─── Generate Button ──────────────────────────────────────
-  generateButton: {
-    backgroundColor: colors.primary,
+  // ─── Notes ───────────────────────────────────────────────
+  fallbackNote: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+  },
+  disclaimer: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    lineHeight: 16,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.08)',
+    marginTop: spacing.sm,
+  },
+
+  // ─── Action Buttons ──────────────────────────────────────
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  actionPrimary: {
+    flex: 1,
     borderRadius: radius.full,
-    paddingVertical: spacing.lg - spacing.xxs,
-    alignItems: 'center',
-    ...shadows.low,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  generateButtonDisabled: {
-    opacity: 0.6,
-  },
-  generateText: {
-    color: colors.white,
-    fontSize: typography.bodyLg.fontSize,
-    fontWeight: '600',
-  },
-  generatingRow: {
+  actionPrimaryInner: {
+    paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  actionPrimaryText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  actionSecondary: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: 1, borderColor: 'rgba(46,141,201,0.2)',
+    borderRadius: radius.full,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  actionSecondaryText: {
+    color: colors.primaryText,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
   },
 
-  // ─── Rate Limit Banner ────────────────────────────────────
+  // ─── Chat Card ───────────────────────────────────────────
+  chatCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 24,
+    padding: spacing.xl,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    gap: spacing.md,
+  },
+
+  // ─── Loading Card ────────────────────────────────────────
+  loadingCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 24,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing['3xl'],
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+  },
+  loadingSub: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: -spacing.xs,
+  },
+
+  // ─── Empty / Error / Rate ────────────────────────────────
+  emptyWrap: { paddingVertical: spacing['3xl'] },
+  errorContainer: {},
   rateLimitBanner: {
     backgroundColor: colors.infoLight,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+    borderWidth: 1, borderColor: 'rgba(46,141,201,0.15)',
     alignItems: 'center',
   },
   rateLimitText: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: typography.bodySm.fontSize,
     color: colors.primaryText,
     textAlign: 'center',
   },
 
-  // ─── Error ────────────────────────────────────────────────
-  errorContainer: {
-    marginBottom: spacing.md,
+  // ─── Toolbar ─────────────────────────────────────────────
+  toolbar: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
-
-  // ─── Report Card ──────────────────────────────────────────
-  reportCard: {
-    padding: spacing.xl,
-    marginBottom: spacing.lg,
-  },
-  reportStatusRow: {
-    marginBottom: spacing.sm + spacing.xxs,
-  },
-  reportSummary: {
-    fontSize: typography.bodyLg.fontSize,
-    color: colors.textPrimary,
-    lineHeight: typography.bodyLg.fontSize * 1.5,
-    marginBottom: spacing.md,
-  },
-  reportSection: {
-    marginBottom: spacing.sm + spacing.xxs,
-  },
-  reportSectionLabel: {
-    fontSize: typography.bodySm.fontSize,
-    fontWeight: '600',
-    color: colors.textTertiary,
-    marginBottom: spacing.xs,
-  },
-  reportItem: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.textSecondary,
-    lineHeight: typography.bodyMd.fontSize * 1.5 + 1,
-  },
-  fallbackNote: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textDisabled,
-    fontStyle: 'italic',
-    marginBottom: spacing.sm,
-  },
-
-  // ─── Disclaimer ───────────────────────────────────────────
-  disclaimer: {
+  toolbarTitle: {
     fontSize: typography.captionSm.fontSize,
-    color: colors.textDisabled,
-    lineHeight: typography.captionSm.fontSize * 1.45,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderDefault,
-    paddingTop: spacing.sm + spacing.xxs,
-    marginTop: spacing.sm + spacing.xxs,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    letterSpacing: 1,
   },
-
-  // ─── Share & PDF Buttons ──────────────────────────────────
-  shareRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  shareButton: {
+  modeRow: { flexDirection: 'row', gap: spacing.sm },
+  modeTab: {
     flex: 1,
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + spacing.xxs,
-    alignItems: 'center',
-  },
-  shareText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.primaryText,
-  },
-  pdfButton: {
-    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.full,
     backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + spacing.xxs,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
   },
-  pdfText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
+  modeTabActive: { backgroundColor: colors.primaryLight, borderWidth: 1.5, borderColor: colors.primary },
+  modeTabText: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '500',
     color: colors.textSecondary,
   },
+  modeTabTextActive: { color: colors.primaryText, fontWeight: '700' },
 
-  // ─── History Section ──────────────────────────────────────
-  historySection: {
-    marginTop: spacing.sm,
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  typeChip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
   },
+  typeChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  typeChipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  typeChipTextActive: { color: colors.primaryText, fontWeight: '700' },
+
+  generateWrap: {
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+    marginTop: spacing.xs,
+  },
+  generateButton: {
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  generateButtonDisabled: { opacity: 0.6 },
+  generateText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  generatingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+  },
+
+  // ─── History ─────────────────────────────────────────────
+  historySection: { gap: spacing.sm, marginTop: spacing.xs },
   historyTitle: {
     fontSize: typography.headingSm.fontSize,
-    fontWeight: typography.headingSm.fontWeight,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm + spacing.xxs,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   historyCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 18,
+    borderWidth: 1, borderColor: colors.borderDefault,
     padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  historyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
+  },
+  historyCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  historyArrow: {
+    fontSize: 24,
+    color: colors.borderStrong,
+    fontWeight: '300',
+    marginLeft: spacing.xs,
+  },
+  historyDateCol: { width: 44, alignItems: 'center' },
+  historyDay: {
+    fontSize: 22, fontWeight: '700', color: colors.primaryText,
+    lineHeight: 24,
+  },
+  historyMonth: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  historyDivider: { width: 1, height: 36, backgroundColor: colors.borderDefault },
+  historyContent: { flex: 1, gap: 4 },
+  historyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
   },
   historyType: {
     fontSize: typography.bodySm.fontSize,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  historyDate: {
-    fontSize: typography.caption.fontSize,
-    color: colors.textDisabled,
-    marginLeft: 'auto',
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   historySummary: {
-    fontSize: typography.bodySm.fontSize,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
-    lineHeight: typography.bodySm.fontSize * 1.5 + 1,
+    lineHeight: 17,
   },
 });

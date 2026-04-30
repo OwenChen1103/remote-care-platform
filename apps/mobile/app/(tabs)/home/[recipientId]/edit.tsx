@@ -7,11 +7,16 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Relationship options (same as add-recipient) ─────────────
 const RELATIONSHIP_OPTIONS = [
@@ -45,6 +50,62 @@ interface Recipient {
   notes: string | null;
 }
 
+// ─── Section icons ────────────────────────────────────────────
+
+function IconUser() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="4" stroke={colors.primary} strokeWidth={1.8} />
+      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconHeart() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke={colors.danger} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconLink() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconPhone() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" stroke={colors.warning} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconLocation() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" stroke={colors.primary} strokeWidth={1.8} strokeLinejoin="round" />
+      <Circle cx="12" cy="10" r="3" stroke={colors.primary} strokeWidth={1.8} />
+    </Svg>
+  );
+}
+function IconNote() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z" stroke={colors.textTertiary} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M14 3v6h6M8 13h8M8 17h5" stroke={colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconCalendar() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={colors.textTertiary} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function EditRecipientScreen() {
   const { recipientId } = useLocalSearchParams<{ recipientId: string }>();
   const router = useRouter();
@@ -56,6 +117,7 @@ export default function EditRecipientScreen() {
 
   const [name, setName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('');
   const [relationship, setRelationship] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -141,258 +203,381 @@ export default function EditRecipientScreen() {
     }
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   if (fetchError) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{fetchError}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => void fetchRecipient()}>
-          <Text style={styles.retryText}>重試</Text>
+      <View style={s.center}>
+        <Text style={s.errorText}>{fetchError}</Text>
+        <TouchableOpacity style={s.retryButton} onPress={() => void fetchRecipient()} activeOpacity={0.7}>
+          <Text style={s.retryText}>重試</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  const initial = name.charAt(0) || '?';
+  const formattedDob = dateOfBirth
+    ? new Date(dateOfBirth).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '';
+  const dobValue = dateOfBirth ? new Date(dateOfBirth) : new Date(1950, 0, 1);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>編輯被照護者</Text>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {/* ── Basic Info Card ─────────────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.label}>姓名 *</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="例：王奶奶" />
-
-        <Text style={styles.label}>生日</Text>
-        <TextInput
-          style={styles.input}
-          value={dateOfBirth}
-          onChangeText={setDateOfBirth}
-          placeholder="YYYY-MM-DD"
+    <ScrollView style={s.container} contentContainerStyle={s.content}>
+      {/* ── Hero Card — recipient avatar + name ─────────────── */}
+      <View style={s.hero}>
+        <LinearGradient
+          colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
         />
+        <View style={s.heroHaloTopRight} />
+        <View style={s.heroHaloBottomLeft} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-        <Text style={styles.label}>性別</Text>
-        <View style={styles.genderRow}>
-          {(['male', 'female', 'other'] as const).map((g) => (
-            <TouchableOpacity
-              key={g}
-              style={[styles.genderButton, gender === g && styles.genderActive]}
-              onPress={() => setGender(g)}
-            >
-              <Text style={[styles.genderText, gender === g && styles.genderTextActive]}>
-                {g === 'male' ? '男' : g === 'female' ? '女' : '其他'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* ── Relationship Card ───────────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.label}>與您的關係</Text>
-        <View style={styles.tagGrid}>
-          {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
-            const active = relationship === value;
-            return (
-              <TouchableOpacity
-                key={value}
-                style={[styles.tagChip, active && styles.tagChipActive]}
-                onPress={() => setRelationship(active ? '' : value)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── Medical Tags Card ───────────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.label}>疾病標籤</Text>
-        <View style={styles.tagGrid}>
-          {PRESET_MEDICAL_TAGS.map((tag) => {
-            const active = selectedTags.includes(tag);
-            return (
-              <TouchableOpacity
-                key={tag}
-                style={[styles.tagChip, active && styles.tagChipActive]}
-                onPress={() => toggleTag(tag)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: active }}
-              >
-                <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
-                  {tag}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Custom tags */}
-        {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
-          <View style={styles.customTagRow}>
-            {selectedTags
-              .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
-              .map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.tagChip, styles.tagChipActive]}
-                  onPress={() => toggleTag(t)}
-                >
-                  <Text style={styles.tagChipTextActive}>{t} ✕</Text>
-                </TouchableOpacity>
-              ))}
+        <View style={s.heroContent}>
+          <View style={s.avatarBig}>
+            <Text style={s.avatarBigText}>{initial}</Text>
           </View>
-        )}
-
-        <View style={styles.customInputRow}>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            value={customTagInput}
-            onChangeText={setCustomTagInput}
-            placeholder="其他病史（手動輸入）"
-            returnKeyType="done"
-            onSubmitEditing={addCustomTag}
-          />
-          <TouchableOpacity
-            style={styles.addTagBtn}
-            onPress={addCustomTag}
-            disabled={!customTagInput.trim()}
-          >
-            <Text style={[styles.addTagBtnText, !customTagInput.trim() && { opacity: 0.4 }]}>新增</Text>
-          </TouchableOpacity>
+          <Text style={s.heroTitle}>編輯 {name || '被照護者'} 的資料</Text>
+          <Text style={s.heroSubtitle}>更新基本資訊、健康狀態與聯絡資料</Text>
         </View>
       </View>
 
-      {/* ── Emergency Contact Card ──────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.label}>緊急聯絡人姓名</Text>
-        <TextInput style={styles.input} value={emergencyName} onChangeText={setEmergencyName} />
+      {error ? (
+        <View style={s.errorBox}>
+          <Text style={s.errorBoxText}>{error}</Text>
+        </View>
+      ) : null}
 
-        <Text style={styles.label}>緊急聯絡人電話</Text>
-        <TextInput
-          style={styles.input}
-          value={emergencyPhone}
-          onChangeText={setEmergencyPhone}
-          keyboardType="phone-pad"
-        />
+      {/* ── Section: Basic Info ──────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconUser />
+        <Text style={s.sectionTitle}>基本資料</Text>
+      </View>
+      <View style={s.card}>
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>姓名 <Text style={s.required}>*</Text></Text>
+          <TextInput
+            style={s.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="例：王奶奶"
+            placeholderTextColor={colors.textDisabled}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>生日</Text>
+          <TouchableOpacity style={s.input} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
+            <View style={s.dateRow}>
+              <Text style={[s.inputText, !formattedDob && { color: colors.textDisabled }]}>
+                {formattedDob || '選擇生日（選填）'}
+              </Text>
+              <IconCalendar />
+            </View>
+          </TouchableOpacity>
+          {showDatePicker && (
+            <DateTimePicker
+              value={dobValue}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(event, selected) => {
+                if (Platform.OS === 'android') setShowDatePicker(false);
+                if (selected) {
+                  const yyyy = selected.getFullYear();
+                  const mm = String(selected.getMonth() + 1).padStart(2, '0');
+                  const dd = String(selected.getDate()).padStart(2, '0');
+                  setDateOfBirth(`${yyyy}-${mm}-${dd}`);
+                }
+              }}
+              maximumDate={new Date()}
+            />
+          )}
+          {Platform.OS === 'ios' && showDatePicker && (
+            <TouchableOpacity style={s.dateConfirm} onPress={() => setShowDatePicker(false)} activeOpacity={0.7}>
+              <Text style={s.dateConfirmText}>完成</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <Text style={s.fieldLabel}>性別</Text>
+          <View style={s.chipRow}>
+            {([
+              { value: 'male' as const, label: '男' },
+              { value: 'female' as const, label: '女' },
+              { value: 'other' as const, label: '其他' },
+            ]).map(({ value, label }) => {
+              const active = gender === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[s.chip, active && s.chipActive]}
+                  onPress={() => setGender(value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </View>
 
-      {/* ── Address & Notes Card ────────────────────────────── */}
-      <View style={styles.card}>
-        <Text style={styles.label}>居住地址</Text>
-        <TextInput
-          style={styles.input}
-          value={address}
-          onChangeText={setAddress}
-          placeholder="選填"
-        />
-
-        <Text style={styles.label}>備註</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-          numberOfLines={3}
-        />
+      {/* ── Section: Relationship ────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconLink />
+        <Text style={s.sectionTitle}>與您的關係</Text>
+      </View>
+      <View style={s.card}>
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <View style={s.tagGrid}>
+            {RELATIONSHIP_OPTIONS.map(({ value, label }) => {
+              const active = relationship === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[s.chip, active && s.chipActive]}
+                  onPress={() => setRelationship(active ? '' : value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </View>
 
+      {/* ── Section: Medical Info ────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconHeart />
+        <Text style={s.sectionTitle}>健康資訊</Text>
+      </View>
+      <View style={s.card}>
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <Text style={s.fieldLabel}>疾病標籤</Text>
+          <View style={s.tagGrid}>
+            {PRESET_MEDICAL_TAGS.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <TouchableOpacity
+                  key={tag}
+                  style={[s.chip, active && s.chipActive]}
+                  onPress={() => toggleTag(tag)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: active }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.chipText, active && s.chipTextActive]}>{tag}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {selectedTags.filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t)).length > 0 && (
+            <View style={s.customTagRow}>
+              {selectedTags
+                .filter((t) => !(PRESET_MEDICAL_TAGS as readonly string[]).includes(t))
+                .map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[s.chip, s.chipActive]}
+                    onPress={() => toggleTag(t)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.chipTextActive}>{t} ✕</Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
+          )}
+
+          <View style={s.customTagInputRow}>
+            <TextInput
+              style={[s.input, { flex: 1 }]}
+              value={customTagInput}
+              onChangeText={setCustomTagInput}
+              placeholder="其他病史（手動輸入）"
+              placeholderTextColor={colors.textDisabled}
+              returnKeyType="done"
+              onSubmitEditing={addCustomTag}
+            />
+            <TouchableOpacity
+              style={[s.addTagButton, !customTagInput.trim() && { opacity: 0.4 }]}
+              onPress={addCustomTag}
+              disabled={!customTagInput.trim()}
+              activeOpacity={0.7}
+            >
+              <Text style={s.addTagText}>新增</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Section: Emergency Contact ───────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconPhone />
+        <Text style={s.sectionTitle}>緊急聯絡人</Text>
+      </View>
+      <View style={s.card}>
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>姓名</Text>
+          <TextInput
+            style={s.input}
+            value={emergencyName}
+            onChangeText={setEmergencyName}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+          />
+        </View>
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <Text style={s.fieldLabel}>電話</Text>
+          <TextInput
+            style={s.input}
+            value={emergencyPhone}
+            onChangeText={setEmergencyPhone}
+            keyboardType="phone-pad"
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+          />
+        </View>
+      </View>
+
+      {/* ── Section: Address ─────────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconLocation />
+        <Text style={s.sectionTitle}>居住地址</Text>
+      </View>
+      <View style={s.card}>
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <TextInput
+            style={s.input}
+            value={address}
+            onChangeText={setAddress}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+          />
+        </View>
+      </View>
+
+      {/* ── Section: Notes ───────────────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconNote />
+        <Text style={s.sectionTitle}>備註</Text>
+      </View>
+      <View style={s.card}>
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <TextInput
+            style={[s.input, s.textArea]}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            numberOfLines={3}
+            placeholder="選填"
+            placeholderTextColor={colors.textDisabled}
+            textAlignVertical="top"
+          />
+        </View>
+      </View>
+
+      {/* ── Submit ───────────────────────────────────────────── */}
       <TouchableOpacity
-        style={[styles.submitButton, saving && styles.submitDisabled]}
+        style={[s.submitWrap, saving && { opacity: 0.6 }]}
         onPress={() => void handleSave()}
         disabled={saving}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={saving ? '儲存中' : '儲存變更'}
       >
-        <Text style={styles.submitText}>{saving ? '儲存中...' : '儲存'}</Text>
+        <LinearGradient
+          colors={[colors.primary, colors.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={s.submitBtn}
+        >
+          <Text style={s.submitText}>{saving ? '儲存中...' : '儲存變更'}</Text>
+        </LinearGradient>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+// ─── Styles ───────────────────────────────────────────────────
+
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgScreen },
-  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  title: {
-    ...typography.headingLg,
-    color: colors.textPrimary,
-    marginBottom: spacing.lg,
-  },
-  // Card wrapper for form sections
-  card: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    ...shadows.low,
-  },
-  label: {
-    ...typography.bodyMd,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
-  },
-  input: {
-    backgroundColor: colors.bgSurface,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    fontSize: typography.bodyLg.fontSize,
-    color: colors.textPrimary,
-  },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  customTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
-  customInputRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
-  tagChip: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderStrong,
-    backgroundColor: colors.bgSurface,
-  },
-  tagChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryText },
-  tagChipText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '500' },
-  tagChipTextActive: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
-  addTagBtn: {
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.primaryLight, borderRadius: radius.sm,
-  },
-  addTagBtnText: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
-  genderRow: { flexDirection: 'row', gap: spacing.sm },
-  genderButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
-    backgroundColor: colors.bgSurface,
-  },
-  genderActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  genderText: { color: colors.textSecondary, fontWeight: '500' },
-  genderTextActive: { color: colors.white },
-  error: {
-    color: colors.danger,
-    backgroundColor: colors.dangerLight,
-    padding: spacing.md,
-    borderRadius: radius.sm,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    fontSize: typography.bodyMd.fontSize,
+  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] + spacing.lg, gap: spacing.md },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.bgScreen },
+
+  // ─── Hero Card ────────────────────────────────────────────
+  hero: {
+    position: 'relative',
     overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    marginBottom: spacing.sm,
   },
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -40, right: -50,
+    width: 180, height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -50, left: -30,
+    width: 160, height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+  },
+  avatarBig: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 2, borderColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  avatarBigText: { fontSize: 26, fontWeight: '700', color: colors.primaryText },
+  heroTitle: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    marginTop: spacing.xxs,
+    textAlign: 'center',
+  },
+
+  // ─── Error ────────────────────────────────────────────────
+  errorBox: {
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderWidth: 1, borderColor: 'rgba(217,83,79,0.2)',
+  },
+  errorBoxText: { color: colors.danger, fontSize: typography.bodySm.fontSize, textAlign: 'center' },
   errorText: {
     fontSize: typography.bodyMd.fontSize,
     color: colors.danger,
@@ -405,19 +590,128 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: colors.primary,
-    borderRadius: radius.sm,
+    borderRadius: radius.full,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
   },
   retryText: { color: colors.white, fontWeight: '600' },
-  submitButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    padding: spacing.lg,
+
+  // ─── Section header (above each card) ─────────────────────
+  sectionHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing['2xl'],
-    ...shadows.high,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingLeft: spacing.xs,
   },
-  submitDisabled: { opacity: 0.5 },
-  submitText: { color: colors.white, fontSize: typography.bodyLg.fontSize, fontWeight: '600' },
+  sectionTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
+  },
+
+  // ─── Card ─────────────────────────────────────────────────
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+  },
+
+  // ─── Field ────────────────────────────────────────────────
+  field: { marginBottom: spacing.md },
+  fieldLabel: {
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  required: { color: colors.danger },
+  input: {
+    backgroundColor: colors.bgScreen,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md + 2,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    minHeight: 46,
+    justifyContent: 'center',
+  },
+  inputText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary },
+  textArea: { minHeight: 88, textAlignVertical: 'top', paddingTop: spacing.md },
+
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateConfirm: {
+    alignSelf: 'flex-end',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+  },
+  dateConfirmText: { color: colors.primaryText, fontSize: typography.captionSm.fontSize, fontWeight: '600' },
+
+  // ─── Chips ────────────────────────────────────────────────
+  chipRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chip: {
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    backgroundColor: colors.bgSurface,
+  },
+  chipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  chipText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  chipTextActive: {
+    color: colors.primaryText,
+    fontWeight: '700',
+  },
+
+  // ─── Custom tag ───────────────────────────────────────────
+  customTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  customTagInputRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
+  addTagButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+  },
+  addTagText: { color: colors.primaryText, fontWeight: '600', fontSize: typography.bodyMd.fontSize },
+
+  // ─── Submit ───────────────────────────────────────────────
+  submitWrap: {
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  submitBtn: {
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  submitText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
 });

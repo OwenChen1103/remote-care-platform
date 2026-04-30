@@ -5,14 +5,16 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
-import { Card } from '@/components/ui/Card';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { TrendChart, type ChartSeries } from '@/components/ui/TrendChart';
 import { BP_THRESHOLDS } from '@remote-care/shared';
 
@@ -43,58 +45,49 @@ interface BgStats {
 
 type StatsData = BpStats | BgStats;
 
-// ─── Chart Colors (aligned with visual-direction-v1.md Part 8) ──
-
-const CHART_COLORS = {
-  systolic: colors.primary,
-  diastolic: colors.primaryText,  // lighter purple variant per spec
-} as const;
-
 // ─── Helpers ──────────────────────────────────────────────────
 
-/** Format date string to MM/DD for chart x-axis */
 function toChartLabel(dateStr: string): string {
   const parts = dateStr.split('-');
   return `${parts[1]}/${parts[2]}`;
 }
 
-/** Build chart series from BP stats daily_data */
 function buildBpSeries(data: BpStats['daily_data']): ChartSeries[] {
   return [
-    {
-      name: '收縮壓',
-      color: CHART_COLORS.systolic,
-      data: data.map((d) => ({
-        label: toChartLabel(d.date),
-        value: d.systolic_avg,
-        isAbnormal: d.is_abnormal,
-      })),
-    },
-    {
-      name: '舒張壓',
-      color: CHART_COLORS.diastolic,
-      data: data.map((d) => ({
-        label: toChartLabel(d.date),
-        value: d.diastolic_avg,
-        isAbnormal: d.is_abnormal,
-      })),
-    },
+    { name: '收縮壓', color: colors.primary, data: data.map((d) => ({ label: toChartLabel(d.date), value: d.systolic_avg, isAbnormal: d.is_abnormal })) },
+    { name: '舒張壓', color: colors.primaryText, data: data.map((d) => ({ label: toChartLabel(d.date), value: d.diastolic_avg, isAbnormal: d.is_abnormal })) },
   ];
 }
 
-/** Build chart series from BG stats daily_data */
 function buildBgSeries(data: BgStats['daily_data']): ChartSeries[] {
   return [
-    {
-      name: '血糖',
-      color: CHART_COLORS.systolic,
-      data: data.map((d) => ({
-        label: toChartLabel(d.date),
-        value: d.glucose_avg,
-        isAbnormal: d.is_abnormal,
-      })),
-    },
+    { name: '血糖', color: colors.primary, data: data.map((d) => ({ label: toChartLabel(d.date), value: d.glucose_avg, isAbnormal: d.is_abnormal })) },
   ];
+}
+
+// ─── Icons ────────────────────────────────────────────────────
+
+function IconChart({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 17l5-5 4 4 8-8M16 8h5v5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconStats({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 12h4l3-9 4 18 3-9h4" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconCalendar({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={1.8} />
+      <Path d="M12 6v6l4 2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────
@@ -128,263 +121,422 @@ export default function TrendsScreen() {
     void fetchStats();
   }, [fetchStats]);
 
-  // Build chart data from stats
+  if (loading && !stats) return <LoadingScreen />;
+
   const chartSeries: ChartSeries[] = stats
     ? stats.type === 'blood_pressure'
       ? buildBpSeries(stats.daily_data)
       : buildBgSeries(stats.daily_data)
     : [];
 
-  // Abnormal zone for BP chart (systolic HIGH threshold)
   const bpAbnormalZone = type === 'blood_pressure'
     ? { low: BP_THRESHOLDS.SYSTOLIC.NORMAL_HIGH, high: BP_THRESHOLDS.SYSTOLIC.HIGH + 20 }
     : undefined;
 
+  const periodLabel = period === '7d' ? '7 天' : '30 天';
+  const typeLabel = type === 'blood_pressure' ? '血壓' : '血糖';
+
   return (
-    <ScrollView style={styles.container}>
-      {/* ── Header Zone ──────────────────────────────────────── */}
-      <View style={styles.headerZone}>
-        <Text style={styles.title}>趨勢分析</Text>
+    <ScrollView style={s.container} contentContainerStyle={s.content}>
+      {/* ─── Hero ───────────────────────────────────────────── */}
+      <View style={s.hero}>
+        <LinearGradient
+          colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={s.heroHaloTopRight} />
+        <View style={s.heroHaloBottomLeft} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-        {/* Type toggle */}
-        <View style={styles.toggleRow}>
-          {(['blood_pressure', 'blood_glucose'] as const).map((t) => {
-            const active = type === t;
-            return (
-              <TouchableOpacity
-                key={t}
-                style={[styles.toggleChip, active && styles.toggleChipActive]}
-                onPress={() => setType(t)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
-                  {t === 'blood_pressure' ? '血壓' : '血糖'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Period toggle */}
-        <View style={styles.periodRow}>
-          {(['7d', '30d'] as const).map((p) => {
-            const active = period === p;
-            return (
-              <TouchableOpacity
-                key={p}
-                style={[styles.periodChip, active && styles.periodChipActive]}
-                onPress={() => setPeriod(p)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <Text style={[styles.periodText, active && styles.periodTextActive]}>
-                  {p === '7d' ? '7 天' : '30 天'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={s.heroContent}>
+          <Text style={s.heroTagline}>HEALTH TRENDS</Text>
+          <Text style={s.heroSubtitle}>{periodLabel}{typeLabel}趨勢分析</Text>
+          {stats && stats.abnormal_count > 0 && (
+            <View style={s.heroBadge}>
+              <View style={s.heroBadgeDot} />
+              <Text style={s.heroBadgeText}>{stats.abnormal_count} 筆需留意</Text>
+            </View>
+          )}
         </View>
       </View>
 
-      {/* ── Content ──────────────────────────────────────────── */}
-      <View style={styles.content}>
-        {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>載入中...</Text>
-          </View>
-        ) : error ? (
-          <ErrorState message={error} onRetry={() => void fetchStats()} />
-        ) : !stats || stats.count === 0 ? (
+      {/* ─── Toggles ────────────────────────────────────────── */}
+      <View style={s.toggleRow}>
+        {(['blood_pressure', 'blood_glucose'] as const).map((t) => {
+          const active = type === t;
+          return (
+            <TouchableOpacity
+              key={t}
+              style={[s.toggleChip, active && s.chipActive]}
+              onPress={() => setType(t)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.toggleText, active && s.chipTextActive]}>
+                {t === 'blood_pressure' ? '血壓' : '血糖'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={s.toggleRow}>
+        {(['7d', '30d'] as const).map((p) => {
+          const active = period === p;
+          return (
+            <TouchableOpacity
+              key={p}
+              style={[s.periodChip, active && s.chipActive]}
+              onPress={() => setPeriod(p)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.periodText, active && s.chipTextActive]}>
+                {p === '7d' ? '7 天' : '30 天'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* ─── Content ────────────────────────────────────────── */}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void fetchStats()} />
+      ) : !stats || stats.count === 0 ? (
+        <View style={{ marginTop: spacing.lg }}>
           <EmptyState
             title="尚無量測資料"
             description="記錄健康數據後，即可在此查看趨勢。"
           />
-        ) : (
-          <>
-            {/* ── Trend Chart ──────────────────────────────── */}
-            <Card style={styles.chartCard}>
-              <Text style={styles.chartTitle}>
-                {type === 'blood_pressure' ? '血壓趨勢' : '血糖趨勢'}
+        </View>
+      ) : (
+        <>
+          {/* Chart */}
+          <View style={s.sectionHeader}>
+            <IconChart />
+            <Text style={s.sectionTitle}>趨勢圖</Text>
+          </View>
+          <View style={s.card}>
+            <TrendChart
+              series={chartSeries}
+              unit={type === 'blood_pressure' ? 'mmHg' : 'mg/dL'}
+              abnormalZone={bpAbnormalZone}
+              height={200}
+            />
+          </View>
+
+          {/* KPI */}
+          <View style={s.kpiRow}>
+            <View style={s.kpiCard}>
+              <Text style={s.kpiLabel}>總筆數</Text>
+              <Text style={s.kpiValue}>{stats.count}</Text>
+            </View>
+            <View style={s.kpiCard}>
+              <Text style={s.kpiLabel}>需留意</Text>
+              <Text style={[s.kpiValue, stats.abnormal_count > 0 && { color: colors.warning }]}>
+                {stats.abnormal_count}
               </Text>
-              <TrendChart
-                series={chartSeries}
-                unit={type === 'blood_pressure' ? 'mmHg' : 'mg/dL'}
-                abnormalZone={bpAbnormalZone}
-                height={200}
-              />
-            </Card>
+            </View>
+          </View>
 
-            {/* ── KPI Summary ─────────────────────────────── */}
-            <Card style={styles.kpiCard}>
-              <View style={styles.kpiRow}>
-                <View style={styles.kpiItem}>
-                  <Text style={styles.kpiValue}>{stats.count}</Text>
-                  <Text style={styles.kpiLabel}>總筆數</Text>
-                </View>
-                <View style={styles.kpiDivider} />
-                <View style={styles.kpiItem}>
-                  <Text style={[
-                    styles.kpiValue,
-                    stats.abnormal_count > 0 && styles.kpiValueWarn,
-                  ]}>
-                    {stats.abnormal_count}
-                  </Text>
-                  <Text style={styles.kpiLabel}>需留意</Text>
-                </View>
+          {/* Averages */}
+          <View style={s.sectionHeader}>
+            <IconStats />
+            <Text style={s.sectionTitle}>平均數值</Text>
+          </View>
+          {stats.type === 'blood_pressure' && stats.systolic && stats.diastolic ? (
+            <View style={s.avgRow}>
+              <View style={s.avgCard}>
+                <Text style={s.avgLabel}>收縮壓</Text>
+                <Text style={s.avgValue}>{Math.round(stats.systolic.avg)}</Text>
+                <Text style={s.avgRange}>{stats.systolic.min}–{stats.systolic.max} mmHg</Text>
               </View>
-            </Card>
-
-            {/* ── Averages ────────────────────────────────── */}
-            {stats.type === 'blood_pressure' && stats.systolic && stats.diastolic && (
-              <View style={styles.avgRow}>
-                <Card style={styles.avgCard}>
-                  <Text style={styles.avgLabel}>收縮壓平均</Text>
-                  <Text style={styles.avgValue}>{Math.round(stats.systolic.avg)}</Text>
-                  <Text style={styles.avgRange}>{stats.systolic.min}–{stats.systolic.max} mmHg</Text>
-                </Card>
-                <Card style={styles.avgCard}>
-                  <Text style={styles.avgLabel}>舒張壓平均</Text>
-                  <Text style={styles.avgValue}>{Math.round(stats.diastolic.avg)}</Text>
-                  <Text style={styles.avgRange}>{stats.diastolic.min}–{stats.diastolic.max} mmHg</Text>
-                </Card>
+              <View style={s.avgCard}>
+                <Text style={s.avgLabel}>舒張壓</Text>
+                <Text style={s.avgValue}>{Math.round(stats.diastolic.avg)}</Text>
+                <Text style={s.avgRange}>{stats.diastolic.min}–{stats.diastolic.max} mmHg</Text>
               </View>
-            )}
+            </View>
+          ) : stats.type === 'blood_glucose' && stats.glucose_value ? (
+            <View style={[s.card, { alignItems: 'center', paddingVertical: spacing.lg }]}>
+              <Text style={s.avgLabel}>血糖</Text>
+              <Text style={s.avgValue}>{Math.round(stats.glucose_value.avg)}</Text>
+              <Text style={s.avgRange}>{stats.glucose_value.min}–{stats.glucose_value.max} mg/dL</Text>
+            </View>
+          ) : null}
 
-            {stats.type === 'blood_glucose' && stats.glucose_value && (
-              <Card style={styles.avgCardFull}>
-                <Text style={styles.avgLabel}>血糖平均</Text>
-                <Text style={styles.avgValue}>{Math.round(stats.glucose_value.avg)}</Text>
-                <Text style={styles.avgRange}>{stats.glucose_value.min}–{stats.glucose_value.max} mg/dL</Text>
-              </Card>
-            )}
-
-            {/* ── Daily Records ───────────────────────────── */}
-            <Text style={styles.sectionLabel}>每日紀錄</Text>
-            {stats.daily_data.map((d) => (
-              <Card
-                key={d.date}
-                style={[styles.dailyCard, d.is_abnormal && styles.dailyCardAlert]}
-              >
-                <View style={styles.dailyMain}>
-                  <View style={styles.dailyLeft}>
-                    <View style={[
-                      styles.dailyDot,
-                      { backgroundColor: d.is_abnormal ? colors.danger : colors.primary },
-                    ]} />
-                    <Text style={styles.dailyDate}>{d.date.slice(5)}</Text>
+          {/* Daily timeline */}
+          <View style={s.sectionHeader}>
+            <IconCalendar />
+            <Text style={s.sectionTitle}>每日紀錄</Text>
+          </View>
+          <View style={s.timelineCard}>
+            {stats.daily_data.map((d, idx) => {
+              const isLast = idx === stats.daily_data.length - 1;
+              const dotColor = d.is_abnormal ? colors.danger : colors.primary;
+              const value = stats.type === 'blood_pressure' && 'systolic_avg' in d
+                ? `${d.systolic_avg ?? '—'}/${d.diastolic_avg ?? '—'}`
+                : 'glucose_avg' in d ? `${d.glucose_avg ?? '—'}` : '—';
+              return (
+                <View key={d.date} style={s.timelineRow}>
+                  <View style={s.timelineLeft}>
+                    <View style={[s.timelineDot, { backgroundColor: dotColor }]} />
+                    {!isLast && <View style={s.timelineLine} />}
                   </View>
-                  <Text style={styles.dailyValue}>
-                    {stats.type === 'blood_pressure' && 'systolic_avg' in d
-                      ? `${d.systolic_avg}/${d.diastolic_avg}`
-                      : 'glucose_avg' in d ? `${d.glucose_avg}` : '—'}
-                  </Text>
-                  <Text style={styles.dailyCount}>{d.count} 筆</Text>
+                  <View style={[s.timelineContent, isLast && { paddingBottom: 0 }]}>
+                    <View style={s.timelineTopRow}>
+                      <Text style={s.timelineDate}>{d.date.slice(5).replace('-', '/')}</Text>
+                      {d.is_abnormal && (
+                        <View style={s.alertTag}><Text style={s.alertTagText}>需留意</Text></View>
+                      )}
+                    </View>
+                    <View style={s.timelineValueRow}>
+                      <Text style={[s.timelineValue, d.is_abnormal && { color: colors.danger }]}>{value}</Text>
+                      <Text style={s.timelineCount}>{d.count} 筆</Text>
+                    </View>
+                  </View>
                 </View>
-              </Card>
-            ))}
-          </>
-        )}
-      </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+      <View style={{ height: spacing['3xl'] }} />
     </ScrollView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgScreen },
-  headerZone: {
-    backgroundColor: colors.bgSurface,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    ...shadows.low,
-  },
-  title: {
-    fontSize: typography.headingMd.fontSize,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  content: { padding: spacing.lg },
-  center: { alignItems: 'center', paddingVertical: spacing['3xl'], gap: spacing.sm },
-  loadingText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
+  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing['3xl'] },
 
-  // ─── Toggles ──────────────────────────────────────────────
-  toggleRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  // ─── Hero ─────────────────────────────────────────────────
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+  },
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+  },
+  heroTagline: {
+    fontSize: 10, fontWeight: '700',
+    color: colors.primary, letterSpacing: 2,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: spacing.xxs,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(232,162,59,0.25)',
+  },
+  heroBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.warning },
+  heroBadgeText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+
+  // ─── Chips (unified pill style, navy active) ─────────────
+  toggleRow: { flexDirection: 'row', gap: spacing.sm },
   toggleChip: {
     flex: 1,
     paddingVertical: spacing.sm + spacing.xxs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
     alignItems: 'center',
   },
-  toggleChipActive: { backgroundColor: colors.primaryLight },
-  toggleText: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textTertiary },
-  toggleTextActive: { color: colors.primaryText },
-
-  periodRow: { flexDirection: 'row', gap: spacing.sm },
   periodChip: {
     flex: 1,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.borderDefault,
+    borderRadius: radius.full,
     backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
     alignItems: 'center',
   },
-  periodChipActive: { borderColor: colors.primaryText, backgroundColor: colors.primaryLight },
-  periodText: { fontSize: typography.bodySm.fontSize, color: colors.textTertiary },
-  periodTextActive: { color: colors.primaryText, fontWeight: '600' },
-
-  // ─── Chart Card ───────────────────────────────────────────
-  chartCard: { marginBottom: spacing.md, padding: spacing.lg },
-  chartTitle: {
+  chipActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  toggleText: {
     fontSize: typography.bodySm.fontSize,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-  },
-
-  // ─── KPI Card ─────────────────────────────────────────────
-  kpiCard: { marginBottom: spacing.md, padding: spacing.md },
-  kpiRow: { flexDirection: 'row', alignItems: 'center' },
-  kpiItem: { flex: 1, alignItems: 'center' },
-  kpiValue: { fontSize: typography.headingXl.fontSize, fontWeight: '700', color: colors.textPrimary },
-  kpiValueWarn: { color: colors.warning },
-  kpiLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: spacing.xxs },
-  kpiDivider: { width: 1, height: 28, backgroundColor: colors.borderDefault },
-
-  // ─── Average Cards ────────────────────────────────────────
-  avgRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  avgCard: { flex: 1, padding: spacing.md, alignItems: 'center' },
-  avgCardFull: { padding: spacing.md, alignItems: 'center', marginBottom: spacing.md },
-  avgLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, fontWeight: '500', marginBottom: spacing.xxs },
-  avgValue: { fontSize: typography.headingLg.fontSize, fontWeight: '700', color: colors.textPrimary },
-  avgRange: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, marginTop: spacing.xxs },
-
-  // ─── Section Label ────────────────────────────────────────
-  sectionLabel: {
-    fontSize: 10,
     fontWeight: '500',
-    color: colors.textDisabled,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: colors.textSecondary,
+  },
+  periodText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  chipTextActive: { color: colors.primaryText, fontWeight: '700' },
+
+  // ─── Section header ──────────────────────────────────────
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     marginTop: spacing.sm,
-    marginBottom: spacing.sm,
+    paddingLeft: spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
   },
 
-  // ─── Daily Cards ──────────────────────────────────────────
-  dailyCard: { marginBottom: spacing.sm, padding: spacing.md },
-  dailyCardAlert: { borderColor: colors.dangerLight },
-  dailyMain: { flexDirection: 'row', alignItems: 'center' },
-  dailyLeft: { flexDirection: 'row', alignItems: 'center', width: 80, gap: spacing.sm },
-  dailyDot: { width: 6, height: 6, borderRadius: 3 },
-  dailyDate: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary },
-  dailyValue: { flex: 1, fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary },
-  dailyCount: { fontSize: typography.caption.fontSize, color: colors.textDisabled },
+  // ─── Card ────────────────────────────────────────────────
+  card: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+  },
+
+  // ─── KPI Row ─────────────────────────────────────────────
+  kpiRow: { flexDirection: 'row', gap: spacing.sm },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center',
+  },
+  kpiLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: spacing.xxs,
+  },
+  kpiValue: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+
+  // ─── Averages ────────────────────────────────────────────
+  avgRow: { flexDirection: 'row', gap: spacing.sm },
+  avgCard: {
+    flex: 1,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.md + 2,
+    alignItems: 'center',
+  },
+  avgLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+    marginBottom: spacing.xxs,
+  },
+  avgValue: {
+    fontSize: typography.headingLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  avgRange: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+    marginTop: spacing.xxs,
+  },
+
+  // ─── Timeline ────────────────────────────────────────────
+  timelineCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    minHeight: 50,
+  },
+  timelineLeft: {
+    width: 20,
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 10, height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: colors.borderDefault,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  timelineContent: {
+    flex: 1,
+    paddingLeft: spacing.sm,
+    paddingBottom: spacing.md,
+    gap: 2,
+  },
+  timelineTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  timelineDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+  timelineValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  timelineValue: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  timelineCount: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
+  },
+  alertTag: {
+    backgroundColor: colors.dangerLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+  },
+  alertTagText: { fontSize: 10, fontWeight: '600', color: colors.danger },
 });

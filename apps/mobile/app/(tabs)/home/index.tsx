@@ -588,7 +588,18 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <View style={styles.scoreInfo}>
-                    <Text style={styles.scoreName}>{activeRecipient?.name ?? ''} 的健康狀態</Text>
+                    <TouchableOpacity
+                      style={styles.scoreNameRow}
+                      onPress={() => activeId && router.push(`/(tabs)/home/${activeId}`)}
+                      activeOpacity={0.6}
+                      disabled={!activeId}
+                      accessibilityLabel={`查看 ${activeRecipient?.name ?? ''} 的詳細資料`}
+                    >
+                      <Text style={styles.scoreName}>{activeRecipient?.name ?? ''} 的健康狀態</Text>
+                      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                        <Path d="M9 6l6 6-6 6" stroke={colors.textTertiary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </TouchableOpacity>
                     <View style={[styles.statusChip, { backgroundColor: ringColor + '22' }]}>
                       <View style={[styles.statusDot, { backgroundColor: ringColor }]} />
                       <Text style={[styles.statusText, { color: ringColor }]}>{HEALTH_LEVEL_LABELS[healthResult.level]}</Text>
@@ -654,7 +665,7 @@ export default function HomeScreen() {
               <View style={styles.sectionTitleRow}>
                 <Text style={styles.sectionTitle}>下一個行程</Text>
                 {recipients.length === 1 && recipients[0] && (
-                  <TouchableOpacity onPress={() => router.push(`/(tabs)/home/${recipients[0]!.id}/appointments`)}>
+                  <TouchableOpacity onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${recipients[0]!.id}`)}>
                     <Text style={styles.sectionLink}>查看全部 →</Text>
                   </TouchableOpacity>
                 )}
@@ -671,7 +682,7 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     key={appt.id}
                     style={styles.apptCard}
-                    onPress={() => router.push(`/(tabs)/home/${activeId}/appointments`)}
+                    onPress={() => router.push(`/(tabs)/home/appointments?recipientId=${activeId}`)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.apptDate}>
@@ -793,37 +804,99 @@ export default function HomeScreen() {
       </TouchableOpacity>
 
       {/* ── Menu Modal ───────────────────────── */}
-      <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+      <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
-          <Pressable style={styles.sheet} onPress={() => {/* block */}}>
-            <Text style={styles.sheetTitle}>選單</Text>
+          <Pressable style={styles.menuSheet} onPress={() => {/* block */}}>
+            {/* Drag handle */}
+            <View style={styles.dragHandle} />
+
+            {/* Profile header */}
+            <View style={styles.menuProfileRow}>
+              <View style={styles.menuAvatar}>
+                <Text style={styles.menuAvatarText}>{firstName}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuName}>{user?.name ?? ''}</Text>
+                <Text style={styles.menuEmail}>{user?.email ?? ''}</Text>
+              </View>
+            </View>
+
+            {/* Group: 我的 */}
+            <Text style={styles.menuGroupLabel}>我的</Text>
             {[
-              { label: '個人資料管理', onPress: () => router.push('/(tabs)/home/profile') },
-              { label: '服務需求紀錄', onPress: () => router.push('/(tabs)/services') },
-              { label: '通知', onPress: () => router.push('/(tabs)/home/notifications') },
-              { label: '新增被照護者', onPress: () => router.push('/(tabs)/home/add-recipient') },
-              { label: '提醒設定', onPress: () => {
-                const rid = activeRecipient?.id;
-                if (rid) router.push(`/(tabs)/home/${rid}`);
-                else Alert.alert('提示', '請先新增被照護者');
-              }},
+              { label: '個人資料', icon: 'user', onPress: () => router.push('/(tabs)/home/profile') },
+              { label: '通知中心', icon: 'bell', onPress: () => router.push('/(tabs)/home/notifications') },
             ].map((item) => (
               <TouchableOpacity
                 key={item.label}
-                style={styles.sheetItem}
+                style={styles.menuItem}
                 onPress={() => { setMenuVisible(false); item.onPress(); }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.sheetItemText}>{item.label}</Text>
+                <View style={styles.menuItemIconWrap}>
+                  {item.icon === 'user' && (
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Circle cx="12" cy="8" r="4" stroke={colors.primary} strokeWidth={1.8} />
+                      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+                    </Svg>
+                  )}
+                  {item.icon === 'bell' && (
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+                      <Path d="M13.7 21a2 2 0 01-3.4 0" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+                    </Svg>
+                  )}
+                </View>
+                <Text style={styles.menuItemText}>{item.label}</Text>
+                <Text style={styles.menuItemArrow}>›</Text>
               </TouchableOpacity>
             ))}
-            <View style={styles.sheetDivider} />
+
+            {/* Group: 照護管理 */}
+            <Text style={styles.menuGroupLabel}>照護管理</Text>
+            {[
+              { label: '新增被照護者', icon: 'add', onPress: () => router.push('/(tabs)/home/add-recipient') },
+              { label: '服務需求紀錄', icon: 'list', onPress: () => router.push('/(tabs)/services') },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                style={styles.menuItem}
+                onPress={() => { setMenuVisible(false); item.onPress(); }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuItemIconWrap}>
+                  {item.icon === 'add' && (
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Circle cx="12" cy="8" r="4" stroke={colors.accent} strokeWidth={1.8} />
+                      <Path d="M4 21c0-4 4-7 8-7" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" />
+                      <Path d="M17 14v6M14 17h6" stroke={colors.accent} strokeWidth={2} strokeLinecap="round" />
+                    </Svg>
+                  )}
+                  {item.icon === 'list' && (
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Rect x="4" y="4" width="16" height="16" rx="2" stroke={colors.accent} strokeWidth={1.8} />
+                      <Path d="M8 9h8M8 13h8M8 17h5" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" />
+                    </Svg>
+                  )}
+                </View>
+                <Text style={styles.menuItemText}>{item.label}</Text>
+                <Text style={styles.menuItemArrow}>›</Text>
+              </TouchableOpacity>
+            ))}
+
+            {/* Logout — separate, danger */}
+            <View style={styles.menuDivider} />
             <TouchableOpacity
-              style={styles.sheetItem}
+              style={styles.menuItem}
               onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }}
               activeOpacity={0.7}
             >
-              <Text style={styles.sheetItemDanger}>登出</Text>
+              <View style={[styles.menuItemIconWrap, { backgroundColor: colors.dangerLight }]}>
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke={colors.danger} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <Text style={[styles.menuItemText, { color: colors.danger }]}>登出</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -833,7 +906,7 @@ export default function HomeScreen() {
       <Modal visible={aiSheetVisible} transparent animationType="slide" onRequestClose={() => setAiSheetVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setAiSheetVisible(false)}>
           <Pressable style={styles.aiSheet} onPress={() => {/* block */}}>
-            <Text style={styles.sheetTitle}>AI 安心報</Text>
+            <Text style={styles.aiSheetTitle}>AI 安心報</Text>
             {recipients.map((r) => {
               const rpt = latestReports[r.id];
               if (!rpt) return null;
@@ -914,9 +987,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.borderDefault,
     borderRadius: radius.full,
   },
-  switcherChipActive: { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary },
+  switcherChipActive: { backgroundColor: colors.primaryLight, borderWidth: 1.5, borderColor: colors.primary },
   switcherText: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, fontWeight: '500' },
-  switcherTextActive: { color: colors.white, fontWeight: '600' },
+  switcherTextActive: { color: colors.primaryText, fontWeight: '700' },
 
   // ─── Container ─────────────────────────────────────────────
   bento: { paddingHorizontal: spacing.lg, gap: spacing.lg, marginTop: spacing.md },
@@ -983,6 +1056,7 @@ const styles = StyleSheet.create({
   ringScore: { fontSize: 30, fontWeight: '700', lineHeight: 36 },
   ringLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, fontWeight: '500', marginTop: -4 },
   scoreInfo: { flex: 1, gap: spacing.xs },
+  scoreNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   scoreName: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textSecondary },
   statusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -1183,18 +1257,75 @@ const styles = StyleSheet.create({
   fabText: { color: colors.primaryText, fontSize: typography.bodySm.fontSize, fontWeight: '600' },
 
   // ─── Modals (shared) ────────────────────────────────────────
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.bgSurface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
-    paddingVertical: spacing.xl, paddingHorizontal: spacing.xl, paddingBottom: spacing['3xl'] + spacing.lg,
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+
+  // Menu Sheet (redesigned)
+  menuSheet: {
+    backgroundColor: colors.bgSurface,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingTop: spacing.sm, paddingHorizontal: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.lg,
   },
-  sheetTitle: { fontSize: typography.headingSm.fontSize, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.lg },
-  sheetItem: { paddingVertical: spacing.md },
-  sheetItemText: { fontSize: typography.bodyLg.fontSize, color: colors.textPrimary },
-  sheetItemDanger: { fontSize: typography.bodyLg.fontSize, color: colors.danger },
-  sheetDivider: { height: 1, backgroundColor: colors.borderDefault, marginVertical: spacing.sm },
+  dragHandle: {
+    alignSelf: 'center',
+    width: 40, height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginBottom: spacing.lg,
+  },
+  menuProfileRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1, borderBottomColor: colors.borderDefault,
+    marginBottom: spacing.sm,
+  },
+  menuAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1.5, borderColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuAvatarText: { fontSize: 20, fontWeight: '700', color: colors.primaryText },
+  menuName: { fontSize: typography.bodyLg.fontSize, fontWeight: '700', color: colors.textPrimary },
+  menuEmail: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: 2 },
+  menuGroupLabel: {
+    fontSize: 11, fontWeight: '700',
+    color: colors.textTertiary, letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginTop: spacing.md, marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  menuItemIconWrap: {
+    width: 36, height: 36, borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuItemText: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  menuItemArrow: {
+    fontSize: 22,
+    color: colors.borderStrong,
+    fontWeight: '300',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: colors.borderDefault,
+    marginVertical: spacing.md,
+    marginHorizontal: spacing.sm,
+  },
 
   // ─── AI Sheet ───────────────────────────────────────────────
+  aiSheetTitle: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
   aiSheet: {
     backgroundColor: colors.bgSurface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
     paddingVertical: spacing.xl, paddingHorizontal: spacing.xl, paddingBottom: spacing['3xl'] + spacing.lg,
