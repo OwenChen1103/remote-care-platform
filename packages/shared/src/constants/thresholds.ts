@@ -62,8 +62,10 @@ export const API_LIMITS = {
 
 // AI limits
 export const AI_LIMITS = {
-  REPORT_PER_HOUR: 3,
-  CHAT_PER_HOUR: 10,
+  REPORT_PER_HOUR: 3,   // legacy — kept for backward compatibility
+  CHAT_PER_HOUR: 10,    // legacy — kept for backward compatibility
+  REPORT_PER_DAY: 5,    // MVP: unified daily limit
+  CHAT_PER_DAY: 5,      // MVP: unified daily limit
   MAX_PROMPT_TOKENS: 4000,
   TIMEOUT_MS: 15000,
   MAX_RETRIES: 1,

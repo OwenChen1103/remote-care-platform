@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>首頁重設計 — 預覽</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: #E5E8EC;
+    padding: 40px 20px;
+    color: #1A2B3A;
+  }
+  .frame-row { display: flex; gap: 40px; justify-content: center; flex-wrap: wrap; }
+  .label { text-align: center; margin-bottom: 16px; font-size: 14px; color: #4A6580; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+
+  /* iPhone frame */
+  .phone {
+    width: 380px;
+    height: 820px;
+    border-radius: 50px;
+    background: #1A2B3A;
+    padding: 14px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.2);
+  }
+  .screen {
+    width: 100%; height: 100%;
+    border-radius: 38px;
+    background: #F8FAFC;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 28px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1A2B3A;
+  }
+
+  /* Header */
+  .header {
+    padding: 12px 24px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 40px; height: 40px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #2E8DC9, #5DA945);
+    color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+  }
+  .greeting-name { font-size: 15px; font-weight: 600; color: #1A2B3A; }
+  .greeting-sub { font-size: 12px; color: #8FA3B8; margin-top: 1px; }
+  .header-right { display: flex; gap: 8px; }
+  .icon-btn {
+    width: 38px; height: 38px;
+    border-radius: 19px;
+    background: white;
+    border: 1px solid #E1E8EF;
+    display: flex; align-items: center; justify-content: center;
+    color: #4A6580;
+    font-size: 16px;
+    position: relative;
+  }
+  .badge-dot {
+    position: absolute; top: 8px; right: 8px;
+    width: 8px; height: 8px;
+    border-radius: 4px;
+    background: #D9534F;
+    border: 2px solid white;
+  }
+
+  /* Recipient switcher */
+  .switcher {
+    display: flex; gap: 8px;
+    padding: 8px 24px 0;
+    overflow-x: auto;
+  }
+  .chip {
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: white;
+    border: 1px solid #E1E8EF;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4A6580;
+    white-space: nowrap;
+  }
+  .chip.active {
+    background: #1A2B3A;
+    color: white;
+    border-color: #1A2B3A;
+  }
+
+  /* HERO — combined brand + score */
+  .hero {
+    margin: 16px 24px 0;
+    background: white;
+    border-radius: 28px;
+    padding: 28px 24px 24px;
+    border: 1px solid #E1E8EF;
+  }
+  .hero-tagline {
+    font-size: 12px; font-weight: 600; letter-spacing: 4px;
+    color: #2E8DC9; text-align: center; margin-bottom: 4px;
+  }
+  .hero-title {
+    font-size: 18px; font-weight: 700; color: #1A2B3A;
+    text-align: center; line-height: 1.5; margin-bottom: 24px;
+  }
+
+  /* Score area inside hero */
+  .score-row {
+    display: flex; align-items: center; gap: 20px;
+    margin-bottom: 20px;
+  }
+  .score-ring-wrap { position: relative; width: 110px; height: 110px; flex-shrink: 0; }
+  .score-ring {
+    width: 110px; height: 110px;
+    border-radius: 55px;
+    background: conic-gradient(#5DA945 0% 78%, #EDF7E8 78% 100%);
+    position: relative;
+  }
+  .score-ring::before {
+    content: ""; position: absolute; inset: 8px;
+    background: white; border-radius: 50%;
+  }
+  .score-text {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .score-num { font-size: 32px; font-weight: 700; color: #3F7F2E; line-height: 1; }
+  .score-unit { font-size: 11px; color: #8FA3B8; margin-top: 2px; }
+  .score-info { flex: 1; }
+  .score-name { font-size: 14px; font-weight: 600; color: #4A6580; margin-bottom: 4px; }
+  .score-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #EDF7E8;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 6px;
+  }
+  .score-status-dot { width: 6px; height: 6px; border-radius: 3px; background: #5DA945; }
+  .score-status-text { font-size: 11px; font-weight: 600; color: #3F7F2E; }
+  .score-meta { font-size: 11px; color: #8FA3B8; }
+
+  /* CTA buttons */
+  .cta-row { display: flex; gap: 8px; }
+  .cta-primary {
+    flex: 1;
+    padding: 14px 0;
+    background: #1A2B3A;
+    color: white;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 1px;
+  }
+  .cta-secondary {
+    flex: 1;
+    padding: 14px 0;
+    background: white;
+    color: #1A2B3A;
+    border: 1px solid #E1E8EF;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  /* Section */
+  .section { padding: 24px 24px 0; }
+  .section-title {
+    font-size: 14px; font-weight: 700; color: #1A2B3A;
+    margin-bottom: 12px; display: flex;
+    justify-content: space-between; align-items: baseline;
+  }
+  .section-link { font-size: 12px; color: #2E8DC9; font-weight: 500; }
+
+  /* Appointment card */
+  .appt-card {
+    background: white;
+    border-radius: 20px;
+    border: 1px solid #E1E8EF;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .appt-date {
+    width: 56px; flex-shrink: 0;
+    text-align: center;
+    border-right: 1px solid #E1E8EF;
+    padding-right: 14px;
+  }
+  .appt-day { font-size: 20px; font-weight: 700; color: #1B6DA0; line-height: 1; }
+  .appt-month { font-size: 11px; color: #8FA3B8; margin-top: 2px; }
+  .appt-info { flex: 1; }
+  .appt-title { font-size: 14px; font-weight: 600; color: #1A2B3A; }
+  .appt-meta { font-size: 12px; color: #8FA3B8; margin-top: 2px; }
+  .appt-arrow { color: #C7D2DD; }
+
+  /* Service grid 2x2 */
+  .svc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .svc-card {
+    background: white;
+    border: 1px solid #E1E8EF;
+    border-radius: 20px;
+    padding: 18px 16px;
+  }
+  .svc-icon {
+    width: 36px; height: 36px;
+    border-radius: 12px;
+    background: #E5F2FB;
+    display: flex; align-items: center; justify-content: center;
+    color: #2E8DC9;
+    margin-bottom: 12px;
+  }
+  .svc-card.green .svc-icon { background: #EDF7E8; color: #5DA945; }
+  .svc-name { font-size: 14px; font-weight: 700; color: #1A2B3A; }
+  .svc-desc { font-size: 11px; color: #8FA3B8; margin-top: 4px; line-height: 1.4; }
+
+  /* Trust section — 3 icons row */
+  .trust-row {
+    display: flex;
+    background: white;
+    border: 1px solid #E1E8EF;
+    border-radius: 20px;
+    padding: 16px 12px;
+  }
+  .trust-item {
+    flex: 1;
+    text-align: center;
+  }
+  .trust-item-icon {
+    width: 32px; height: 32px;
+    margin: 0 auto 6px;
+    border-radius: 16px;
+    background: #EDF7E8;
+    color: #5DA945;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .trust-item-title { font-size: 12px; font-weight: 700; color: #1A2B3A; margin-bottom: 2px; }
+  .trust-item-sub { font-size: 10px; color: #8FA3B8; line-height: 1.4; padding: 0 4px; }
+  .trust-divider { width: 1px; background: #E1E8EF; margin: 0 4px; }
+
+  /* AI quick row */
+  .ai-section {
+    background: linear-gradient(135deg, #E5F2FB 0%, #EDF7E8 100%);
+    border-radius: 20px;
+    padding: 18px;
+  }
+  .ai-title {
+    font-size: 13px; font-weight: 700; color: #1A2B3A;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai-chips {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .ai-chip {
+    background: white;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 12px; font-weight: 500;
+    color: #1B6DA0;
+    border: 1px solid rgba(46,141,201,0.2);
+  }
+
+  /* Content placeholder */
+  .ad-placeholder {
+    background: white;
+    border: 1px dashed #C7D2DD;
+    border-radius: 20px;
+    padding: 32px 16px;
+    text-align: center;
+    color: #B5C2CF;
+    font-size: 11px;
+  }
+
+  /* FAB */
+  .fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #1A2B3A;
+    color: white;
+    padding: 14px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 10px 24px rgba(26,43,58,0.3);
+  }
+
+  /* Bottom tab nav */
+  .tabs {
+    display: flex;
+    background: white;
+    border-top: 1px solid #E1E8EF;
+    padding: 8px 0 16px;
+    margin-top: 24px;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    color: #8FA3B8;
+    font-size: 11px;
+  }
+  .tab.active { color: #2E8DC9; font-weight: 600; }
+  .tab-icon {
+    font-size: 18px;
+    display: block;
+    margin-bottom: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="frame-row">
+
+  <!-- ========== NEW HOME PAGE ========== -->
+  <div>
+    <div class="label">新版首頁（重設計）</div>
+    <div class="phone">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>·•|||</span>
+        </div>
+
+        <div class="header">
+          <div class="header-left">
+            <div class="avatar">王</div>
+            <div>
+              <div class="greeting-name">王小明</div>
+              <div class="greeting-sub">早安</div>
+            </div>
+          </div>
+          <div class="header-right">
+            <div class="icon-btn">🔔<div class="badge-dot"></div></div>
+            <div class="icon-btn">☰</div>
+          </div>
+        </div>
+
+        <div class="switcher">
+          <div class="chip active">李伯伯</div>
+          <div class="chip">王奶奶</div>
+          <div class="chip">張爺爺</div>
+        </div>
+
+        <!-- 區塊 1 + 區塊 2 合併 hero -->
+        <div class="hero">
+          <div class="hero-tagline">WE DO.</div>
+          <div class="hero-title">關心家人的健康，<br>我們隨時都在</div>
+
+          <div class="score-row">
+            <div class="score-ring-wrap">
+              <div class="score-ring"></div>
+              <div class="score-text">
+                <div class="score-num">78</div>
+                <div class="score-unit">分</div>
+              </div>
+            </div>
+            <div class="score-info">
+              <div class="score-name">李伯伯 的健康狀態</div>
+              <div class="score-status">
+                <div class="score-status-dot"></div>
+                <div class="score-status-text">良好</div>
+              </div>
+              <div class="score-meta">最近更新：4/18 陪診</div>
+            </div>
+          </div>
+
+          <div class="cta-row">
+            <div class="cta-primary">開始安排照顧</div>
+            <div class="cta-secondary">查看完整報告</div>
+          </div>
+        </div>
+
+        <!-- 區塊 3: 下一個行程 -->
+        <div class="section">
+          <div class="section-title">下一個行程<span class="section-link">查看全部 →</span></div>
+          <div class="appt-card">
+            <div class="appt-date">
+              <div class="appt-day">25</div>
+              <div class="appt-month">4月 (二)</div>
+            </div>
+            <div class="appt-info">
+              <div class="appt-title">陪診服務｜李伯伯</div>
+              <div class="appt-meta">10:00 · 台大醫院 心臟內科</div>
+            </div>
+            <div class="appt-arrow">›</div>
+          </div>
+        </div>
+
+        <!-- 區塊 4: 服務 2x2 -->
+        <div class="section">
+          <div class="section-title">為您安排服務</div>
+          <div class="svc-grid">
+            <div class="svc-card">
+              <div class="svc-icon">⊕</div>
+              <div class="svc-name">陪診服務</div>
+              <div class="svc-desc">讓醫生的話更容易懂</div>
+            </div>
+            <div class="svc-card green">
+              <div class="svc-icon">♡</div>
+              <div class="svc-name">基礎檢測</div>
+              <div class="svc-desc">日常掌握身體狀況</div>
+            </div>
+            <div class="svc-card green">
+              <div class="svc-icon">▲</div>
+              <div class="svc-name">運動養生</div>
+              <div class="svc-desc">在家也能保持活力</div>
+            </div>
+            <div class="svc-card">
+              <div class="svc-icon">⌂</div>
+              <div class="svc-name">居家打掃</div>
+              <div class="svc-desc">乾淨的環境更安心</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 區塊 5: 安心機制 -->
+        <div class="section">
+          <div class="trust-row">
+            <div class="trust-item">
+              <div class="trust-item-icon">✓</div>
+              <div class="trust-item-title">即時紀錄</div>
+              <div class="trust-item-sub">完整服務記錄</div>
+            </div>
+            <div class="trust-divider"></div>
+            <div class="trust-item">
+              <div class="trust-item-icon">✓</div>
+              <div class="trust-item-title">AI 摘要</div>
+              <div class="trust-item-sub">整理醫囑重點</div>
+            </div>
+            <div class="trust-divider"></div>
+            <div class="trust-item">
+              <div class="trust-item-icon">✓</div>
+              <div class="trust-item-title">嚴選人員</div>
+              <div class="trust-item-sub">證照審核把關</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 區塊 6: AI -->
+        <div class="section">
+          <div class="ai-section">
+            <div class="ai-title">需要幫忙嗎？</div>
+            <div class="ai-chips">
+              <div class="ai-chip">常見問題</div>
+              <div class="ai-chip">幫我安排服務</div>
+              <div class="ai-chip">了解流程</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 圖文預留 -->
+        <div class="section">
+          <div class="ad-placeholder">圖文 / 推薦影片區</div>
+        </div>
+
+        <!-- Tab nav -->
+        <div class="tabs">
+          <div class="tab active"><span class="tab-icon">⌂</span>首頁</div>
+          <div class="tab"><span class="tab-icon">♡</span>健康</div>
+          <div class="tab"><span class="tab-icon">◎</span>AI</div>
+          <div class="tab"><span class="tab-icon">≡</span>服務</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

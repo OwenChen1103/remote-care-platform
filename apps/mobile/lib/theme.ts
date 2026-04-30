@@ -4,8 +4,9 @@
  * All UI styling in the mobile app should reference these tokens.
  * Do not use raw hex values or magic numbers in page/component files.
  *
- * Design direction: "Warm & Caring" — soft purple + rose accents
- * Target emotion: like a trusted family member, not a clinical tool
+ * Design direction: "Healthy & Trustworthy" — sky blue + nature green
+ * Derived from WhoCares brand logo (hand cradling a leaf)
+ * Target emotion: trusted health professional, fresh and reassuring
  */
 
 // ---------------------------------------------------------------------------
@@ -14,49 +15,54 @@
 
 export const colors = {
   // Backgrounds
-  bgScreen: '#FAF9FC',        // very faint warm lavender (not cold gray)
+  bgScreen: '#F8FAFC',        // very faint blue-gray
   bgSurface: '#FFFFFF',
-  bgSurfaceAlt: '#F4F2F7',    // warm purple-tinted gray
+  bgSurfaceAlt: '#EFF4F8',    // soft blue-tinted surface
 
   // Borders
-  borderDefault: '#E8E5EE',   // warm lavender border
-  borderStrong: '#D4D0DC',
+  borderDefault: '#E1E8EF',   // light blue-gray border
+  borderStrong: '#C7D2DD',
 
-  // Primary (warm purple family)
-  primary: '#6C63FF',          // warm purple — friendly, not corporate
-  primaryLight: '#EEEDFF',     // soft lavender tint
-  primaryText: '#5B52E0',      // readable purple for text-on-light
+  // Primary (sky blue — from logo's hand)
+  primary: '#2E8DC9',          // confident sky blue
+  primaryLight: '#E5F2FB',     // whisper blue background
+  primaryText: '#1B6DA0',      // deep blue for text-on-light
 
-  // Accent (rose family — warmth + care)
-  accent: '#FF8FA4',           // rose pink — used sparingly for warmth
-  accentLight: '#FFF0F3',      // whisper rose background
+  // Accent / Secondary (nature green — from logo's leaf)
+  accent: '#5DA945',           // fresh nature green
+  accentLight: '#EDF7E8',      // whisper green background
+
+  // Secondary alias for clarity (same as accent)
+  secondary: '#5DA945',
+  secondaryLight: '#EDF7E8',
+  secondaryText: '#3F7F2E',    // deep green for text
 
   // Text
-  textPrimary: '#1E1B2E',     // deep purple-black (warmer than pure black)
-  textSecondary: '#44405A',   // warm gray-purple
-  textTertiary: '#7A7594',    // muted lavender gray
-  textDisabled: '#ADA8C2',    // soft purple-gray
+  textPrimary: '#1A2B3A',     // deep blue-gray (almost black)
+  textSecondary: '#4A6580',   // medium blue-gray
+  textTertiary: '#8FA3B8',    // muted blue-gray
+  textDisabled: '#B5C2CF',    // soft blue-gray
 
-  // Semantic — Success (warm green family)
-  success: '#2D9F5D',         // slightly warmer green
-  successLight: '#E8F8EE',
+  // Semantic — Success (uses brand green)
+  success: '#5DA945',
+  successLight: '#EDF7E8',
 
-  // Semantic — Warning (warm amber family)
-  warning: '#D4930A',         // golden amber
-  warningLight: '#FFF7E0',
+  // Semantic — Warning (warm amber that pairs with blue/green)
+  warning: '#E8A23B',
+  warningLight: '#FEF3D9',
 
-  // Semantic — Danger (warm red, not alarming)
-  danger: '#E54D4D',          // soft warm red
-  dangerLight: '#FEE8E8',
+  // Semantic — Danger
+  danger: '#D9534F',
+  dangerLight: '#FDECEA',
 
-  // Semantic — Info
-  info: '#6C63FF',
-  infoLight: '#EEEDFF',
+  // Semantic — Info (same as primary)
+  info: '#2E8DC9',
+  infoLight: '#E5F2FB',
 
   // Status Tints — ultra-subtle background tints for status-aware card zones
-  statusTintStable: '#F2FAF5',
-  statusTintAttention: '#FFFBF0',
-  statusTintConsultDoctor: '#FEF5F5',
+  statusTintStable: '#F4FAF1',     // very faint green
+  statusTintAttention: '#FFF9EC',  // very faint amber
+  statusTintConsultDoctor: '#FDF3F2', // very faint red
 
   // Constant
   white: '#FFFFFF',
@@ -127,14 +133,14 @@ export const radius = {
 
 export const shadows = {
   low: {
-    shadowColor: '#6C63FF',    // tinted shadow — warmer than black
+    shadowColor: '#2E8DC9',    // tinted shadow — warmer than black
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 1,
   },
   high: {
-    shadowColor: '#6C63FF',
+    shadowColor: '#2E8DC9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 12,

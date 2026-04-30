@@ -4,12 +4,19 @@
     "slug": "wedocare-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/app-icon.png",
     "scheme": "wedocare",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "co.wedocare.app",
+      "icon": "./assets/images/app-icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -17,7 +24,8 @@
     "android": {
       "package": "co.wedocare.app",
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/app-icon-android.png",
+        "backgroundColor": "#FFFFFF"
       }
     },
     "plugins": [

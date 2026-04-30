@@ -17,6 +17,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Icons ────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ export default function ProviderTasksScreen() {
   const { user, logout } = useAuth();
   const [tasks, setTasks] = useState<ProviderTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -86,7 +88,7 @@ export default function ProviderTasksScreen() {
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
       else setError('載入失敗，請稍後再試');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setHasLoadedOnce(true); }
   }, []);
 
   const fetchUnread = useCallback(async () => {
@@ -165,8 +167,12 @@ export default function ProviderTasksScreen() {
 
   // ─── Main Render ────────────────────────────────────────────
 
+  if (!hasLoadedOnce) {
+    return <LoadingScreen />;
+  }
+
   return (
-    <LinearGradient colors={['#F0EEFF', '#FAF9FC', '#FAF9FC']} locations={[0, 0.35, 1]} style={s.container}>
+    <LinearGradient colors={['#E5F2FB', '#F8FAFC', '#F8FAFC']} locations={[0, 0.35, 1]} style={s.container}>
       <FlatList
         data={loading ? [] : activeTasks}
         keyExtractor={(item) => item.id}
@@ -278,7 +284,7 @@ export default function ProviderTasksScreen() {
               </TouchableOpacity>
             ))}
             <View style={s.sheetDivider} />
-            <TouchableOpacity style={s.sheetItem} onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)/login')); }} activeOpacity={0.7}>
+            <TouchableOpacity style={s.sheetItem} onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }} activeOpacity={0.7}>
               <Text style={s.sheetItemDanger}>登出</Text>
             </TouchableOpacity>
           </Pressable>

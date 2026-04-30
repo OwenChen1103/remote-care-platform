@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,7 +16,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useAuth, ApiError } from '@/lib/auth-context';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
-function HeartIcon() {
+function _HeartIconUnused() {
   return (
     <Svg width={40} height={40} viewBox="0 0 24 24" fill="none">
       <Path
@@ -65,7 +66,7 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient
-      colors={['#F0EEFF', '#FAF9FC']}
+      colors={['#E5F2FB', '#F8FAFC']}
       style={styles.gradient}
     >
       <KeyboardAvoidingView
@@ -73,16 +74,17 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.inner}>
-          {/* Logo area */}
+          {/* Logo icon */}
           <View style={styles.logoWrapper}>
-            <View style={styles.logoCircle}>
-              <HeartIcon />
-            </View>
+            <Image
+              source={require('@/assets/images/whocares-icon.png')}
+              style={styles.logoIcon}
+              resizeMode="contain"
+            />
           </View>
 
-          {/* Welcome text */}
-          <Text style={styles.title}>遠端照護平台</Text>
-          <Text style={styles.subtitle}>歡迎回來</Text>
+          {/* Title */}
+          <Text style={styles.title}>登入帳號</Text>
 
           {/* Form card */}
           <View style={styles.card}>
@@ -177,25 +179,20 @@ const styles = StyleSheet.create({
   // Logo
   logoWrapper: {
     alignItems: 'center',
-    marginBottom: spacing['3xl'],
+    marginBottom: spacing.xl,
   },
-  logoCircle: {
+  logoIcon: {
     width: 80,
     height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.high,
   },
 
-  // Welcome text
+  // Title
   title: {
-    fontSize: 32,
+    fontSize: typography.headingLg.fontSize,
     fontWeight: '700',
     textAlign: 'center',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing['2xl'],
   },
   subtitle: {
     fontSize: 16,

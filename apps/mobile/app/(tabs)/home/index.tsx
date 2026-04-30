@@ -25,6 +25,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { api, ApiError } from '@/lib/api-client';
@@ -32,6 +34,7 @@ import { useAuth } from '@/lib/auth-context';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { calculateHealthScore, HEALTH_LEVEL_LABELS } from '@remote-care/shared';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -96,6 +99,11 @@ function extractExcerpt(summary: string, maxLen = 25): string {
   return summary;
 }
 
+function formatReportDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 const STATUS_DOT: Record<string, string> = {
   stable: colors.success,
   attention: colors.warning,
@@ -107,6 +115,14 @@ const SCORE_COLORS: Record<string, string> = {
   good: colors.primary,
   fair: colors.warning,
   poor: colors.danger,
+};
+
+// ─── Service category descriptions (for 2×2 cards) ───────────
+const SERVICE_DESCRIPTIONS: Record<string, string> = {
+  escort_visit: '讓醫生的話更容易懂',
+  functional_assessment: '定期掌握身體狀況',
+  exercise_program: '專業陪伴安心運動',
+  home_cleaning: '乾淨居家安心生活',
 };
 
 // ─── Accent colors for metric cards ──────────────────────────
@@ -213,6 +229,7 @@ export default function HomeScreen() {
   // ── Data state ──
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [latestReports, setLatestReports] = useState<Record<string, LatestReport>>({});
@@ -295,17 +312,16 @@ export default function HomeScreen() {
 
   // ── Data fetching ──
   const fetchRecipients = useCallback(async () => {
-    setLoading(true);
     setError('');
     try {
       const result = await api.get<Recipient[]>('/recipients');
       setRecipients(result);
       // Auto-select first recipient only on initial load
       setSelectedRecipientId((prev) => prev ?? result[0]?.id ?? null);
+      return result;
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '載入失敗，請稍後再試');
-    } finally {
-      setLoading(false);
+      return [];
     }
   }, []);
 
@@ -362,19 +378,26 @@ export default function HomeScreen() {
     } catch { /* non-critical */ }
   }, []);
 
-  // Re-fetch all data every time the tab gains focus (e.g. returning from add-measurement)
+  // Initial load: fetch recipients first, then per-recipient data, then mark ready
   useFocusEffect(
     useCallback(() => {
-      void fetchRecipients();
-      void fetchUnreadCount();
-      void fetchCategories();
-    }, [fetchRecipients, fetchUnreadCount, fetchCategories]),
+      let cancelled = false;
+      (async () => {
+        if (!hasLoadedOnce) setLoading(true);
+        const recipientList = await fetchRecipients();
+        if (cancelled) return;
+        await Promise.all([
+          fetchUnreadCount(),
+          fetchCategories(),
+          recipientList.length > 0 ? fetchAllData(recipientList) : Promise.resolve(),
+        ]);
+        if (cancelled) return;
+        setLoading(false);
+        setHasLoadedOnce(true);
+      })();
+      return () => { cancelled = true; };
+    }, [fetchRecipients, fetchUnreadCount, fetchCategories, fetchAllData, hasLoadedOnce]),
   );
-
-  // When recipients list changes, fetch per-recipient data
-  useEffect(() => {
-    if (recipients.length > 0) void fetchAllData(recipients);
-  }, [recipients, fetchAllData]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshingAll(true);
@@ -421,16 +444,11 @@ export default function HomeScreen() {
   // ─── Loading / Error ──────────────────────────────────────────
 
   if (user?.role && user.role !== 'caregiver') {
-    return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
+    return <LoadingScreen hideMessage />;
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
+  if (!hasLoadedOnce) {
+    return <LoadingScreen />;
   }
 
   if (error) {
@@ -439,7 +457,7 @@ export default function HomeScreen() {
         <ErrorState message={error} onRetry={() => void fetchRecipients()} />
         <TouchableOpacity
           style={styles.logoutBtn}
-          onPress={() => { void logout().then(() => router.replace('/(auth)/login')); }}
+          onPress={() => { void logout().then(() => router.replace('/(auth)')); }}
         >
           <Text style={styles.logoutBtnText}>登出</Text>
         </TouchableOpacity>
@@ -497,9 +515,14 @@ export default function HomeScreen() {
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{firstName}</Text>
             </View>
-            <View>
-              <Text style={styles.greeting}>你好，{user?.name ?? ''}！</Text>
-              <Text style={styles.greetingSub}>今天也要好好照顧家人</Text>
+            <View style={styles.greetingTextWrap}>
+              <Text style={styles.greetingSub}>{(() => {
+                const h = new Date().getHours();
+                if (h < 12) return '早安';
+                if (h < 18) return '午安';
+                return '晚安';
+              })()}</Text>
+              <Text style={styles.greeting}>{user?.name ?? ''}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
@@ -528,188 +551,237 @@ export default function HomeScreen() {
         )}
 
         {/* ═══════════════════════════════════════
-            BENTO PUZZLE LAYOUT — no section titles,
-            cards of varying sizes interlock like tiles
+            CLEAN HOME LAYOUT — unified card style
             ═══════════════════════════════════════ */}
         <View style={styles.bento}>
 
-          {/* ── Row 1: Hero Score (full width) ──── */}
-          <TouchableOpacity
-            style={[styles.heroCard, { backgroundColor: healthResult ? (healthResult.level === 'excellent' || healthResult.level === 'good' ? colors.primaryLight : healthResult.level === 'fair' ? colors.warningLight : colors.dangerLight) : colors.primaryLight }]}
-            onPress={() => setAiSheetVisible(true)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.heroTop}>
-              <View style={styles.ringContainer}>
-                <Svg width={ringSize} height={ringSize}>
-                  <Circle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={colors.borderDefault} strokeWidth={strokeW} fill="none" />
-                  <AnimatedCircle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={ringColor} strokeWidth={strokeW} fill="none" strokeDasharray={`${circ}`} strokeDashoffset={animatedDashOffset} strokeLinecap="round" transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
-                </Svg>
-                <View style={styles.ringCenter}>
-                  <Text style={[styles.ringScore, { color: ringColor }]}>{healthResult ? displayScore : '--'}</Text>
-                  <Text style={styles.ringLabel}>分</Text>
-                </View>
-              </View>
-              <View style={styles.heroInfo}>
-                <View style={styles.heroStatusRow}>
-                  <View style={[styles.heroDot, { backgroundColor: ringColor }]} />
-                  <Text style={styles.heroStatusText}>{healthResult ? HEALTH_LEVEL_LABELS[healthResult.level] : '尚無資料'}</Text>
-                </View>
-                <Text style={styles.heroSummary} numberOfLines={2}>
-                  {activeReport ? extractExcerpt(activeReport.summary, 40) : '生成安心報以查看健康摘要'}
-                </Text>
-                <View style={styles.heroActions}>
-                  <TouchableOpacity style={styles.heroBtn} onPress={() => router.push('/(tabs)/health/ai-report')} activeOpacity={0.7}>
-                    <Text style={styles.heroBtnText}>查看安心報</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.heroBtnOutline} onPress={() => void handleDownloadPdf()} activeOpacity={0.7}>
-                    <Text style={styles.heroBtnOutlineText}>PDF</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
+          {/* ─── Hero (區塊 1 + 區塊 2 合併) — 毛玻璃 + 漸層光暈 ─── */}
+          <View style={styles.heroCard}>
+            {/* Layer 1: subtle base gradient */}
+            <LinearGradient
+              colors={['#EDF6FB', '#F2F9F5', '#F1F8E9']}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {/* Layer 2: softer blurred halo orbs */}
+            <View style={styles.heroHaloTopRight} />
+            <View style={styles.heroHaloBottomLeft} />
+            <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-          {/* ── Row 2: BP (large) + BG (large) ── */}
-          <View style={styles.bentoRow}>
-            <TouchableOpacity
-              style={[styles.bentoLarge, { backgroundColor: METRIC_ACCENTS.bp.bg }]}
-              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_pressure`)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bentoLabel}>血壓</Text>
-              <Text style={[styles.bentoValueLg, { color: METRIC_ACCENTS.bp.bar }]}>
-                {activeBp?.systolic && activeBp?.diastolic ? `${Math.round(activeBp.systolic.avg)}/${Math.round(activeBp.diastolic.avg)}` : '--'}
-              </Text>
-              <Text style={styles.bentoUnit}>mmHg · 7日均值</Text>
-              <Text style={styles.bentoAction}>記錄 →</Text>
-            </TouchableOpacity>
+            <Text style={styles.heroTagline}>WE DO.</Text>
+            <Text style={styles.heroHeadline}>我們隨時都在</Text>
 
-            <TouchableOpacity
-              style={[styles.bentoLarge, { backgroundColor: METRIC_ACCENTS.bg.bg }]}
-              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_glucose`)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bentoLabel}>血糖</Text>
-              <Text style={[styles.bentoValueLg, { color: METRIC_ACCENTS.bg.bar }]}>
-                {activeBg?.glucose_value ? Math.round(activeBg.glucose_value.avg).toString() : '--'}
-              </Text>
-              <Text style={styles.bentoUnit}>mg/dL · 7日均值</Text>
-              <Text style={styles.bentoAction}>記錄 →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Row 3: Illustration card (2×1) + stats column (1×1 + 1×1) ── */}
-          <View style={styles.bentoRow}>
-            {/* Left: illustration placeholder — replace with real image later */}
-            <TouchableOpacity
-              style={styles.illustCard}
-              onPress={() => router.push(`/(tabs)/home/${activeId}`)}
-              activeOpacity={0.8}
-            >
-              {/* Abstract caring illustration — SVG shapes */}
-              <View style={styles.illustGraphic}>
-                <Svg width={100} height={70} viewBox="0 0 130 95">
-                  {/* House body */}
-                  <Rect x="30" y="42" width="60" height="45" rx="4" fill={colors.primary} opacity={0.12} />
-                  {/* Roof */}
-                  <Path d="M25 45 L60 18 L95 45Z" fill={colors.primary} opacity={0.18} />
-                  {/* Door */}
-                  <Rect x="52" y="62" width="16" height="25" rx="3" fill={colors.primary} opacity={0.15} />
-                  {/* Heart window */}
-                  <Path d="M48 52 C46 48 40 48 40 52 C40 55 48 60 48 60 C48 60 56 55 56 52 C56 48 50 48 48 52Z"
-                    fill={colors.accent} opacity={0.5} />
-                  {/* Right window */}
-                  <Rect x="66" y="48" width="12" height="10" rx="2" fill={colors.bgSurface} opacity={0.5} />
-                  {/* Chimney */}
-                  <Rect x="76" y="22" width="8" height="18" rx="2" fill={colors.primary} opacity={0.12} />
-                  {/* Smoke puffs */}
-                  <Circle cx="80" cy="18" r="3" fill={colors.textDisabled} opacity={0.2} />
-                  <Circle cx="84" cy="12" r="4" fill={colors.textDisabled} opacity={0.15} />
-                  <Circle cx="82" cy="5" r="3.5" fill={colors.textDisabled} opacity={0.1} />
-                  {/* Floating decorations */}
-                  <Circle cx="110" cy="30" r="6" fill={colors.accent} opacity={0.12} />
-                  <Circle cx="15" cy="55" r="5" fill={colors.primary} opacity={0.1} />
-                  {/* Sparkles */}
-                  <Path d="M108 55 L110 51 L112 55 L116 57 L112 59 L110 63 L108 59 L104 57Z" fill={colors.primary} opacity={0.15} />
-                  <Path d="M18 35 L19 32 L20 35 L23 36 L20 37 L19 40 L18 37 L15 36Z" fill={colors.accent} opacity={0.2} />
-                </Svg>
-              </View>
-              <Text style={styles.illustTitle}>{activeRecipient?.name ?? ''} 的照護摘要</Text>
-              <Text style={styles.illustSub}>查看詳細資料 →</Text>
-            </TouchableOpacity>
-
-            {/* Right: two stacked mini cards */}
-            <View style={styles.bentoStackCol}>
-              <TouchableOpacity
-                style={[styles.bentoMini, { backgroundColor: METRIC_ACCENTS.abnormal.bg }]}
-                onPress={() => router.push(`/(tabs)/health/trends?recipientId=${activeId}`)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.bentoMiniLabel}>異常</Text>
-                <Text style={[styles.bentoMiniValue, abnormalTotal > 0 && { color: colors.danger }]}>
-                  {abnormalTotal}
-                </Text>
-                <Text style={styles.bentoMiniUnit}>筆</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bentoMini, { backgroundColor: METRIC_ACCENTS.count.bg }]}
-                onPress={() => router.push(`/(tabs)/health?recipientId=${activeId}`)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.bentoMiniLabel}>量測</Text>
-                <Text style={styles.bentoMiniValue}>{measureTotal}</Text>
-                <Text style={styles.bentoMiniUnit}>筆</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── Row 4: Appointments (if any) ──── */}
-          {appointments.length > 0 && (
-            <View style={styles.apptCard}>
-              <Text style={styles.apptCardTitle}>近期行程</Text>
-              {appointments.map((appt) => {
-                const d = new Date(appt.appointment_date);
-                const dateStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
-                const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                return (
-                  <View key={appt.id} style={styles.apptRow}>
-                    <View style={styles.apptDateCol}>
-                      <Text style={styles.apptDate}>{dateStr}</Text>
-                      <Text style={styles.apptTime}>{timeStr}</Text>
-                    </View>
-                    <View style={styles.apptDivider} />
-                    <View style={styles.apptDetail}>
-                      <Text style={styles.apptTitle} numberOfLines={1}>{appt.title}</Text>
-                      <Text style={styles.apptMeta} numberOfLines={1}>
-                        {appt.recipientRelationship ? `${RELATIONSHIP_LABELS[appt.recipientRelationship] ?? ''} — ${maskName(appt.recipientName)}` : maskName(appt.recipientName)}
-                        {appt.hospital_name ? ` · ${appt.hospital_name}` : ''}
-                      </Text>
+            {healthResult ? (
+              <>
+                {/* Inner white card with score */}
+                <View style={styles.heroInner}>
+                  <View style={styles.ringContainer}>
+                    <Svg width={ringSize} height={ringSize}>
+                      <Circle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={colors.borderDefault} strokeWidth={strokeW} fill="none" />
+                      <AnimatedCircle cx={ringSize / 2} cy={ringSize / 2} r={ringR} stroke={ringColor} strokeWidth={strokeW} fill="none" strokeDasharray={`${circ}`} strokeDashoffset={animatedDashOffset} strokeLinecap="round" transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
+                    </Svg>
+                    <View style={styles.ringCenter}>
+                      <Text style={[styles.ringScore, { color: ringColor }]}>{displayScore}</Text>
+                      <Text style={styles.ringLabel}>分</Text>
                     </View>
                   </View>
+                  <View style={styles.scoreInfo}>
+                    <Text style={styles.scoreName}>{activeRecipient?.name ?? ''} 的健康狀態</Text>
+                    <View style={[styles.statusChip, { backgroundColor: ringColor + '22' }]}>
+                      <View style={[styles.statusDot, { backgroundColor: ringColor }]} />
+                      <Text style={[styles.statusText, { color: ringColor }]}>{HEALTH_LEVEL_LABELS[healthResult.level]}</Text>
+                    </View>
+                    {activeReport && (
+                      <Text style={styles.scoreMeta}>最近更新：{formatReportDate(activeReport.generated_at)}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* CTA buttons */}
+                <View style={styles.ctaRow}>
+                  <TouchableOpacity
+                    style={styles.ctaPrimaryWrap}
+                    onPress={() => router.push('/(tabs)/services/new-request')}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={[colors.primary, colors.accent]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.ctaPrimary}
+                    >
+                      <Text style={styles.ctaPrimaryText}>開始安排照顧</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.ctaSecondary}
+                    onPress={() => router.push('/(tabs)/health/ai-report')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.ctaSecondaryText}>查看完整報告</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                {/* 無資料版本 — 業主需求 */}
+                <View style={styles.heroInner}>
+                  <Text style={styles.emptyHeroText}>還沒有健康資料{'\n'}從第一個服務開始守護家人</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.ctaPrimaryFull}
+                  onPress={() => router.push('/(tabs)/services/new-request')}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={[colors.primary, colors.accent]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.ctaPrimary}
+                  >
+                    <Text style={styles.ctaPrimaryText}>開始安排第一個服務</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+          {/* ─── 區塊 3: 下一個行程 ─── */}
+          {appointments.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>下一個行程</Text>
+                {recipients.length === 1 && recipients[0] && (
+                  <TouchableOpacity onPress={() => router.push(`/(tabs)/home/${recipients[0]!.id}/appointments`)}>
+                    <Text style={styles.sectionLink}>查看全部 →</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {appointments.slice(0, 1).map((appt) => {
+                const d = new Date(appt.appointment_date);
+                const day = d.getDate();
+                const month = d.getMonth() + 1;
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                const weekday = weekdays[d.getDay()] ?? '';
+                const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                const relLabel = appt.recipientRelationship ? RELATIONSHIP_LABELS[appt.recipientRelationship] ?? '' : '';
+                return (
+                  <TouchableOpacity
+                    key={appt.id}
+                    style={styles.apptCard}
+                    onPress={() => router.push(`/(tabs)/home/${activeId}/appointments`)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.apptDate}>
+                      <Text style={styles.apptDay}>{day}</Text>
+                      <Text style={styles.apptMonth}>{month}月 ({weekday})</Text>
+                    </View>
+                    <View style={styles.apptDivider} />
+                    <View style={styles.apptInfo}>
+                      <Text style={styles.apptTitle} numberOfLines={1}>
+                        {appt.title}｜{relLabel}{relLabel ? ' ' : ''}{maskName(appt.recipientName)}
+                      </Text>
+                      <Text style={styles.apptMeta} numberOfLines={1}>
+                        {timeStr}{appt.hospital_name ? ` · ${appt.hospital_name}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.apptArrow}>›</Text>
+                  </TouchableOpacity>
                 );
               })}
             </View>
           )}
 
-          {/* ── Row 5: Service categories (2×4) ─ */}
+          {/* ─── 圖文 + 影音預留（業主要求 — 報導/電商/宣傳影片）─── */}
+          <View style={styles.mediaRow}>
+            <View style={[styles.mediaPlaceholder, { flex: 1 }]}>
+              <Text style={styles.mediaIcon}>▦</Text>
+              <Text style={styles.mediaText}>圖文位置</Text>
+              <Text style={styles.mediaHint}>報導 / 電商</Text>
+            </View>
+            <View style={[styles.mediaPlaceholder, { flex: 1 }]}>
+              <Text style={styles.mediaIcon}>▷</Text>
+              <Text style={styles.mediaText}>影音位置</Text>
+              <Text style={styles.mediaHint}>宣傳影片</Text>
+            </View>
+          </View>
+
+          {/* ─── 區塊 4: 服務 2×2 ─── */}
           {categories.length > 0 && (
-            <View style={styles.catSection}>
-              <Text style={styles.catSectionTitle}>服務項目</Text>
-              <View style={styles.catGrid}>
-                {categories.map((cat) => {
-                  const catColor = SERVICE_CATEGORY_COLORS[cat.code] ?? { icon: colors.primary, bg: colors.primaryLight };
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>為您安排服務</Text>
+              <View style={styles.svcGrid}>
+                {categories.slice(0, 4).map((cat, idx) => {
                   const IconComp = SERVICE_ICONS[cat.code];
+                  const desc = SERVICE_DESCRIPTIONS[cat.code] ?? '';
+                  // alternating: 0,3 = blue / 1,2 = green
+                  const isGreen = idx === 1 || idx === 2;
+                  const iconBg = isGreen ? colors.accentLight : colors.primaryLight;
+                  const iconColor = isGreen ? colors.accent : colors.primary;
                   return (
-                    <TouchableOpacity key={cat.id} style={[styles.catCard, { backgroundColor: catColor.bg }]} onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)} activeOpacity={0.7}>
-                      {IconComp && <View style={styles.catIconWrap}><IconComp size={22} color={catColor.icon} /></View>}
-                      <Text style={[styles.catName, { color: catColor.icon }]}>{cat.name}</Text>
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={styles.svcCard}
+                      onPress={() => router.push(`/(tabs)/services/new-request?categoryId=${cat.id}`)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.svcIconWrap, { backgroundColor: iconBg }]}>
+                        {IconComp && <IconComp size={20} color={iconColor} />}
+                      </View>
+                      <Text style={styles.svcName}>{cat.name}</Text>
+                      {desc ? <Text style={styles.svcDesc}>{desc}</Text> : null}
                     </TouchableOpacity>
                   );
                 })}
               </View>
             </View>
           )}
+
+          {/* ─── 區塊 5: 安心機制 ─── */}
+          <View style={styles.trustRow}>
+            {[
+              { title: '即時紀錄', desc: '完整服務記錄' },
+              { title: 'AI 摘要', desc: '整理醫囑重點' },
+              { title: '嚴選人員', desc: '證照審核把關' },
+            ].map((t, i) => (
+              <View key={t.title} style={styles.trustGroup}>
+                <View style={styles.trustItem}>
+                  <View style={styles.trustIconCircle}>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                      <Path d="M5 12l5 5L20 7" stroke={colors.accent} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                  <Text style={styles.trustTitle}>{t.title}</Text>
+                  <Text style={styles.trustDesc}>{t.desc}</Text>
+                </View>
+                {i < 2 && <View style={styles.trustDivider} />}
+              </View>
+            ))}
+          </View>
+
+          {/* ─── 區塊 6: AI 入口 ─── */}
+          <LinearGradient
+            colors={[colors.primaryLight, colors.accentLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiSection}
+          >
+            <Text style={styles.aiTitle}>需要幫忙嗎？</Text>
+            <View style={styles.aiChipsRow}>
+              <TouchableOpacity style={styles.aiChip} onPress={() => router.push('/(tabs)/ai')} activeOpacity={0.7}>
+                <Text style={styles.aiChipText}>常見問題</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.aiChip} onPress={() => router.push('/(tabs)/services/new-request')} activeOpacity={0.7}>
+                <Text style={styles.aiChipText}>幫我安排服務</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.aiChip} onPress={() => router.push('/(tabs)/services')} activeOpacity={0.7}>
+                <Text style={styles.aiChipText}>了解流程</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
         </View>
 
         <View style={{ height: 90 }} />
@@ -748,7 +820,7 @@ export default function HomeScreen() {
             <View style={styles.sheetDivider} />
             <TouchableOpacity
               style={styles.sheetItem}
-              onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)/login')); }}
+              onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }}
               activeOpacity={0.7}
             >
               <Text style={styles.sheetItemDanger}>登出</Text>
@@ -804,21 +876,25 @@ const styles = StyleSheet.create({
   // ─── Header ─────────────────────────────────────────────────
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.md },
   avatar: {
     width: 46, height: 46, borderRadius: 23,
-    backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center',
-    marginRight: spacing.md,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.primary,
   },
-  avatarText: { fontSize: 19, fontWeight: '700', color: colors.accent },
-  greeting: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary },
-  greetingSub: { fontSize: typography.caption.fontSize, color: colors.textDisabled, marginTop: 2 },
+  avatarText: { fontSize: 18, fontWeight: '700', color: colors.primaryText },
+  greetingTextWrap: { flex: 1, justifyContent: 'center' },
+  greetingSub: { fontSize: 11, color: colors.textTertiary, fontWeight: '500', marginBottom: 2, letterSpacing: 0.3 },
+  greeting: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, letterSpacing: 0.3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: colors.bgSurfaceAlt, alignItems: 'center', justifyContent: 'center',
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    alignItems: 'center', justifyContent: 'center',
   },
   iconBtnText: { fontSize: 18 },
   badge: {
@@ -833,127 +909,278 @@ const styles = StyleSheet.create({
   switcherScroll: { maxHeight: 48 },
   switcherContent: { paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xs },
   switcherChip: {
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.sm + 2,
-    borderRadius: radius.full, backgroundColor: colors.bgSurfaceAlt,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    borderRadius: radius.full,
   },
-  switcherChipActive: { backgroundColor: colors.primary },
-  switcherText: { fontSize: typography.bodyMd.fontSize, color: colors.textTertiary, fontWeight: '600' },
-  switcherTextActive: { color: colors.white, fontWeight: '700' },
+  switcherChipActive: { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary },
+  switcherText: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, fontWeight: '500' },
+  switcherTextActive: { color: colors.white, fontWeight: '600' },
 
-  // ─── Bento Container ───────────────────────────────────────
-  bento: { paddingHorizontal: spacing.lg, gap: 6, marginTop: spacing.xs },
+  // ─── Container ─────────────────────────────────────────────
+  bento: { paddingHorizontal: spacing.lg, gap: spacing.lg, marginTop: spacing.md },
 
-  // ─── Hero Card ─────────────────────────────────────────────
+  // ─── Hero Card (區塊 1 + 2) — 雙層 + 漸層 ──────────────
   heroCard: {
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    ...shadows.low,
+    borderRadius: 24,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  ringContainer: { position: 'relative', width: 88, height: 88 },
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -50, right: -50,
+    width: 180, height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(93,169,69,0.25)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -40, left: -40,
+    width: 160, height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(46,141,201,0.22)',
+  },
+  heroInner: {
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 18,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  heroTagline: {
+    fontSize: 10, fontWeight: '700',
+    color: colors.primary, letterSpacing: 3, textAlign: 'center',
+    marginBottom: 2,
+  },
+  heroHeadline: {
+    fontSize: 15, fontWeight: '600', color: colors.textPrimary,
+    textAlign: 'center', letterSpacing: 1, marginBottom: spacing.md,
+  },
+  scoreRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  ringContainer: { position: 'relative', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
   ringCenter: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center',
   },
-  ringScore: { fontSize: 30, fontWeight: '700' },
-  ringLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: -3, fontWeight: '500' },
-  heroInfo: { flex: 1 },
-  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
-  heroDot: { width: 8, height: 8, borderRadius: 4 },
-  heroStatusText: { fontSize: typography.headingSm.fontSize, fontWeight: '700', color: colors.textPrimary },
-  heroSummary: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.md },
-  heroActions: { flexDirection: 'row', gap: spacing.sm },
-  heroBtn: {
-    backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: radius.full,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+  ringScore: { fontSize: 30, fontWeight: '700', lineHeight: 36 },
+  ringLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, fontWeight: '500', marginTop: -4 },
+  scoreInfo: { flex: 1, gap: spacing.xs },
+  scoreName: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textSecondary },
+  statusChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md, paddingVertical: 4,
+    borderRadius: radius.full,
   },
-  heroBtnText: { fontSize: typography.bodySm.fontSize, fontWeight: '700', color: colors.primaryText },
-  heroBtnOutline: {
-    backgroundColor: 'rgba(255,255,255,0.45)', borderRadius: radius.full,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
-  },
-  heroBtnOutlineText: { fontSize: typography.bodySm.fontSize, fontWeight: '600', color: colors.textTertiary },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: typography.captionSm.fontSize, fontWeight: '700' },
+  scoreMeta: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: 2 },
 
-  // ─── Bento Row (side by side) ──────────────────────────────
-  bentoRow: { flexDirection: 'row', gap: spacing.sm },
-
-  // ─── Large metric cards (BP / BG) ──────────────────────────
-  bentoLarge: {
-    flex: 1, borderRadius: radius.xl, padding: spacing.md,
+  // ─── CTA buttons ───────────────────────────────────────────
+  ctaRow: { flexDirection: 'row', gap: spacing.sm },
+  ctaPrimaryWrap: {
+    flex: 1,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  bentoLabel: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, fontWeight: '600' },
-  bentoValueLg: { fontSize: 26, fontWeight: '700', marginTop: spacing.xs },
-  bentoUnit: { fontSize: 10, color: colors.textDisabled, marginTop: spacing.xxs },
-  bentoAction: { fontSize: 10, color: colors.textTertiary, fontWeight: '600', marginTop: spacing.sm },
-
-  // ─── Illustration card (2×1 wide) ─────────────────────────
-  illustCard: {
-    flex: 1.2, backgroundColor: colors.primaryLight, borderRadius: radius.xl,
-    padding: spacing.md, justifyContent: 'flex-end',
-    height: 150, overflow: 'hidden',
+  ctaPrimary: {
+    paddingVertical: spacing.md + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  illustGraphic: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.sm,
+  ctaPrimaryText: {
+    color: colors.white,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
-  illustTitle: { fontSize: typography.bodyMd.fontSize, fontWeight: '700', color: colors.textPrimary },
-  illustSub: { fontSize: typography.caption.fontSize, color: colors.primaryText, marginTop: spacing.xs, fontWeight: '600' },
+  ctaSecondary: {
+    flex: 1,
+    backgroundColor: colors.bgSurface,
+    paddingVertical: spacing.md + 2,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+  },
+  ctaSecondaryText: {
+    color: colors.textPrimary,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+  },
 
-  // ─── Stacked mini cards column ─────────────────────────────
-  bentoStackCol: { flex: 0.8, gap: 6 },
-  bentoMini: {
-    flex: 1, borderRadius: radius.lg, padding: spacing.sm,
+  // ─── Empty Hero ────────────────────────────────────────────
+  emptyHero: {
+    backgroundColor: colors.bgSurfaceAlt,
+    borderRadius: radius.xl,
+    paddingVertical: spacing['2xl'],
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  emptyHeroText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  ctaPrimaryFull: {
+    width: '100%',
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+
+  // ─── Media Placeholders ────────────────────────────────────
+  mediaRow: { flexDirection: 'row', gap: spacing.sm },
+  mediaPlaceholder: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault, borderStyle: 'dashed',
+    paddingVertical: spacing.xl,
     alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 120,
   },
-  bentoMiniLabel: { fontSize: 10, color: colors.textTertiary, fontWeight: '600' },
-  bentoMiniValue: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xxs },
-  bentoMiniUnit: { fontSize: 9, color: colors.textDisabled, marginTop: 1 },
+  mediaIcon: {
+    fontSize: 22, color: colors.borderStrong, fontWeight: '300',
+    marginBottom: spacing.xs,
+  },
+  mediaText: { fontSize: typography.bodySm.fontSize, color: colors.textSecondary, fontWeight: '600' },
+  mediaHint: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled },
 
-  // ─── Appointments card ─────────────────────────────────────
+  // ─── Section ───────────────────────────────────────────────
+  section: { gap: spacing.sm },
+  sectionTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  sectionTitle: {
+    fontSize: typography.headingSm.fontSize, fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  sectionLink: { fontSize: typography.captionSm.fontSize, color: colors.primary, fontWeight: '500' },
+
+  // ─── Appointment Card (區塊 3) ────────────────────────────
   apptCard: {
-    backgroundColor: colors.bgSurface, borderRadius: radius.xl,
-    padding: spacing.lg, ...shadows.low,
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
   },
-  apptCardTitle: {
-    fontSize: typography.headingSm.fontSize, fontWeight: '700',
-    color: colors.textPrimary, marginBottom: spacing.md,
-  },
-  apptRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: colors.borderDefault,
-  },
-  apptDateCol: { width: 50, alignItems: 'center' },
-  apptDate: { fontSize: typography.bodyMd.fontSize, fontWeight: '700', color: colors.primaryText },
-  apptTime: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, marginTop: 1 },
-  apptDivider: { width: 2, height: 28, backgroundColor: colors.primaryLight, marginHorizontal: spacing.md, borderRadius: 1 },
-  apptDetail: { flex: 1 },
+  apptDate: { width: 60, alignItems: 'center' },
+  apptDay: { fontSize: 22, fontWeight: '700', color: colors.primaryText, lineHeight: 24 },
+  apptMonth: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: 2 },
+  apptDivider: { width: 1, height: 36, backgroundColor: colors.borderDefault },
+  apptInfo: { flex: 1 },
   apptTitle: { fontSize: typography.bodyMd.fontSize, fontWeight: '600', color: colors.textPrimary },
-  apptMeta: { fontSize: typography.caption.fontSize, color: colors.textTertiary, marginTop: spacing.xxs },
+  apptMeta: { fontSize: typography.caption.fontSize, color: colors.textTertiary, marginTop: 2 },
+  apptArrow: { fontSize: 22, color: colors.borderStrong, fontWeight: '300' },
 
-  // ─── Service Categories ─────────────────────────────────────
-  catSection: { marginTop: spacing.sm },
-  catSectionTitle: {
-    fontSize: typography.headingSm.fontSize, fontWeight: '700',
+  // ─── Service Grid (區塊 4) ─────────────────────────────
+  svcGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  svcCard: {
+    width: '47%' as unknown as number, flexGrow: 1,
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+  },
+  svcIconWrap: {
+    width: 40, height: 40, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  svcName: { fontSize: typography.bodyMd.fontSize, fontWeight: '700', color: colors.textPrimary },
+  svcDesc: { fontSize: typography.captionSm.fontSize, color: colors.textTertiary, marginTop: 4, lineHeight: 16 },
+
+  // ─── Trust Row (區塊 5) ────────────────────────────────
+  trustRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing.lg, paddingHorizontal: spacing.sm,
+  },
+  trustGroup: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  trustItem: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  trustIconCircle: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 6,
+  },
+  trustTitle: { fontSize: typography.captionSm.fontSize, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  trustDesc: { fontSize: 10, color: colors.textTertiary, textAlign: 'center', lineHeight: 14 },
+  trustDivider: { width: 1, height: 32, backgroundColor: colors.borderDefault, alignSelf: 'center' },
+
+  // ─── AI Section (區塊 6) ──────────────────────────────
+  aiSection: {
+    borderRadius: 22,
+    padding: spacing.lg,
+  },
+  aiTitle: {
+    fontSize: typography.bodyMd.fontSize, fontWeight: '700',
     color: colors.textPrimary, marginBottom: spacing.md,
   },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  catCard: {
-    width: '22%' as unknown as number, flexGrow: 1,
-    borderRadius: radius.lg, paddingVertical: spacing.lg,
+  aiChipsRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  aiChip: {
+    backgroundColor: colors.bgSurface,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+    borderRadius: radius.full,
+    borderWidth: 1, borderColor: 'rgba(46,141,201,0.15)',
+  },
+  aiChipText: { fontSize: typography.captionSm.fontSize, color: colors.primaryText, fontWeight: '500' },
+
+  // ─── Ad Placeholder ───────────────────────────────────────
+  adPlaceholder: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault, borderStyle: 'dashed',
+    paddingVertical: spacing['2xl'],
     alignItems: 'center',
   },
-  catIconWrap: { marginBottom: spacing.sm },
-  catName: { fontSize: typography.captionSm.fontSize, fontWeight: '600', textAlign: 'center' },
+  adText: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled, letterSpacing: 1 },
 
   // ─── FAB ────────────────────────────────────────────────────
   fab: {
     position: 'absolute', bottom: spacing['2xl'] + spacing.sm, right: spacing.lg,
-    backgroundColor: colors.primary, borderRadius: radius.full,
-    paddingHorizontal: spacing['2xl'], paddingVertical: spacing.md + 2,
-    ...shadows.high,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1.5, borderColor: colors.primary,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  fabText: { color: colors.white, fontSize: typography.bodyMd.fontSize, fontWeight: '700' },
+  fabText: { color: colors.primaryText, fontSize: typography.bodySm.fontSize, fontWeight: '600' },
 
   // ─── Modals (shared) ────────────────────────────────────────
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },

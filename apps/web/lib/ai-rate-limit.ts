@@ -20,7 +20,7 @@ function getReportLimiter(): Ratelimit | null {
   if (!redis) return null;
   reportLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(AI_LIMITS.REPORT_PER_HOUR, '1 h'),
+    limiter: Ratelimit.slidingWindow(AI_LIMITS.REPORT_PER_DAY, '1 d'),
     prefix: 'ai-report',
   });
   return reportLimiter;
@@ -32,7 +32,7 @@ function getChatLimiter(): Ratelimit | null {
   if (!redis) return null;
   chatLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(AI_LIMITS.CHAT_PER_HOUR, '1 h'),
+    limiter: Ratelimit.slidingWindow(AI_LIMITS.CHAT_PER_DAY, '1 d'),
     prefix: 'ai-chat',
   });
   return chatLimiter;
@@ -57,7 +57,7 @@ export async function checkReportRateLimit(
   if (!limiter) {
     // Local dev without Upstash — allow all, log warning
     console.warn('[ai-rate-limit] UPSTASH_REDIS_REST_URL not set — rate limiting disabled (dev only)');
-    return { allowed: true, remaining: AI_LIMITS.REPORT_PER_HOUR, reset: 0 };
+    return { allowed: true, remaining: AI_LIMITS.REPORT_PER_DAY, reset: 0 };
   }
 
   const key = `${userId}:${recipientId}:${reportType}`;
@@ -77,7 +77,7 @@ export async function checkChatRateLimit(userId: string): Promise<RateLimitResul
   const limiter = getChatLimiter();
   if (!limiter) {
     console.warn('[ai-rate-limit] UPSTASH_REDIS_REST_URL not set — rate limiting disabled (dev only)');
-    return { allowed: true, remaining: AI_LIMITS.CHAT_PER_HOUR, reset: 0 };
+    return { allowed: true, remaining: AI_LIMITS.CHAT_PER_DAY, reset: 0 };
   }
 
   const result = await limiter.limit(userId);

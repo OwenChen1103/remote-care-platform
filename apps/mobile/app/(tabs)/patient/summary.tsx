@@ -22,6 +22,7 @@ import {
   HEALTH_LEVEL_LABELS,
   BP_THRESHOLDS,
 } from '@remote-care/shared';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -298,12 +299,7 @@ export default function PatientSummaryScreen() {
 
   // ── Loading ───────────────────────────────────────────────
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   if (error) {
@@ -571,7 +567,7 @@ export default function PatientSummaryScreen() {
             </TouchableOpacity>
           ))}
           <View style={styles.sheetDivider} />
-          <TouchableOpacity style={styles.sheetItem} onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)/login')); }} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.sheetItem} onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }} activeOpacity={0.7}>
             <Text style={styles.sheetItemDanger}>登出</Text>
           </TouchableOpacity>
         </Pressable>

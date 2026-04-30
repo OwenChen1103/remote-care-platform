@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -70,7 +71,7 @@ export default function RegisterScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <LinearGradient
-        colors={['#F0EEFF', '#FAF9FC']}
+        colors={['#E5F2FB', '#F8FAFC']}
         style={StyleSheet.absoluteFill}
       />
       <ScrollView
@@ -78,7 +79,16 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>建立帳號</Text>
+        {/* Logo icon + Title */}
+        <View style={styles.header}>
+          <Image
+            source={require('@/assets/images/whocares-icon.png')}
+            style={styles.logoIcon}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>建立帳號</Text>
+          <Text style={styles.subtitle}>加入 WhoCares，一起守護家人健康</Text>
+        </View>
 
         {/* Role selector */}
         <View style={styles.roleSection}>
@@ -186,16 +196,30 @@ const styles = StyleSheet.create({
   inner: {
     flexGrow: 1,
     paddingHorizontal: spacing['2xl'],
-    paddingTop: 56,
-    paddingBottom: 40,
+    paddingTop: 100,
+    paddingBottom: 80,
   },
 
-  // Title
+  // Header
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing['3xl'],
+  },
+  logoIcon: {
+    width: 64,
+    height: 64,
+    marginBottom: spacing.md,
+  },
   title: {
     ...typography.headingXl,
     color: colors.textPrimary,
     textAlign: 'center',
-    marginBottom: spacing['3xl'],
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    textAlign: 'center',
   },
 
   // Role selector
@@ -212,15 +236,16 @@ const styles = StyleSheet.create({
   },
   roleCard: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 20,
-    padding: spacing.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    ...shadows.low,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.md + spacing.xs,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1.5,
+    borderColor: colors.borderDefault,
   },
   roleCardActive: {
     backgroundColor: colors.primaryLight,
     borderColor: colors.primary,
+    ...shadows.low,
   },
   roleLabel: {
     fontSize: 15,

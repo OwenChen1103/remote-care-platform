@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Hero 區塊設計提案</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: #E8EBF0;
+    padding: 40px 20px;
+    color: #1A2B3A;
+    -webkit-font-smoothing: antialiased;
+  }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1400px; margin: 0 auto; justify-items: center; }
+  .col { width: 100%; max-width: 420px; }
+
+  .label {
+    text-align: center;
+    margin-bottom: 12px;
+    font-size: 13px; color: #4A6580;
+    font-weight: 600; letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .desc {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 12px; color: #8FA3B8;
+    line-height: 1.5;
+    padding: 0 8px;
+  }
+
+  /* iPhone frame */
+  .phone {
+    width: 100%;
+    aspect-ratio: 380/280;
+    border-radius: 36px;
+    background: #F8FAFC;
+    padding: 24px;
+    border: 1px solid #E1E8EF;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+  }
+
+  /* Common animation */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .phone > div { animation: fadeIn 0.6s ease-out; }
+
+  /* ============ Variation 1: 極簡置中 (Centered Minimal) ============ */
+  .v1 {
+    background: white;
+    border-radius: 28px;
+    padding: 24px 24px 20px;
+    border: 1px solid #E1E8EF;
+    text-align: center;
+  }
+  .v1 .tagline { font-size: 11px; font-weight: 700; color: #2E8DC9; letter-spacing: 4px; margin-bottom: 4px; }
+  .v1 .headline { font-size: 17px; font-weight: 700; color: #1A2B3A; margin-bottom: 20px; line-height: 1.5; }
+  .v1 .ring {
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    background: conic-gradient(#2E8DC9 0% 75%, #E5F2FB 75% 100%);
+    margin: 0 auto 12px;
+    position: relative;
+  }
+  .v1 .ring::before {
+    content: ""; position: absolute; inset: 10px;
+    background: white; border-radius: 50%;
+  }
+  .v1 .ring-text {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .v1 .ring-num { font-size: 36px; font-weight: 700; color: #1B6DA0; line-height: 1; }
+  .v1 .ring-unit { font-size: 11px; color: #8FA3B8; }
+  .v1 .name { font-size: 13px; color: #4A6580; margin-bottom: 6px; font-weight: 500; }
+  .v1 .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #EDF7E8;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 4px;
+  }
+  .v1 .pill-dot { width: 5px; height: 5px; border-radius: 3px; background: #5DA945; }
+  .v1 .pill-text { font-size: 11px; font-weight: 700; color: #3F7F2E; }
+  .v1 .meta { font-size: 11px; color: #8FA3B8; margin-bottom: 16px; }
+  .v1 .ctas { display: flex; gap: 8px; }
+  .v1 .cta-pri {
+    flex: 1; padding: 12px;
+    background: linear-gradient(90deg, #2E8DC9, #5DA945);
+    color: white; border-radius: 999px;
+    font-size: 13px; font-weight: 600; letter-spacing: 1px;
+    box-shadow: 0 4px 12px rgba(46,141,201,0.25);
+  }
+  .v1 .cta-sec {
+    flex: 1; padding: 12px;
+    background: white; color: #1A2B3A;
+    border: 1px solid #E1E8EF;
+    border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+  }
+
+  /* ============ Variation 2: 漸層底層 (Gradient Card) ============ */
+  .v2 {
+    background: linear-gradient(135deg, #F0F9FF 0%, #F1FAEB 100%);
+    border-radius: 28px;
+    padding: 24px;
+    border: 1px solid rgba(46,141,201,0.15);
+    position: relative;
+    overflow: hidden;
+  }
+  .v2::before {
+    content: ""; position: absolute;
+    top: -40px; right: -40px;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(93,169,69,0.15), transparent 70%);
+  }
+  .v2 .tagline { font-size: 11px; font-weight: 700; color: #2E8DC9; letter-spacing: 4px; margin-bottom: 4px; text-align: center; position: relative; }
+  .v2 .headline { font-size: 17px; font-weight: 700; color: #1A2B3A; margin-bottom: 18px; line-height: 1.5; text-align: center; position: relative; }
+  .v2 .inner {
+    background: white;
+    border-radius: 22px;
+    padding: 18px 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 20px rgba(46,141,201,0.06);
+    display: flex; align-items: center; gap: 18px;
+    position: relative;
+  }
+  .v2 .ring-wrap { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
+  .v2 .ring {
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    background: conic-gradient(#2E8DC9 0% 75%, #E5F2FB 75% 100%);
+    position: relative;
+  }
+  .v2 .ring::before {
+    content: ""; position: absolute; inset: 7px;
+    background: white; border-radius: 50%;
+  }
+  .v2 .ring-text {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .v2 .ring-num { font-size: 28px; font-weight: 700; color: #1B6DA0; line-height: 1; }
+  .v2 .ring-unit { font-size: 10px; color: #8FA3B8; }
+  .v2 .info { flex: 1; }
+  .v2 .name { font-size: 14px; font-weight: 600; color: #4A6580; margin-bottom: 6px; }
+  .v2 .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #EDF7E8;
+    padding: 3px 10px;
+    border-radius: 999px;
+    margin-bottom: 4px;
+  }
+  .v2 .pill-dot { width: 5px; height: 5px; border-radius: 3px; background: #5DA945; }
+  .v2 .pill-text { font-size: 11px; font-weight: 700; color: #3F7F2E; }
+  .v2 .meta { font-size: 11px; color: #8FA3B8; }
+  .v2 .ctas { display: flex; gap: 8px; position: relative; }
+  .v2 .cta-pri {
+    flex: 1; padding: 12px;
+    background: linear-gradient(90deg, #2E8DC9, #5DA945);
+    color: white; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 12px rgba(46,141,201,0.25);
+  }
+  .v2 .cta-sec {
+    flex: 1; padding: 12px;
+    background: rgba(255,255,255,0.8);
+    backdrop-filter: blur(10px);
+    color: #1A2B3A;
+    border: 1px solid rgba(46,141,201,0.2);
+    border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+  }
+
+  /* ============ Variation 3: 大數字主導 (Editorial Big Number) ============ */
+  .v3 {
+    background: white;
+    border-radius: 28px;
+    padding: 24px;
+    border: 1px solid #E1E8EF;
+    position: relative;
+    overflow: hidden;
+  }
+  .v3 .tag-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 16px;
+  }
+  .v3 .tagline { font-size: 11px; font-weight: 700; color: #2E8DC9; letter-spacing: 4px; }
+  .v3 .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #EDF7E8;
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .v3 .pill-dot { width: 5px; height: 5px; border-radius: 3px; background: #5DA945; }
+  .v3 .pill-text { font-size: 11px; font-weight: 700; color: #3F7F2E; }
+  .v3 .big-num-row {
+    display: flex; align-items: baseline; gap: 18px;
+    margin-bottom: 6px;
+  }
+  .v3 .big-num {
+    font-size: 88px; font-weight: 800;
+    background: linear-gradient(135deg, #1B6DA0, #5DA945);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 0.9; letter-spacing: -3px;
+  }
+  .v3 .num-meta { flex: 1; padding-bottom: 8px; }
+  .v3 .name { font-size: 14px; font-weight: 600; color: #1A2B3A; margin-bottom: 2px; }
+  .v3 .num-unit { font-size: 12px; color: #8FA3B8; }
+  .v3 .progress {
+    height: 6px; border-radius: 999px;
+    background: #E5F2FB;
+    margin-bottom: 8px; overflow: hidden;
+  }
+  .v3 .progress-fill {
+    width: 75%; height: 100%;
+    background: linear-gradient(90deg, #2E8DC9, #5DA945);
+    border-radius: 999px;
+  }
+  .v3 .meta-row { display: flex; justify-content: space-between; margin-bottom: 18px; }
+  .v3 .meta { font-size: 11px; color: #8FA3B8; }
+  .v3 .headline {
+    font-size: 14px; font-weight: 600; color: #1A2B3A;
+    line-height: 1.5; margin-bottom: 16px;
+    padding-top: 12px; border-top: 1px solid #F0F3F7;
+  }
+  .v3 .ctas { display: flex; gap: 8px; }
+  .v3 .cta-pri {
+    flex: 1; padding: 12px;
+    background: linear-gradient(90deg, #2E8DC9, #5DA945);
+    color: white; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 12px rgba(46,141,201,0.25);
+  }
+  .v3 .cta-sec {
+    flex: 1; padding: 12px;
+    background: white; color: #1A2B3A;
+    border: 1px solid #E1E8EF;
+    border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+  }
+
+  /* ============ Variation 4: Logo呼應 (Brand Echo) ============ */
+  .v4 {
+    background: white;
+    border-radius: 28px;
+    padding: 24px;
+    border: 1px solid #E1E8EF;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Decorative arc echoing logo */
+  .v4 .arc {
+    position: absolute;
+    top: -60px; left: -60px;
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    border: 30px solid transparent;
+    border-top-color: rgba(46,141,201,0.06);
+    border-right-color: rgba(93,169,69,0.06);
+    transform: rotate(45deg);
+  }
+  .v4 .heart-deco {
+    position: absolute;
+    top: 20px; right: 20px;
+    width: 24px; height: 24px;
+    opacity: 0.15;
+  }
+  .v4 .head { text-align: center; margin-bottom: 20px; position: relative; }
+  .v4 .tagline { font-size: 11px; font-weight: 700; color: #2E8DC9; letter-spacing: 4px; margin-bottom: 4px; }
+  .v4 .headline { font-size: 17px; font-weight: 700; color: #1A2B3A; line-height: 1.5; }
+  .v4 .score-block {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .v4 .ring-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+  .v4 .ring {
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: conic-gradient(#2E8DC9 0% 75%, #E5F2FB 75% 100%);
+    position: relative;
+  }
+  .v4 .ring::before {
+    content: ""; position: absolute; inset: 8px;
+    background: white; border-radius: 50%;
+  }
+  .v4 .ring-text {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .v4 .ring-num { font-size: 32px; font-weight: 700; color: #1B6DA0; line-height: 1; }
+  .v4 .ring-unit { font-size: 10px; color: #8FA3B8; }
+  .v4 .info { flex: 1; }
+  .v4 .name {
+    font-size: 11px; font-weight: 600; color: #8FA3B8;
+    letter-spacing: 1px; margin-bottom: 3px;
+    text-transform: uppercase;
+  }
+  .v4 .name-cn {
+    font-size: 16px; font-weight: 700; color: #1A2B3A;
+    margin-bottom: 8px;
+  }
+  .v4 .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #EDF7E8;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 6px;
+  }
+  .v4 .pill-dot { width: 5px; height: 5px; border-radius: 3px; background: #5DA945; }
+  .v4 .pill-text { font-size: 11px; font-weight: 700; color: #3F7F2E; }
+  .v4 .meta { font-size: 11px; color: #8FA3B8; }
+  .v4 .ctas { display: flex; gap: 8px; position: relative; }
+  .v4 .cta-pri {
+    flex: 1; padding: 13px;
+    background: linear-gradient(90deg, #2E8DC9, #5DA945);
+    color: white; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 6px 16px rgba(46,141,201,0.3);
+  }
+  .v4 .cta-sec {
+    flex: 1; padding: 13px;
+    background: white; color: #1B6DA0;
+    border: 1.5px solid #E5F2FB;
+    border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+  }
+
+</style>
+</head>
+<body>
+
+<h1 style="text-align:center; margin-bottom:8px; font-size:24px;">Hero 區塊設計提案</h1>
+<p style="text-align:center; margin-bottom:32px; color:#8FA3B8; font-size:13px;">挑一個你最喜歡的方向，告訴我我來實作</p>
+
+<div class="grid-3">
+
+  <!-- ====== V1: 極簡置中 ====== -->
+  <div class="col">
+    <div class="label">提案 1 · 極簡置中</div>
+    <div class="desc">所有元素垂直置中對齊，環形分數放大成主視覺，乾淨簡約，類似 Apple 健康 App 風格</div>
+    <div class="phone">
+      <div class="v1">
+        <div class="tagline">WE DO.</div>
+        <div class="headline">關心家人的健康，<br>我們隨時都在</div>
+        <div class="ring">
+          <div class="ring-text">
+            <div class="ring-num">75</div>
+            <div class="ring-unit">分</div>
+          </div>
+        </div>
+        <div class="name">李伯伯 的健康狀態</div>
+        <div class="pill">
+          <div class="pill-dot"></div>
+          <div class="pill-text">尚可</div>
+        </div>
+        <div class="meta">最近更新：4/25</div>
+        <div class="ctas" style="margin-top:16px;">
+          <div class="cta-pri">開始安排照顧</div>
+          <div class="cta-sec">查看完整報告</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== V2: 漸層底層 ====== -->
+  <div class="col">
+    <div class="label">提案 2 · 雙層卡片 + 漸層</div>
+    <div class="desc">外層淡藍綠漸層底，分數放在內層白卡片上，營造空間感和深度，有 fintech 高級感</div>
+    <div class="phone">
+      <div class="v2">
+        <div class="tagline">WE DO.</div>
+        <div class="headline">關心家人的健康，<br>我們隨時都在</div>
+        <div class="inner">
+          <div class="ring-wrap">
+            <div class="ring">
+              <div class="ring-text">
+                <div class="ring-num">75</div>
+                <div class="ring-unit">分</div>
+              </div>
+            </div>
+          </div>
+          <div class="info">
+            <div class="name">李伯伯 的健康狀態</div>
+            <div class="pill">
+              <div class="pill-dot"></div>
+              <div class="pill-text">尚可</div>
+            </div>
+            <div class="meta">最近更新：4/25</div>
+          </div>
+        </div>
+        <div class="ctas">
+          <div class="cta-pri">開始安排照顧</div>
+          <div class="cta-sec">查看完整報告</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== V3: 大數字主導 ====== -->
+  <div class="col">
+    <div class="label">提案 3 · 大數字 + 進度條</div>
+    <div class="desc">把分數放大成 88px 漸層數字，下方用進度條取代環形，編輯排版風格，視覺最有力量</div>
+    <div class="phone">
+      <div class="v3">
+        <div class="tag-row">
+          <div class="tagline">WE DO.</div>
+          <div class="pill">
+            <div class="pill-dot"></div>
+            <div class="pill-text">尚可</div>
+          </div>
+        </div>
+        <div class="big-num-row">
+          <div class="big-num">75</div>
+          <div class="num-meta">
+            <div class="name">李伯伯</div>
+            <div class="num-unit">健康分數 / 100</div>
+          </div>
+        </div>
+        <div class="progress"><div class="progress-fill"></div></div>
+        <div class="meta-row">
+          <div class="meta">最近更新：4/25 陪診</div>
+          <div class="meta">查看歷史 →</div>
+        </div>
+        <div class="headline">關心家人的健康，我們隨時都在</div>
+        <div class="ctas">
+          <div class="cta-pri">開始安排照顧</div>
+          <div class="cta-sec">查看完整報告</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== V4: 品牌呼應 ====== -->
+  <div class="col">
+    <div class="label">提案 4 · 品牌弧線呼應</div>
+    <div class="desc">右上角加上 logo 同款的弧線元素裝飾，姓名分英文+中文兩行展示，最有 WhoCares 品牌識別感</div>
+    <div class="phone">
+      <div class="v4">
+        <div class="arc"></div>
+        <svg class="heart-deco" viewBox="0 0 24 24" fill="none">
+          <path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" fill="#5DA945"/>
+        </svg>
+        <div class="head">
+          <div class="tagline">WE DO.</div>
+          <div class="headline">關心家人的健康，<br>我們隨時都在</div>
+        </div>
+        <div class="score-block">
+          <div class="ring-wrap">
+            <div class="ring">
+              <div class="ring-text">
+                <div class="ring-num">75</div>
+                <div class="ring-unit">分</div>
+              </div>
+            </div>
+          </div>
+          <div class="info">
+            <div class="name">CARED RECIPIENT</div>
+            <div class="name-cn">李伯伯</div>
+            <div class="pill">
+              <div class="pill-dot"></div>
+              <div class="pill-text">尚可</div>
+            </div>
+            <div class="meta">最近更新：4/25</div>
+          </div>
+        </div>
+        <div class="ctas">
+          <div class="cta-pri">開始安排照顧</div>
+          <div class="cta-sec">查看完整報告</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
