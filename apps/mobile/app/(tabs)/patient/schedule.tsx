@@ -2,15 +2,17 @@ import { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -58,156 +60,6 @@ interface CompletedService {
   category: { name: string };
 }
 
-// ─── SVG Icons ────────────────────────────────────────────────
-
-function BellIcon({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M13.73 21a2 2 0 0 1-3.46 0"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function WarningIcon({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M12 9v4"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <SvgCircle cx={12} cy={17} r={1} fill={color} />
-    </Svg>
-  );
-}
-
-function CalendarIcon({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function ClipboardIcon({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M9 12h6M9 16h4"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function ChartIcon({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 3v18h18"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M7 16l4-4 4 4 4-6"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function NotificationIcon({ type }: { type: string }) {
-  const isWarning = type === 'abnormal_alert';
-  const isAppointment = type === 'appointment_reminder';
-  const isService = type === 'service_request_update';
-  const isReport = type === 'ai_report_ready';
-
-  if (isWarning) {
-    return (
-      <View style={[styles.iconContainer, { backgroundColor: colors.dangerLight }]}>
-        <WarningIcon color={colors.danger} />
-      </View>
-    );
-  }
-  if (isAppointment) {
-    return (
-      <View style={[styles.iconContainer, { backgroundColor: colors.primaryLight }]}>
-        <CalendarIcon color={colors.primary} />
-      </View>
-    );
-  }
-  if (isService) {
-    return (
-      <View style={[styles.iconContainer, { backgroundColor: colors.accentLight }]}>
-        <ClipboardIcon color={colors.accent} />
-      </View>
-    );
-  }
-  if (isReport) {
-    return (
-      <View style={[styles.iconContainer, { backgroundColor: colors.successLight }]}>
-        <ChartIcon color={colors.success} />
-      </View>
-    );
-  }
-  // measurement_reminder + default
-  return (
-    <View style={[styles.iconContainer, { backgroundColor: colors.primaryLight }]}>
-      <BellIcon color={colors.primary} />
-    </View>
-  );
-}
-
 // ─── Helpers ──────────────────────────────────────────────────
 
 function formatRelativeTime(dateStr: string): string {
@@ -234,6 +86,87 @@ function formatAppointmentDate(dateStr: string): { monthDay: string; time: strin
   return { monthDay: `${month}/${day}`, time: `${hour}:${min}` };
 }
 
+// ─── SVG Icons (stroke style) ─────────────────────────────────
+
+function IconCalendar({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconBell({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M13.73 21a2 2 0 01-3.46 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconClipboard({ size = 16, color = colors.accent }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5a2 2 0 002 2h2a2 2 0 002-2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconWarning({ size = 18, color = colors.danger }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 9v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Circle cx="12" cy="17" r="0.8" fill={color} />
+    </Svg>
+  );
+}
+function IconChart({ size = 18, color = colors.warning }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 17l5-5 4 4 8-8M16 8h5v5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// ─── Notification Icon ─────────────────────────────────────────
+
+function NotificationIcon({ type }: { type: string }) {
+  if (type === 'abnormal_alert') {
+    return (
+      <View style={[s.notifIconWrap, { backgroundColor: colors.dangerLight }]}>
+        <IconWarning size={18} color={colors.danger} />
+      </View>
+    );
+  }
+  if (type === 'appointment_reminder') {
+    return (
+      <View style={[s.notifIconWrap, { backgroundColor: colors.accentLight }]}>
+        <IconCalendar size={18} color={colors.accent} />
+      </View>
+    );
+  }
+  if (type === 'service_request_update') {
+    return (
+      <View style={[s.notifIconWrap, { backgroundColor: colors.primaryLight }]}>
+        <IconClipboard size={18} color={colors.primary} />
+      </View>
+    );
+  }
+  if (type === 'ai_report_ready') {
+    return (
+      <View style={[s.notifIconWrap, { backgroundColor: colors.warningLight }]}>
+        <IconChart size={18} color={colors.warning} />
+      </View>
+    );
+  }
+  return (
+    <View style={[s.notifIconWrap, { backgroundColor: colors.primaryLight }]}>
+      <IconBell size={18} color={colors.primary} />
+    </View>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────
 
 export default function PatientScheduleScreen() {
@@ -248,11 +181,9 @@ export default function PatientScheduleScreen() {
     try {
       setError('');
 
-      // Fetch notifications
       const notifData = await api.get<Notification[]>('/notifications?limit=30');
       setNotifications(notifData);
 
-      // Fetch recipient ID to load appointments
       const recipients = await api.get<Recipient[]>('/recipients?limit=1');
       if (recipients && recipients.length > 0) {
         const recipientId = recipients[0]!.id;
@@ -262,17 +193,13 @@ export default function PatientScheduleScreen() {
         setAppointments(apptData);
       }
 
-      // Fetch completed service records with provider_report
       try {
         const svcData = await api.get<CompletedService[]>('/service-requests?status=completed&limit=3');
         setServiceRecords(svcData.filter((s) => s.provider_report));
       } catch { /* non-critical */ }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('載入資料失敗，請稍後再試');
-      }
+      if (err instanceof ApiError) setError(err.message);
+      else setError('載入資料失敗，請稍後再試');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -282,166 +209,40 @@ export default function PatientScheduleScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchData();
+      void fetchData();
     }, [fetchData]),
   );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchData();
+    void fetchData();
   }, [fetchData]);
 
-  // ── Loading ──
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中，請稍候…</Text>
-      </View>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
-  // ── Error ──
   if (error) {
     return (
-      <View style={styles.center}>
-        <View style={[styles.iconContainer, { backgroundColor: colors.dangerLight, marginBottom: spacing.lg }]}>
-          <WarningIcon color={colors.danger} />
+      <View style={s.center}>
+        <View style={[s.notifIconWrap, { backgroundColor: colors.dangerLight, marginBottom: spacing.md }]}>
+          <IconWarning color={colors.danger} />
         </View>
-        <Text style={styles.errorText}>{error}</Text>
+        <Text style={s.errorText}>{error}</Text>
       </View>
     );
   }
 
-  // ── Appointment Cards ──
-  const AppointmentCard = ({ item }: { item: Appointment }) => {
-    const { monthDay, time } = formatAppointmentDate(item.appointment_date);
-    const venue = item.hospital_name ?? item.location ?? '';
-
-    return (
-      <View style={styles.appointmentCard}>
-        {/* Left: date block */}
-        <View style={styles.apptDateBlock}>
-          <Text style={styles.apptMonthDay}>{monthDay}</Text>
-          <Text style={styles.apptTime}>{time}</Text>
-        </View>
-
-        {/* Divider */}
-        <View style={styles.apptDivider} />
-
-        {/* Right: details */}
-        <View style={styles.apptDetails}>
-          <Text style={styles.apptTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          {venue !== '' && (
-            <Text style={styles.apptHospital} numberOfLines={1}>
-              {venue}
-            </Text>
-          )}
-        </View>
-      </View>
-    );
-  };
-
-  // ── List Header ──
-  const ListHeader = () => (
-    <View style={styles.headerSection}>
-      {/* Page title */}
-      <Text style={styles.pageTitle}>行程與通知</Text>
-
-      {/* Appointments */}
-      <Text style={styles.sectionLabel}>近期行程</Text>
-
-      {appointments.length === 0 ? (
-        <View style={styles.emptyAppointmentBox}>
-          <CalendarIcon color={colors.textDisabled} />
-          <Text style={styles.emptyAppointmentText}>暫無近期行程</Text>
-        </View>
-      ) : (
-        appointments.map((appt) => <AppointmentCard key={appt.id} item={appt} />)
-      )}
-
-      {/* Service Records */}
-      {serviceRecords.length > 0 && (
-        <>
-          <Text style={[styles.sectionLabel, { marginTop: spacing['2xl'] }]}>服務紀錄</Text>
-          {serviceRecords.map((svc) => {
-            const rpt = svc.provider_report;
-            if (!rpt) return null;
-            const reportDate = rpt.date ?? new Date(svc.preferred_date).toLocaleDateString('zh-TW');
-            return (
-              <View key={svc.id} style={styles.serviceCard}>
-                <View style={styles.serviceHeader}>
-                  <Text style={styles.serviceCategory}>{svc.category.name}</Text>
-                  <Text style={styles.serviceDate}>{reportDate}</Text>
-                </View>
-                <View style={styles.serviceGrid}>
-                  {rpt.blood_pressure ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>血壓</Text><Text style={styles.serviceItemValue}>{rpt.blood_pressure}</Text></View> : null}
-                  {rpt.blood_glucose ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>血糖</Text><Text style={styles.serviceItemValue}>{rpt.blood_glucose}</Text></View> : null}
-                  {rpt.weight ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>體重</Text><Text style={styles.serviceItemValue}>{rpt.weight}</Text></View> : null}
-                  {rpt.heart_rate ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>心率</Text><Text style={styles.serviceItemValue}>{rpt.heart_rate}</Text></View> : null}
-                  {rpt.body_fat ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>體脂</Text><Text style={styles.serviceItemValue}>{rpt.body_fat}</Text></View> : null}
-                  {rpt.blood_oxygen ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>血氧</Text><Text style={styles.serviceItemValue}>{rpt.blood_oxygen}</Text></View> : null}
-                  {rpt.cholesterol ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>膽固醇</Text><Text style={styles.serviceItemValue}>{rpt.cholesterol}</Text></View> : null}
-                  {rpt.medications ? <View style={styles.serviceItem}><Text style={styles.serviceItemLabel}>用藥</Text><Text style={styles.serviceItemValue}>{rpt.medications}</Text></View> : null}
-                </View>
-                {rpt.doctor_notes ? (
-                  <View style={styles.doctorNotes}>
-                    <Text style={styles.doctorNotesLabel}>醫囑重點</Text>
-                    <Text style={styles.doctorNotesText}>{rpt.doctor_notes}</Text>
-                  </View>
-                ) : null}
-                {rpt.next_visit ? (
-                  <View style={styles.nextVisit}>
-                    <Text style={styles.nextVisitLabel}>下次看診</Text>
-                    <Text style={styles.nextVisitText}>{rpt.next_visit}</Text>
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </>
-      )}
-
-      {/* Section divider for notifications */}
-      <Text style={[styles.sectionLabel, { marginTop: spacing['2xl'] }]}>通知</Text>
-    </View>
-  );
-
-  // ── Notification Item ──
-  const renderItem = ({ item }: { item: Notification }) => {
-    const isUnread = !item.is_read;
-
-    return (
-      <View style={[styles.notifCard, isUnread && styles.notifCardUnread]}>
-        {/* Icon */}
-        <NotificationIcon type={item.type} />
-
-        {/* Content */}
-        <View style={styles.notifContent}>
-          <View style={styles.notifTitleRow}>
-            <Text style={styles.notifTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {isUnread && <View style={styles.unreadDot} />}
-          </View>
-          <Text style={styles.notifBody} numberOfLines={3}>
-            {item.body}
-          </Text>
-          <Text style={styles.notifTime}>{formatRelativeTime(item.created_at)}</Text>
-        </View>
-      </View>
-    );
-  };
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const heroSubtitle = (() => {
+    if (unreadCount > 0) return `您有 ${unreadCount} 則未讀通知`;
+    if (appointments.length > 0) return `近期 ${appointments.length} 個行程待出席`;
+    return '行程與通知一覽';
+  })();
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={notifications}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        ListHeaderComponent={<ListHeader />}
+    <View style={s.container}>
+      <ScrollView
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -449,247 +250,368 @@ export default function PatientScheduleScreen() {
             tintColor={colors.primary}
           />
         }
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyNotifBox}>
-            <BellIcon color={colors.textDisabled} />
-            <Text style={styles.emptyNotifText}>目前沒有通知</Text>
+      >
+        {/* ─── Glass Hero ─────────────────────────────── */}
+        <View style={s.hero}>
+          <LinearGradient
+            colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={s.heroHaloTopRight} />
+          <View style={s.heroHaloBottomLeft} />
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+          <View style={s.heroContent}>
+            <Text style={s.heroTagline}>WHOCARES SCHEDULE</Text>
+            <Text style={s.heroSubtitle}>{heroSubtitle}</Text>
+            {unreadCount > 0 && (
+              <View style={s.heroBadge}>
+                <View style={s.heroBadgeDot} />
+                <Text style={s.heroBadgeText}>{unreadCount} 則新通知</Text>
+              </View>
+            )}
           </View>
-        }
-        showsVerticalScrollIndicator={false}
-      />
+        </View>
+
+        {/* ─── Section: 近期行程 ─────────────────────────── */}
+        <View style={s.sectionHeader}>
+          <IconCalendar />
+          <Text style={s.sectionTitle}>近期行程</Text>
+          {appointments.length > 0 && (
+            <Text style={s.sectionCount}>{appointments.length} 筆</Text>
+          )}
+        </View>
+        {appointments.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Text style={s.emptyText}>暫無近期行程</Text>
+          </View>
+        ) : (
+          appointments.map((appt) => {
+            const { monthDay, time } = formatAppointmentDate(appt.appointment_date);
+            const venue = appt.hospital_name ?? appt.location ?? '';
+            return (
+              <View key={appt.id} style={s.appointmentCard}>
+                <View style={s.apptDateBlock}>
+                  <Text style={s.apptMonthDay}>{monthDay}</Text>
+                  <Text style={s.apptTime}>{time}</Text>
+                </View>
+                <View style={s.apptDivider} />
+                <View style={s.apptDetails}>
+                  <Text style={s.apptTitle} numberOfLines={2}>{appt.title}</Text>
+                  {venue !== '' && (
+                    <Text style={s.apptHospital} numberOfLines={1}>{venue}</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        {/* ─── Section: 服務紀錄 ─────────────────────────── */}
+        {serviceRecords.length > 0 && (
+          <>
+            <View style={s.sectionHeader}>
+              <IconClipboard />
+              <Text style={s.sectionTitle}>服務紀錄</Text>
+              <Text style={s.sectionCount}>{serviceRecords.length} 筆</Text>
+            </View>
+            {serviceRecords.map((svc) => {
+              const rpt = svc.provider_report;
+              if (!rpt) return null;
+              const reportDate = rpt.date ?? new Date(svc.preferred_date).toLocaleDateString('zh-TW');
+              const dataItems = [
+                rpt.blood_pressure && { label: '血壓', value: rpt.blood_pressure },
+                rpt.blood_glucose && { label: '血糖', value: rpt.blood_glucose },
+                rpt.weight && { label: '體重', value: rpt.weight },
+                rpt.heart_rate && { label: '心率', value: rpt.heart_rate },
+                rpt.body_fat && { label: '體脂', value: rpt.body_fat },
+                rpt.blood_oxygen && { label: '血氧', value: rpt.blood_oxygen },
+                rpt.cholesterol && { label: '膽固醇', value: rpt.cholesterol },
+                rpt.medications && { label: '用藥', value: rpt.medications },
+              ].filter(Boolean) as { label: string; value: string }[];
+
+              return (
+                <View key={svc.id} style={s.serviceCard}>
+                  <View style={s.serviceHeader}>
+                    <Text style={s.serviceCategory}>{svc.category.name}</Text>
+                    <Text style={s.serviceDate}>{reportDate}</Text>
+                  </View>
+
+                  {dataItems.length > 0 && (
+                    <View style={s.serviceGrid}>
+                      {dataItems.map((item) => (
+                        <View key={item.label} style={s.serviceItem}>
+                          <Text style={s.serviceItemLabel}>{item.label}</Text>
+                          <Text style={s.serviceItemValue}>{item.value}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {rpt.doctor_notes ? (
+                    <View style={s.doctorNotes}>
+                      <Text style={s.doctorNotesLabel}>醫囑重點</Text>
+                      <Text style={s.doctorNotesText}>{rpt.doctor_notes}</Text>
+                    </View>
+                  ) : null}
+
+                  {rpt.next_visit ? (
+                    <View style={s.nextVisit}>
+                      <Text style={s.nextVisitLabel}>下次看診</Text>
+                      <Text style={s.nextVisitText}>{rpt.next_visit}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {/* ─── Section: 通知 ─────────────────────────────── */}
+        <View style={s.sectionHeader}>
+          <IconBell />
+          <Text style={s.sectionTitle}>通知</Text>
+          {unreadCount > 0 && (
+            <View style={s.unreadCountBadge}>
+              <Text style={s.unreadCountText}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
+        {notifications.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Text style={s.emptyText}>目前沒有通知</Text>
+          </View>
+        ) : (
+          notifications.map((n) => {
+            const isUnread = !n.is_read;
+            return (
+              <View
+                key={n.id}
+                style={[s.notifCard, isUnread && s.notifCardUnread]}
+              >
+                <NotificationIcon type={n.type} />
+                <View style={s.notifContent}>
+                  <View style={s.notifTopRow}>
+                    <Text style={[s.notifTitle, isUnread && s.notifTitleUnread]} numberOfLines={1}>
+                      {n.title}
+                    </Text>
+                    {isUnread && <View style={s.notifUnreadDot} />}
+                  </View>
+                  <Text style={s.notifBody} numberOfLines={3}>{n.body}</Text>
+                  <Text style={s.notifTime}>{formatRelativeTime(n.created_at)}</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        <View style={{ height: spacing.xl }} />
+      </ScrollView>
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgScreen,
   },
-
-  listContent: {
-    paddingHorizontal: spacing['2xl'],
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing['3xl'],
   },
-
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing['2xl'],
+    padding: spacing.xl,
     backgroundColor: colors.bgScreen,
   },
-
-  loadingText: {
-    ...typography.bodyLg,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-  },
-
   errorText: {
-    ...typography.bodyLg,
+    fontSize: typography.bodyMd.fontSize,
     color: colors.danger,
     textAlign: 'center',
-    lineHeight: 26,
+    lineHeight: 22,
   },
 
-  // ── Header ──
-
-  headerSection: {
-    paddingTop: spacing['2xl'],
-    paddingBottom: spacing.lg,
+  // ─── Hero ─────────────────────────────────────────────────
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    marginBottom: spacing.lg,
   },
-
-  pageTitle: {
-    fontSize: 22,
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+  },
+  heroTagline: {
+    fontSize: 10, fontWeight: '700',
+    color: colors.primary, letterSpacing: 2,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing['2xl'],
+    marginTop: spacing.xxs,
   },
-
-  sectionLabel: {
-    ...typography.headingSm,
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing.md,
-  },
-
-  // ── Appointment Card ──
-
-  appointmentCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 24,
-    padding: spacing.xl,
-    marginBottom: spacing.md,
+  heroBadge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    ...shadows.low,
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.18)',
+  },
+  heroBadgeDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  heroBadgeText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
 
+  // ─── Section header ──────────────────────────────────────
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm + 2,
+    paddingLeft: spacing.xs,
+  },
+  sectionTitle: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
+  },
+  sectionCount: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+  unreadCountBadge: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.full,
+    minWidth: 20, height: 20,
+    paddingHorizontal: spacing.xs + 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  unreadCountText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  // ─── Empty card ──────────────────────────────────────────
+  emptyCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  emptyText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textDisabled,
+  },
+
+  // ─── Appointment card ────────────────────────────────────
+  appointmentCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   apptDateBlock: {
     alignItems: 'center',
     minWidth: 52,
   },
-
   apptMonthDay: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.primary,
     lineHeight: 24,
   },
-
   apptTime: {
-    ...typography.bodyMd,
+    fontSize: typography.bodySm.fontSize,
     color: colors.primaryText,
     marginTop: spacing.xxs,
+    fontWeight: '500',
   },
-
   apptDivider: {
-    width: 1,
-    height: 44,
+    width: 1, height: 44,
     backgroundColor: colors.borderDefault,
     marginHorizontal: spacing.lg,
   },
-
-  apptDetails: {
-    flex: 1,
-  },
-
+  apptDetails: { flex: 1 },
   apptTitle: {
-    fontSize: 16,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '600',
     color: colors.textPrimary,
     lineHeight: 22,
     marginBottom: spacing.xs,
   },
-
   apptHospital: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
   },
 
-  emptyAppointmentBox: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 24,
-    padding: spacing.xl,
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    ...shadows.low,
-  },
-
-  emptyAppointmentText: {
-    ...typography.bodyLg,
-    color: colors.textDisabled,
-  },
-
-  // ── Icon Container ──
-
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── Notification Card ──
-
-  notifCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: 20,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    ...shadows.low,
-  },
-
-  notifCardUnread: {
-    backgroundColor: colors.primaryLight,
-  },
-
-  notifContent: {
-    flex: 1,
-  },
-
-  notifTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-
-  notifTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    lineHeight: 22,
-  },
-
-  unreadDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    marginLeft: spacing.sm,
-    flexShrink: 0,
-  },
-
-  notifBody: {
-    ...typography.bodyMd,
-    color: colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: spacing.sm,
-  },
-
-  notifTime: {
-    ...typography.caption,
-    color: colors.textDisabled,
-  },
-
-  // ── Empty Notifications ──
-
-  emptyNotifBox: {
-    alignItems: 'center',
-    paddingVertical: spacing['3xl'],
-    gap: spacing.md,
-  },
-
-  emptyNotifText: {
-    ...typography.bodyLg,
-    color: colors.textDisabled,
-  },
-
-  // ── Service Records ──────────────────────────────────────
+  // ─── Service card ────────────────────────────────────────
   serviceCard: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 24,
-    padding: spacing.xl,
-    marginBottom: spacing.md,
-    ...shadows.low,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
   },
   serviceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
     paddingBottom: spacing.md,
+    marginBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderDefault,
   },
   serviceCategory: {
-    fontSize: typography.headingSm.fontSize,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   serviceDate: {
-    fontSize: typography.bodySm.fontSize,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
   },
   serviceGrid: {
@@ -699,10 +621,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   serviceItem: {
-    width: '47%' as unknown as number,
+    flexBasis: '47%',
     flexGrow: 1,
-    backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.lg,
+    backgroundColor: colors.bgScreen,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.borderDefault,
     padding: spacing.md,
   },
   serviceItemLabel: {
@@ -712,41 +635,98 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxs,
   },
   serviceItemValue: {
-    fontSize: typography.headingSm.fontSize,
+    fontSize: typography.bodyMd.fontSize,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   doctorNotes: {
     backgroundColor: colors.warningLight,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md - 2,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(232,162,59,0.25)',
   },
   doctorNotesLabel: {
     fontSize: typography.captionSm.fontSize,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.warning,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xxs + 1,
   },
   doctorNotesText: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: typography.bodySm.fontSize,
     color: colors.textPrimary,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   nextVisit: {
     backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md - 2,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.18)',
   },
   nextVisitLabel: {
     fontSize: typography.captionSm.fontSize,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.primaryText,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xxs + 1,
   },
   nextVisitText: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: typography.bodySm.fontSize,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.primaryText,
+  },
+
+  // ─── Notification card ───────────────────────────────────
+  notifCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.md + 2,
+    marginBottom: spacing.sm,
+  },
+  notifCardUnread: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  notifIconWrap: {
+    width: 40, height: 40,
+    borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notifContent: { flex: 1, gap: 4 },
+  notifTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  notifTitle: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  notifTitleUnread: {
+    fontWeight: '700',
+  },
+  notifUnreadDot: {
+    width: 8, height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  notifBody: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  notifTime: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textDisabled,
   },
 });

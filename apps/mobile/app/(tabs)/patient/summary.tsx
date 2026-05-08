@@ -5,18 +5,18 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
   Modal,
   Pressable,
   Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Svg, { Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import {
   calculateHealthScore,
   HEALTH_LEVEL_LABELS,
@@ -92,16 +92,10 @@ function formatNotificationTime(dateStr: string): string {
 }
 
 function getBPStatus(systolic: number, diastolic: number): { label: string; isHigh: boolean } {
-  if (
-    systolic >= BP_THRESHOLDS.SYSTOLIC.HIGH ||
-    diastolic >= BP_THRESHOLDS.DIASTOLIC.HIGH
-  ) {
+  if (systolic >= BP_THRESHOLDS.SYSTOLIC.HIGH || diastolic >= BP_THRESHOLDS.DIASTOLIC.HIGH) {
     return { label: '偏高', isHigh: true };
   }
-  if (
-    systolic >= BP_THRESHOLDS.SYSTOLIC.NORMAL_HIGH ||
-    diastolic >= BP_THRESHOLDS.DIASTOLIC.NORMAL_HIGH
-  ) {
+  if (systolic >= BP_THRESHOLDS.SYSTOLIC.NORMAL_HIGH || diastolic >= BP_THRESHOLDS.DIASTOLIC.NORMAL_HIGH) {
     return { label: '稍高', isHigh: true };
   }
   return { label: '正常', isHigh: false };
@@ -111,15 +105,6 @@ function getBGStatus(value: number): { label: string; isHigh: boolean } {
   if (value >= 126 || value < 70) return { label: '異常', isHigh: true };
   if (value >= 100) return { label: '稍高', isHigh: true };
   return { label: '正常', isHigh: false };
-}
-
-function getScoreGradient(level: string): readonly [string, string] {
-  switch (level) {
-    case 'excellent': return [colors.successLight, colors.bgSurface] as const;
-    case 'good':      return [colors.primaryLight, colors.bgSurface] as const;
-    case 'fair':      return [colors.warningLight, colors.bgSurface] as const;
-    default:          return [colors.dangerLight, colors.bgSurface] as const;
-  }
 }
 
 function getScoreRingColor(level: string): string {
@@ -140,11 +125,106 @@ function getScoreSummary(level: string): string {
   }
 }
 
-// ─── Sub-components ───────────────────────────────────────────
+// ─── SVG Icons (stroke style) ─────────────────────────────────
+
+function IconHeart({ size = 18, color = colors.danger }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconDrop({ size = 18, color = colors.warning }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2C8 6 5 9 5 14a7 7 0 0014 0c0-5-3-8-7-12z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconCalendar({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconBell({ size = 16, color = colors.primary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M13.73 21a2 2 0 01-3.46 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconMenu({ size = 22, color = colors.textTertiary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 12h18M3 6h18M3 18h18" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconChevron({ size = 14, color = colors.textTertiary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 6l6 6-6 6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconWarning({ size = 18, color = colors.danger }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 9v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Circle cx="12" cy="17" r="0.8" fill={color} />
+    </Svg>
+  );
+}
+function IconUserMenu({ color = colors.primary }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth={1.8} />
+      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconBellMenu({ color = colors.primary }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M13.73 21a2 2 0 01-3.46 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconCalendarMenu({ color = colors.accent }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconSettings({ color = colors.textSecondary }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={1.8} />
+      <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconLogout({ color = colors.danger }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// ─── Score Ring ───────────────────────────────────────────────
 
 function HealthScoreRing({ score, level }: { score: number; level: string }) {
-  const size = 100;
-  const strokeWidth = 8;
+  const size = 96;
+  const strokeWidth = 7;
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
   const progress = Math.max(0, Math.min(1, score / 100));
@@ -178,48 +258,31 @@ function HealthScoreRing({ score, level }: { score: number; level: string }) {
   );
 }
 
+// ─── Notification Icon ─────────────────────────────────────────
+
 function NotificationIcon({ type }: { type: string }) {
-  const color = type === 'alert' ? colors.danger : colors.primary;
-  if (type === 'alert') {
+  if (type === 'abnormal_alert' || type === 'alert') {
     return (
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-          fill={color}
-        />
-      </Svg>
+      <View style={[s.notifIconWrap, { backgroundColor: colors.dangerLight }]}>
+        <IconWarning size={18} color={colors.danger} />
+      </View>
+    );
+  }
+  if (type === 'appointment_reminder') {
+    return (
+      <View style={[s.notifIconWrap, { backgroundColor: colors.accentLight }]}>
+        <IconCalendar size={18} color={colors.accent} />
+      </View>
     );
   }
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"
-        fill={color}
-      />
-    </Svg>
+    <View style={[s.notifIconWrap, { backgroundColor: colors.primaryLight }]}>
+      <IconBell size={18} color={colors.primary} />
+    </View>
   );
 }
 
-function CalendarIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
-        fill={colors.white}
-      />
-    </Svg>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────
-
-function IconMenu({ size = 22, color = colors.textTertiary }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M3 12h18M3 6h18M3 18h18" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
+// ─── Component ────────────────────────────────────────────────
 
 export default function PatientSummaryScreen() {
   const { user, logout } = useAuth();
@@ -239,8 +302,6 @@ export default function PatientSummaryScreen() {
   const fetchData = useCallback(async () => {
     try {
       setError('');
-
-      // 1. Recipient
       const recipientsData = await api.get<Recipient[]>('/recipients?limit=1');
       const first = recipientsData[0] ?? null;
       setRecipient(first);
@@ -253,7 +314,6 @@ export default function PatientSummaryScreen() {
         return;
       }
 
-      // 2. Measurements + stats + appointments + notifications (parallel)
       const [mData, bpStatsData, bgStatsData, apptData, notifData] = await Promise.allSettled([
         api.get<Measurement[]>(`/measurements?recipient_id=${first.id}&limit=10`),
         api.get<MeasurementStats>(`/measurements/stats?recipient_id=${first.id}&type=blood_pressure&period=7d`),
@@ -262,17 +322,14 @@ export default function PatientSummaryScreen() {
         api.get<Notification[]>('/notifications?limit=3'),
       ]);
 
-      setMeasurements(mData.status === 'fulfilled' ? (mData.value as Measurement[]) : []);
-      setBpStats(bpStatsData.status === 'fulfilled' ? (bpStatsData.value as MeasurementStats) : null);
-      setBgStats(bgStatsData.status === 'fulfilled' ? (bgStatsData.value as MeasurementStats) : null);
-      setAppointments(apptData.status === 'fulfilled' ? (apptData.value as Appointment[]) : []);
-      setNotifications(notifData.status === 'fulfilled' ? (notifData.value as Notification[]) : []);
+      setMeasurements(mData.status === 'fulfilled' ? mData.value : []);
+      setBpStats(bpStatsData.status === 'fulfilled' ? bpStatsData.value : null);
+      setBgStats(bgStatsData.status === 'fulfilled' ? bgStatsData.value : null);
+      setAppointments(apptData.status === 'fulfilled' ? apptData.value : []);
+      setNotifications(notifData.status === 'fulfilled' ? notifData.value : []);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('載入資料失敗');
-      }
+      if (err instanceof ApiError) setError(err.message);
+      else setError('載入資料失敗');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -295,7 +352,6 @@ export default function PatientSummaryScreen() {
   const latestBG = measurements.find((m) => m.type === 'blood_glucose');
 
   const { score, level } = calculateHealthScore({ bpStats, bgStats });
-  const gradientColors = getScoreGradient(level);
 
   // ── Loading ───────────────────────────────────────────────
   if (loading) {
@@ -304,461 +360,566 @@ export default function PatientSummaryScreen() {
 
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
+      <View style={s.center}>
+        <Text style={s.errorText}>{error}</Text>
       </View>
     );
   }
 
   if (!recipient) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.emptyText}>尚未建立被照護者資料</Text>
+      <View style={s.center}>
+        <Text style={s.emptyText}>尚未建立被照護者資料</Text>
       </View>
     );
   }
 
   const displayName = recipient.name || user?.name || '您';
+  const initial = displayName.charAt(0);
+  const greetingTime = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return '早安';
+    if (h < 18) return '午安';
+    return '晚安';
+  })();
+  const ringColor = getScoreRingColor(level);
 
   // ── Render ────────────────────────────────────────────────
   return (
-    <View style={styles.screen}>
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      {/* ── 1. Header ────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>你好，{displayName}</Text>
-          <Text style={styles.greetingSub}>今天身體好嗎？</Text>
-        </View>
-        <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)} accessibilityLabel="選單">
-          <IconMenu />
-        </TouchableOpacity>
-      </View>
-
-      {/* ── 2. Health Score Hero ─────────────────────────── */}
-      <View style={[styles.heroCard, shadows.high]}>
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroGradient}
-        >
-          <View style={styles.heroInner}>
-            {/* Ring + score */}
-            <View style={styles.ringWrapper}>
-              <HealthScoreRing score={score} level={level} />
-              <View style={styles.ringCenter}>
-                <Text style={[styles.scoreNumber, { color: getScoreRingColor(level) }]}>
-                  {score}
-                </Text>
-              </View>
+    <View style={s.screen}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {/* ── Top Bar ─────────────────────────────────────── */}
+        <View style={s.topBar}>
+          <View style={s.topLeft}>
+            <View style={s.avatar}>
+              <Text style={s.avatarText}>{initial}</Text>
             </View>
-
-            {/* Label + summary */}
-            <View style={styles.heroText}>
-              <View style={[styles.levelBadge, { backgroundColor: getScoreRingColor(level) }]}>
-                <Text style={styles.levelBadgeText}>
-                  {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
-                </Text>
-              </View>
-              <Text style={styles.heroSummary}>{getScoreSummary(level)}</Text>
-              <Text style={styles.heroCaption}>根據近 7 天量測數據計算</Text>
+            <View style={s.greetingTextWrap}>
+              <Text style={s.greetingSub}>{greetingTime}</Text>
+              <Text style={s.greeting}>{displayName}</Text>
             </View>
           </View>
-        </LinearGradient>
-      </View>
-
-      {/* ── 3. Vital Signs ───────────────────────────────── */}
-      <View style={styles.vitalsRow}>
-        {/* Blood Pressure */}
-        <View style={[styles.vitalCard, styles.vitalCardBP, shadows.low]}>
-          <Text style={styles.vitalLabel}>血壓</Text>
-          {latestBP && latestBP.systolic != null && latestBP.diastolic != null ? (
-            <>
-              <Text style={styles.vitalValue}>
-                {latestBP.systolic}
-                <Text style={styles.vitalValueSep}>/</Text>
-                {latestBP.diastolic}
-              </Text>
-              <Text style={styles.vitalUnit}>mmHg</Text>
-              <View style={styles.vitalStatusRow}>
-                <View
-                  style={[
-                    styles.vitalStatusDot,
-                    {
-                      backgroundColor: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh
-                        ? colors.danger
-                        : colors.success,
-                    },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.vitalStatusText,
-                    {
-                      color: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh
-                        ? colors.danger
-                        : colors.success,
-                    },
-                  ]}
-                >
-                  {getBPStatus(latestBP.systolic, latestBP.diastolic).label}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <Text style={styles.vitalEmpty}>--</Text>
-          )}
+          <View style={s.topRight}>
+            <TouchableOpacity
+              style={s.iconBtn}
+              onPress={() => router.push('/(tabs)/patient/schedule')}
+              accessibilityLabel="通知"
+            >
+              <IconBell size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconBtn} onPress={() => setMenuVisible(true)} accessibilityLabel="選單">
+              <IconMenu />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Blood Glucose */}
-        <View style={[styles.vitalCard, styles.vitalCardBG, shadows.low]}>
-          <Text style={styles.vitalLabel}>血糖</Text>
-          {latestBG && latestBG.glucose_value != null ? (
-            <>
-              <Text style={styles.vitalValue}>{latestBG.glucose_value}</Text>
-              <Text style={styles.vitalUnit}>mg/dL</Text>
-              <View style={styles.vitalStatusRow}>
-                <View
-                  style={[
-                    styles.vitalStatusDot,
-                    {
-                      backgroundColor: getBGStatus(latestBG.glucose_value).isHigh
-                        ? colors.danger
-                        : colors.success,
-                    },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.vitalStatusText,
-                    {
-                      color: getBGStatus(latestBG.glucose_value).isHigh
-                        ? colors.danger
-                        : colors.success,
-                    },
-                  ]}
-                >
-                  {getBGStatus(latestBG.glucose_value).label}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <Text style={styles.vitalEmpty}>--</Text>
-          )}
-        </View>
-      </View>
+        {/* ── Glass Hero (health score + summary) ──────────── */}
+        <View style={s.hero}>
+          <LinearGradient
+            colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={s.heroHaloTopRight} />
+          <View style={s.heroHaloBottomLeft} />
+          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-      {/* ── 4. Medical Tags ──────────────────────────────── */}
-      {recipient.medical_tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          <View style={styles.tagsRow}>
+          <View style={s.heroContent}>
+            <Text style={s.heroTagline}>HEALTH STATUS</Text>
+            <Text style={s.heroSubtitle}>今日健康狀態</Text>
+
+            <View style={s.heroBody}>
+              <View style={s.ringWrap}>
+                <HealthScoreRing score={score} level={level} />
+                <View style={s.ringCenter}>
+                  <Text style={[s.ringScore, { color: ringColor }]}>{score}</Text>
+                  <Text style={s.ringScoreUnit}>分</Text>
+                </View>
+              </View>
+              <View style={s.heroText}>
+                <View style={[s.levelBadge, { backgroundColor: ringColor + '22', borderColor: ringColor + '55' }]}>
+                  <View style={[s.levelDot, { backgroundColor: ringColor }]} />
+                  <Text style={[s.levelLabel, { color: ringColor }]}>
+                    {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
+                  </Text>
+                </View>
+                <Text style={s.heroSummary}>{getScoreSummary(level)}</Text>
+                <Text style={s.heroCaption}>近 7 天量測數據</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Vital Signs (corrected colors) ───────────────── */}
+        <View style={s.vitalsRow}>
+          <View style={s.vitalCard}>
+            <View style={s.vitalHeader}>
+              <View style={[s.vitalIconWrap, { backgroundColor: colors.dangerLight }]}>
+                <IconHeart size={16} />
+              </View>
+              <Text style={s.vitalLabel}>血壓</Text>
+            </View>
+            {latestBP && latestBP.systolic != null && latestBP.diastolic != null ? (
+              <>
+                <View style={s.vitalValueRow}>
+                  <Text style={s.vitalValue}>
+                    {latestBP.systolic}
+                    <Text style={s.vitalSep}>/</Text>
+                    {latestBP.diastolic}
+                  </Text>
+                  <Text style={s.vitalUnit}>mmHg</Text>
+                </View>
+                <View style={s.vitalStatusRow}>
+                  <View
+                    style={[
+                      s.vitalStatusDot,
+                      { backgroundColor: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh ? colors.danger : colors.success },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      s.vitalStatusText,
+                      { color: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh ? colors.danger : colors.success },
+                    ]}
+                  >
+                    {getBPStatus(latestBP.systolic, latestBP.diastolic).label}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <Text style={s.vitalEmpty}>--</Text>
+            )}
+          </View>
+
+          <View style={s.vitalCard}>
+            <View style={s.vitalHeader}>
+              <View style={[s.vitalIconWrap, { backgroundColor: colors.warningLight }]}>
+                <IconDrop size={16} />
+              </View>
+              <Text style={s.vitalLabel}>血糖</Text>
+            </View>
+            {latestBG && latestBG.glucose_value != null ? (
+              <>
+                <View style={s.vitalValueRow}>
+                  <Text style={s.vitalValue}>{latestBG.glucose_value}</Text>
+                  <Text style={s.vitalUnit}>mg/dL</Text>
+                </View>
+                <View style={s.vitalStatusRow}>
+                  <View
+                    style={[
+                      s.vitalStatusDot,
+                      { backgroundColor: getBGStatus(latestBG.glucose_value).isHigh ? colors.danger : colors.success },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      s.vitalStatusText,
+                      { color: getBGStatus(latestBG.glucose_value).isHigh ? colors.danger : colors.success },
+                    ]}
+                  >
+                    {getBGStatus(latestBG.glucose_value).label}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <Text style={s.vitalEmpty}>--</Text>
+            )}
+          </View>
+        </View>
+
+        {/* ── Medical Tags ─────────────────────────────────── */}
+        {recipient.medical_tags.length > 0 && (
+          <View style={s.tagsRow}>
             {recipient.medical_tags.map((tag) => (
-              <View key={tag} style={styles.tagPill}>
-                <Text style={styles.tagPillText}>{tag}</Text>
+              <View key={tag} style={s.tagPill}>
+                <Text style={s.tagPillText}>{tag}</Text>
               </View>
             ))}
           </View>
-        </View>
-      )}
+        )}
 
-      {/* ── 5. Upcoming Appointments ─────────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>近期行程</Text>
-        <View style={[styles.sectionCard, shadows.low]}>
-          {appointments.length === 0 ? (
-            <Text style={styles.emptyStateText}>暫無近期行程</Text>
-          ) : (
-            appointments.map((appt, idx) => {
+        {/* ── Section: 近期行程 ────────────────────────────── */}
+        <View style={s.sectionHeader}>
+          <IconCalendar />
+          <Text style={s.sectionTitle}>近期行程</Text>
+        </View>
+        {appointments.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Text style={s.emptyCardText}>暫無近期行程</Text>
+          </View>
+        ) : (
+          <View style={s.listCard}>
+            {appointments.map((appt, idx) => {
               const { month, day } = formatAppointmentDate(appt.appointment_date);
               return (
                 <View
                   key={appt.id}
-                  style={[
-                    styles.apptRow,
-                    idx < appointments.length - 1 && styles.apptRowDivider,
-                  ]}
+                  style={[s.apptRow, idx < appointments.length - 1 && s.rowDivider]}
                 >
-                  {/* Date badge */}
-                  <View style={styles.apptDateBadge}>
-                    <CalendarIcon />
-                    <Text style={styles.apptMonth}>{month}月</Text>
-                    <Text style={styles.apptDay}>{day}日</Text>
+                  <View style={s.apptDateBadge}>
+                    <Text style={s.apptMonth}>{month}月</Text>
+                    <Text style={s.apptDay}>{day}日</Text>
                   </View>
-                  {/* Info */}
-                  <View style={styles.apptInfo}>
-                    <Text style={styles.apptTitle} numberOfLines={1}>
-                      {appt.title}
-                    </Text>
+                  <View style={s.apptInfo}>
+                    <Text style={s.apptTitle} numberOfLines={1}>{appt.title}</Text>
                     {appt.hospital_name ? (
-                      <Text style={styles.apptHospital} numberOfLines={1}>
-                        {appt.hospital_name}
-                      </Text>
+                      <Text style={s.apptHospital} numberOfLines={1}>{appt.hospital_name}</Text>
                     ) : null}
                   </View>
                 </View>
               );
-            })
+            })}
+          </View>
+        )}
+
+        {/* ── Section: 最近通知 ────────────────────────────── */}
+        <View style={s.sectionHeader}>
+          <IconBell />
+          <Text style={s.sectionTitle}>最近通知</Text>
+          {notifications.length > 0 && (
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/patient/schedule')}
+              activeOpacity={0.7}
+              style={s.sectionLink}
+            >
+              <Text style={s.sectionLinkText}>查看全部</Text>
+              <IconChevron color={colors.primaryText} />
+            </TouchableOpacity>
           )}
         </View>
-      </View>
-
-      {/* ── 6. Recent Notifications ──────────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>最近通知</Text>
-        <View style={[styles.sectionCard, shadows.low]}>
-          {notifications.length === 0 ? (
-            <Text style={styles.emptyStateText}>暫無通知</Text>
-          ) : (
-            notifications.map((notif, idx) => (
+        {notifications.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Text style={s.emptyCardText}>暫無通知</Text>
+          </View>
+        ) : (
+          <View style={s.listCard}>
+            {notifications.map((notif, idx) => (
               <View
                 key={notif.id}
-                style={[
-                  styles.notifRow,
-                  idx < notifications.length - 1 && styles.notifRowDivider,
-                ]}
+                style={[s.notifRow, idx < notifications.length - 1 && s.rowDivider]}
               >
-                {/* Icon */}
-                <View style={styles.notifIconWrap}>
-                  <NotificationIcon type={notif.type} />
+                <NotificationIcon type={notif.type} />
+                <View style={s.notifContent}>
+                  <Text style={s.notifTitle} numberOfLines={2}>{notif.title}</Text>
+                  <Text style={s.notifTime}>{formatNotificationTime(notif.created_at)}</Text>
                 </View>
-                {/* Text */}
-                <View style={styles.notifContent}>
-                  <Text style={styles.notifTitle} numberOfLines={2}>
-                    {notif.title}
-                  </Text>
-                  <Text style={styles.notifTime}>
-                    {formatNotificationTime(notif.created_at)}
-                  </Text>
-                </View>
-                {/* Unread dot */}
-                {!notif.is_read && <View style={styles.unreadDot} />}
+                {!notif.is_read && <View style={s.unreadDot} />}
               </View>
-            ))
-          )}
-        </View>
-      </View>
+            ))}
+          </View>
+        )}
 
-      <View style={styles.bottomPad} />
-    </ScrollView>
+        <View style={{ height: spacing['3xl'] }} />
+      </ScrollView>
 
-    {/* ── Menu Modal ───────────────────────── */}
-    <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-      <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
-        <Pressable style={styles.sheet} onPress={() => {/* block */}}>
-          <Text style={styles.sheetTitle}>選單</Text>
-          {[
-            { label: '通知', onPress: () => router.push('/(tabs)/patient/schedule') },
-            { label: '設定', onPress: () => Alert.alert('提示', '設定功能即將推出') },
-          ].map((item) => (
-            <TouchableOpacity key={item.label} style={styles.sheetItem} onPress={() => { setMenuVisible(false); item.onPress(); }} activeOpacity={0.7}>
-              <Text style={styles.sheetItemText}>{item.label}</Text>
+      {/* ── Menu Modal ─────────────────────────── */}
+      <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+        <Pressable style={s.overlay} onPress={() => setMenuVisible(false)}>
+          <Pressable style={s.sheet} onPress={() => {/* block */}}>
+            <View style={s.sheetHandle} />
+
+            {/* Profile header */}
+            <View style={s.menuProfile}>
+              <View style={s.menuAvatar}>
+                <Text style={s.menuAvatarText}>{initial}</Text>
+              </View>
+              <View style={s.menuProfileText}>
+                <Text style={s.menuName}>{displayName}</Text>
+                <View style={s.menuRoleBadge}>
+                  <Text style={s.menuRoleBadgeText}>被照護者</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Group: 我的 */}
+            <Text style={s.menuGroupLabel}>我的</Text>
+            <View style={s.menuGroup}>
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/patient/schedule'); }}
+                activeOpacity={0.7}
+              >
+                <View style={[s.menuIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <IconBellMenu />
+                </View>
+                <Text style={s.menuRowText}>通知中心</Text>
+                <IconChevron color={colors.textDisabled} />
+              </TouchableOpacity>
+              <View style={s.menuItemDivider} />
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/patient/schedule'); }}
+                activeOpacity={0.7}
+              >
+                <View style={[s.menuIconWrap, { backgroundColor: colors.accentLight }]}>
+                  <IconCalendarMenu />
+                </View>
+                <Text style={s.menuRowText}>行程與紀錄</Text>
+                <IconChevron color={colors.textDisabled} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Group: 系統 */}
+            <Text style={s.menuGroupLabel}>系統</Text>
+            <View style={s.menuGroup}>
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => { setMenuVisible(false); Alert.alert('提示', '設定功能即將推出'); }}
+                activeOpacity={0.7}
+              >
+                <View style={[s.menuIconWrap, { backgroundColor: colors.bgSurfaceAlt }]}>
+                  <IconSettings />
+                </View>
+                <Text style={s.menuRowText}>設定</Text>
+                <IconChevron color={colors.textDisabled} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Logout */}
+            <TouchableOpacity
+              style={s.menuLogout}
+              onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }}
+              activeOpacity={0.7}
+            >
+              <View style={[s.menuIconWrap, { backgroundColor: colors.dangerLight }]}>
+                <IconLogout />
+              </View>
+              <Text style={s.menuLogoutText}>登出</Text>
             </TouchableOpacity>
-          ))}
-          <View style={styles.sheetDivider} />
-          <TouchableOpacity style={styles.sheetItem} onPress={() => { setMenuVisible(false); void logout().then(() => router.replace('/(auth)')); }} activeOpacity={0.7}>
-            <Text style={styles.sheetItemDanger}>登出</Text>
-          </TouchableOpacity>
+          </Pressable>
         </Pressable>
-      </Pressable>
-    </Modal>
+      </Modal>
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.bgScreen,
-  },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing['2xl'],
-  },
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bgScreen },
+  content: { paddingBottom: 0 },
   center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-    backgroundColor: colors.bgScreen,
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    padding: spacing.xl, backgroundColor: colors.bgScreen,
   },
-  loadingText: {
-    marginTop: spacing.sm,
-    ...typography.bodyLg,
-    color: colors.textTertiary,
-  },
-  errorText: {
-    ...typography.bodyLg,
-    color: colors.danger,
-    textAlign: 'center',
-  },
-  emptyText: {
-    ...typography.bodyLg,
-    color: colors.textDisabled,
-    textAlign: 'center',
-  },
+  errorText: { ...typography.bodyLg, color: colors.danger, textAlign: 'center' },
+  emptyText: { ...typography.bodyLg, color: colors.textDisabled, textAlign: 'center' },
 
-  // ── Header ──────────────────────────────────────────────
-  header: {
+  // ── Top Bar ───────────────────────────────────────────────
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing['2xl'],
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  menuBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.bgSurface, alignItems: 'center', justifyContent: 'center',
-    ...shadows.low,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  greetingSub: {
-    ...typography.bodyLg,
-    color: colors.textTertiary,
-  },
-
-  // ── Hero Card ────────────────────────────────────────────
-  heroCard: {
-    borderRadius: 28,
-    overflow: 'hidden',
-    marginBottom: spacing.lg,
-  },
-  heroGradient: {
-    borderRadius: 28,
-    padding: spacing['2xl'],
-  },
-  heroInner: {
+  topLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xl,
+    gap: spacing.sm + 2,
+    flex: 1,
   },
-  ringWrapper: {
-    width: 100,
-    height: 100,
+  avatar: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  greetingTextWrap: { flex: 1 },
+  greetingSub: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+  },
+  greeting: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 1,
+  },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  iconBtn: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Hero ──────────────────────────────────────────────────
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  heroHaloTopRight: {
+    position: 'absolute', top: -50, right: -60,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute', bottom: -50, left: -40,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    paddingVertical: spacing.lg + 2,
+    paddingHorizontal: spacing.lg,
+  },
+  heroTagline: {
+    fontSize: 10, fontWeight: '700',
+    color: colors.primary, letterSpacing: 2,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: spacing.xxs,
+  },
+  heroBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.md,
+  },
+  ringWrap: {
+    width: 96, height: 96,
     position: 'relative',
   },
   ringCenter: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
-  scoreNumber: {
-    fontSize: 36,
-    fontWeight: '700',
+  ringScore: { fontSize: 32, fontWeight: '700', lineHeight: 38 },
+  ringScoreUnit: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontWeight: '500',
+    marginTop: -4,
   },
-  heroText: {
-    flex: 1,
-    gap: spacing.sm,
-  },
+  heroText: { flex: 1, gap: spacing.xs + 2 },
   levelBadge: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xxs + 2,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 3,
+    borderWidth: 1,
   },
-  levelBadgeText: {
-    ...typography.headingSm,
-    color: colors.white,
+  levelDot: { width: 6, height: 6, borderRadius: 3 },
+  levelLabel: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
   },
   heroSummary: {
-    ...typography.bodyLg,
-    color: colors.textSecondary,
-    lineHeight: 22,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textPrimary,
+    lineHeight: 20,
   },
   heroCaption: {
-    ...typography.bodySm,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
   },
 
-  // ── Vital Signs ──────────────────────────────────────────
+  // ── Vitals ────────────────────────────────────────────────
   vitalsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   vitalCard: {
     flex: 1,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.md + 2,
+    gap: spacing.sm,
   },
-  vitalCardBP: {
-    backgroundColor: colors.accentLight,
+  vitalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
   },
-  vitalCardBG: {
-    backgroundColor: colors.warningLight,
+  vitalIconWrap: {
+    width: 28, height: 28, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
   },
   vitalLabel: {
-    ...typography.bodySm,
+    fontSize: typography.bodySm.fontSize,
     color: colors.textTertiary,
-    marginBottom: spacing.xs,
+    fontWeight: '500',
+  },
+  vitalValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.xs,
   },
   vitalValue: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     color: colors.textPrimary,
-    lineHeight: 34,
+    lineHeight: 32,
   },
-  vitalValueSep: {
-    fontSize: 20,
+  vitalSep: {
+    fontSize: 18,
     fontWeight: '400',
     color: colors.textTertiary,
   },
   vitalUnit: {
-    ...typography.caption,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
-    marginTop: 2,
   },
   vitalStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    marginTop: spacing.sm,
   },
-  vitalStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.full,
-  },
+  vitalStatusDot: { width: 6, height: 6, borderRadius: 3 },
   vitalStatusText: {
-    ...typography.bodySm,
-    fontWeight: '600',
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
   },
   vitalEmpty: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     color: colors.textDisabled,
-    lineHeight: 34,
+    lineHeight: 32,
   },
 
-  // ── Medical Tags ─────────────────────────────────────────
-  tagsContainer: {
-    marginBottom: spacing.lg,
-  },
+  // ── Medical Tags ──────────────────────────────────────────
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
   },
   tagPill: {
     backgroundColor: colors.primaryLight,
@@ -767,43 +928,73 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 2,
   },
   tagPillText: {
-    ...typography.bodySm,
+    fontSize: typography.captionSm.fontSize,
     color: colors.primaryText,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
-  // ── Section ──────────────────────────────────────────────
-  section: {
-    marginBottom: spacing.lg,
+  // ── Section header ─────────────────────────────────────────
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm + 2,
   },
   sectionTitle: {
-    ...typography.headingMd,
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    letterSpacing: 0.3,
   },
-  sectionCard: {
-    backgroundColor: colors.bgSurface,
-    borderRadius: radius.xl,
-    overflow: 'hidden',
+  sectionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  emptyStateText: {
-    ...typography.bodyLg,
-    color: colors.textDisabled,
-    textAlign: 'center',
-    paddingVertical: spacing.xl,
+  sectionLinkText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.primaryText,
+    fontWeight: '600',
   },
 
-  // ── Appointments ─────────────────────────────────────────
+  // ── List card (appointments + notifications shared) ───────
+  listCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    overflow: 'hidden',
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderDefault,
+  },
+  emptyCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyCardText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textDisabled,
+  },
+
+  // ── Appointment row ───────────────────────────────────────
   apptRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-  },
-  apptRowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderDefault,
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.md,
   },
   apptDateBadge: {
     width: 52,
@@ -811,13 +1002,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
   },
   apptMonth: {
-    ...typography.captionSm,
+    fontSize: typography.captionSm.fontSize,
     color: colors.white,
     fontWeight: '600',
-    marginTop: 2,
   },
   apptDay: {
     fontSize: 16,
@@ -825,157 +1015,160 @@ const styles = StyleSheet.create({
     color: colors.white,
     lineHeight: 20,
   },
-  apptInfo: {
-    flex: 1,
-    gap: spacing.xxs,
-  },
+  apptInfo: { flex: 1, gap: 2 },
   apptTitle: {
-    ...typography.headingSm,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   apptHospital: {
-    ...typography.bodySm,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
   },
 
-  // ── Notifications ────────────────────────────────────────
+  // ── Notification row ──────────────────────────────────────
   notifRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-  },
-  notifRowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderDefault,
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.md,
   },
   notifIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 36, height: 36,
+    borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  notifContent: {
-    flex: 1,
-    gap: spacing.xxs,
-  },
+  notifContent: { flex: 1, gap: 2 },
   notifTitle: {
-    ...typography.bodySm,
+    fontSize: typography.bodySm.fontSize,
     color: colors.textPrimary,
+    fontWeight: '500',
     lineHeight: 18,
   },
   notifTime: {
-    ...typography.caption,
+    fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
   },
   unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.full,
-    backgroundColor: colors.accent,
+    width: 8, height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
   },
 
-  // ── Service Records ──────────────────────────────────────
-  serviceCard: {
+  // ── Menu Modal ────────────────────────────────────────────
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
+  sheet: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 24,
-    padding: spacing.xl,
-    marginBottom: spacing.md,
-    ...shadows.low,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing['3xl'] + spacing.lg,
   },
-  serviceCardHeader: {
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40, height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginBottom: spacing.lg,
+  },
+  menuProfile: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
-    paddingBottom: spacing.md,
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderDefault,
   },
-  serviceCategory: {
+  menuAvatar: {
+    width: 52, height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  menuAvatarText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  menuProfileText: { flex: 1, gap: 4 },
+  menuName: {
     fontSize: typography.headingSm.fontSize,
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  serviceDate: {
-    fontSize: typography.bodySm.fontSize,
-    color: colors.textTertiary,
+  menuRoleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 2,
   },
-  serviceDataGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  serviceDataItem: {
-    width: '47%' as unknown as number,
-    flexGrow: 1,
-    backgroundColor: colors.bgSurfaceAlt,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-  },
-  serviceDataLabel: {
+  menuRoleBadgeText: {
     fontSize: typography.captionSm.fontSize,
-    color: colors.textTertiary,
-    fontWeight: '500',
-    marginBottom: spacing.xxs,
-  },
-  serviceDataValue: {
-    fontSize: typography.headingSm.fontSize,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: colors.primaryText,
   },
-  serviceNotes: {
-    backgroundColor: colors.warningLight,
+  menuGroupLabel: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs + 2,
+  },
+  menuGroup: {
+    backgroundColor: colors.bgSurface,
     borderRadius: radius.lg,
-    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    overflow: 'hidden',
     marginBottom: spacing.sm,
   },
-  serviceNotesLabel: {
-    fontSize: typography.captionSm.fontSize,
-    fontWeight: '600',
-    color: colors.warning,
-    marginBottom: spacing.xs,
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
-  serviceNotesText: {
+  menuItemDivider: {
+    height: 1,
+    backgroundColor: colors.borderDefault,
+    marginHorizontal: spacing.md,
+  },
+  menuIconWrap: {
+    width: 36, height: 36,
+    borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuRowText: {
+    flex: 1,
     fontSize: typography.bodyMd.fontSize,
     color: colors.textPrimary,
-    lineHeight: 22,
+    fontWeight: '500',
   },
-  serviceNextVisit: {
-    backgroundColor: colors.primaryLight,
+  menuLogout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.bgSurface,
     borderRadius: radius.lg,
-    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(217,83,79,0.2)',
+    marginTop: spacing.xs,
   },
-  serviceNextVisitLabel: {
-    fontSize: typography.captionSm.fontSize,
-    fontWeight: '600',
-    color: colors.primaryText,
-    marginBottom: spacing.xs,
-  },
-  serviceNextVisitText: {
+  menuLogoutText: {
+    flex: 1,
     fontSize: typography.bodyMd.fontSize,
+    color: colors.danger,
     fontWeight: '600',
-    color: colors.primary,
-  },
-
-  // ── Menu Modal ───────────────────────────────────────────
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.bgSurface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingVertical: spacing['2xl'], paddingHorizontal: spacing['2xl'], paddingBottom: spacing['3xl'] + spacing.xl,
-  },
-  sheetTitle: { fontSize: typography.headingMd.fontSize, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xl },
-  sheetItem: { paddingVertical: spacing.lg },
-  sheetItemText: { fontSize: typography.bodyLg.fontSize, color: colors.textPrimary },
-  sheetItemDanger: { fontSize: typography.bodyLg.fontSize, color: colors.danger },
-  sheetDivider: { height: 1, backgroundColor: colors.borderDefault, marginVertical: spacing.sm },
-
-  // ── Bottom padding ────────────────────────────────────────
-  bottomPad: {
-    height: spacing['3xl'] + spacing.lg,
   },
 });
