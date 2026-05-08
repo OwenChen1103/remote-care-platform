@@ -16,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -88,27 +88,22 @@ const REPORT_TYPES = [
   { key: 'family_update', label: '家人摘要' },
 ] as const;
 
-const CHAT_TASKS = [
-  { key: 'trend_explanation', label: '趨勢解讀' },
-  { key: 'family_update', label: '家人近況' },
-  { key: 'visit_questions', label: '看診問題' },
-] as const;
-
 // ─── Component ────────────────────────────────────────────────
 
 export default function AiReportScreen() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('health_summary');
-  const [mode, setMode] = useState<'report' | 'chat'>('report');
-  const [selectedTask, setSelectedTask] = useState<string>('trend_explanation');
+  // Mode is currently fixed to 'report' (chat mode UI was removed); kept as
+  // const so existing branching reads stay valid without a dead setter.
+  const [mode] = useState<'report' | 'chat'>('report');
 
   const [generating, setGenerating] = useState(false);
   const [report, setReport] = useState<ReportResult | null>(null);
   const [chatResult, setChatResult] = useState<ChatResult | null>(null);
   const [error, setError] = useState('');
   const [rateLimited, setRateLimited] = useState(false);
-  const [lastFailedAction, setLastFailedAction] = useState<'report' | 'chat' | null>(null);
+  const [, setLastFailedAction] = useState<'report' | 'chat' | null>(null);
 
   const [history, setHistory] = useState<HistoricalReport[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -208,38 +203,6 @@ export default function AiReportScreen() {
       } else {
         setError('生成失敗，請稍後再試');
         setLastFailedAction('report');
-      }
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  // Generate chat
-  const handleGenerateChat = async () => {
-    if (!selectedRecipientId) return;
-    setGenerating(true);
-    setError('');
-    setRateLimited(false);
-    setLastFailedAction(null);
-    setReport(null);
-    setChatResult(null);
-    try {
-      const result = await api.post<ChatResult>('/ai/chat', {
-        recipient_id: selectedRecipientId,
-        task: selectedTask,
-      });
-      setChatResult(result);
-    } catch (e) {
-      if (e instanceof ApiError) {
-        if (e.code === 'AI_RATE_LIMITED') {
-          setRateLimited(true);
-        } else {
-          setError(e.message);
-          setLastFailedAction('chat');
-        }
-      } else {
-        setError('生成失敗，請稍後再試');
-        setLastFailedAction('chat');
       }
     } finally {
       setGenerating(false);

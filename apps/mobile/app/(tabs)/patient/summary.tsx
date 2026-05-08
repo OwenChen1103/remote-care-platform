@@ -180,14 +180,6 @@ function IconWarning({ size = 18, color = colors.danger }: { size?: number; colo
     </Svg>
   );
 }
-function IconUserMenu({ color = colors.primary }: { color?: string }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth={1.8} />
-      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
 function IconBellMenu({ color = colors.primary }: { color?: string }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">

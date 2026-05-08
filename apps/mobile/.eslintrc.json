@@ -15,6 +15,7 @@
   "rules": {
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-require-imports": "off",
     "no-undef": "off"
   },
   "ignorePatterns": ["node_modules/", ".expo/", "babel.config.js", "metro.config.js", "jest.config.js"]

@@ -5,10 +5,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Modal,
   Pressable,
-  Alert,
   RefreshControl,
   Animated,
   Easing,
@@ -27,11 +25,9 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
@@ -90,15 +86,6 @@ function maskName(name: string): string {
   return name.charAt(0) + '○'.repeat(name.length - 1);
 }
 
-function extractExcerpt(summary: string, maxLen = 25): string {
-  if (!summary) return '';
-  const short = summary.slice(0, maxLen);
-  const periodIdx = short.indexOf('。');
-  if (periodIdx > 0) return short.slice(0, periodIdx + 1);
-  if (summary.length > maxLen) return short + '...';
-  return summary;
-}
-
 function formatReportDate(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -124,16 +111,6 @@ const SERVICE_DESCRIPTIONS: Record<string, string> = {
   exercise_program: '專業陪伴安心運動',
   home_cleaning: '乾淨居家安心生活',
 };
-
-// ─── Accent colors for metric cards ──────────────────────────
-
-// Accent colors — warm palette that harmonizes with purple primary
-const METRIC_ACCENTS = {
-  bp: { bar: '#E8707E', bg: '#FFF2F4' },      // rose
-  bg: { bar: '#E8A44E', bg: '#FFF8EF' },      // warm gold
-  abnormal: { bar: '#D4930A', bg: '#FFFBF0' }, // amber
-  count: { bar: '#5BB98B', bg: '#F0F9F3' },    // sage green
-} as const;
 
 // ─── SVG Icons (24×24 line style) ───────────────────────────
 
@@ -204,22 +181,6 @@ const SERVICE_ICONS: Record<string, (props: { size: number; color: string }) => 
   ),
 };
 
-// Service category colors — muted, warm, cohesive with purple base
-const SERVICE_CATEGORY_COLORS: Record<string, { icon: string; bg: string }> = {
-  escort_visit: { icon: '#E8707E', bg: '#FFF2F4' },
-  functional_assessment: { icon: '#7B71D4', bg: '#F2F0FF' },
-  exercise_program: { icon: '#5BB98B', bg: '#F0F9F3' },
-  home_cleaning: { icon: '#E8A44E', bg: '#FFF8EF' },
-  pre_visit_consult: { icon: '#9B8FD8', bg: '#F5F3FF' },
-  daily_living_support: { icon: '#6BAFCF', bg: '#F0F7FC' },
-  nutrition_consult: { icon: '#6DB88A', bg: '#F0F8F2' },
-  shopping_assist: { icon: '#D4789B', bg: '#FFF0F5' },
-};
-
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 // ─── Component ────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -228,7 +189,7 @@ export default function HomeScreen() {
 
   // ── Data state ──
   const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -407,31 +368,6 @@ export default function HomeScreen() {
     setRefreshingAll(false);
   }, [fetchRecipients, fetchUnreadCount, fetchAllData, recipients]);
 
-  // ── PDF download ──
-  const handleDownloadPdf = useCallback(async () => {
-    if (!activeReport || !activeRecipient) return;
-    const statusLabel = activeReport.status_label === 'stable' ? '穩定'
-      : activeReport.status_label === 'attention' ? '需留意' : '建議就醫';
-    const html = `<html><head><meta charset="utf-8"><style>
-      body{font-family:sans-serif;padding:32px;color:#111827}
-      h1{font-size:20px;margin-bottom:4px}
-      .sub{color:#6B7280;font-size:13px;margin-bottom:16px}
-      .score{font-size:36px;font-weight:700;color:${SCORE_COLORS[healthResult?.level ?? 'good'] ?? colors.primary}}
-      .summary{font-size:14px;line-height:1.6;margin:12px 0}
-      .disclaimer{margin-top:20px;padding:10px;background:#F3F4F6;border-radius:8px;font-size:11px;color:#6B7280}
-    </style></head><body>
-      <h1>健康報告 — ${escHtml(activeRecipient.name)}</h1>
-      <p class="sub">${new Date(activeReport.generated_at).toLocaleDateString('zh-TW')}</p>
-      <p class="score">${healthResult?.score ?? '-'} 分（${escHtml(statusLabel)}）</p>
-      <p class="summary">${escHtml(activeReport.summary)}</p>
-      <div class="disclaimer">本報告由 AI 生成，僅供健康趨勢參考，不構成醫療診斷。</div>
-    </body></html>`;
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
-    } catch { /* fallback silently */ }
-  }, [activeReport, activeRecipient, healthResult]);
-
   // ─── Role redirect — Provider/Patient should not see this page ──
   useEffect(() => {
     if (user?.role === 'provider') {
@@ -495,9 +431,6 @@ export default function HomeScreen() {
   });
 
   // ─── Main Render ──────────────────────────────────────────────
-
-  const abnormalTotal = (activeBp?.abnormal_count ?? 0) + (activeBg?.abnormal_count ?? 0);
-  const measureTotal = (activeBp?.count ?? 0) + (activeBg?.count ?? 0);
 
   return (
     <View style={styles.container}>

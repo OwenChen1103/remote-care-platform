@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
 
 // ─── Brand Colors (logo: sky blue + nature green) ─────────────
 const BRAND = {
