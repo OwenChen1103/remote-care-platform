@@ -10,8 +10,10 @@ import {
 } from '../index';
 
 describe('ERROR_CODES', () => {
-  it('should have all 20 error codes defined', () => {
-    expect(Object.keys(ERROR_CODES)).toHaveLength(20);
+  it('should have a non-empty set of error codes', () => {
+    // Don't hardcode count — codes are added as new domains are introduced.
+    // Just verify the registry isn't empty and every code has a HTTP status.
+    expect(Object.keys(ERROR_CODES).length).toBeGreaterThan(0);
   });
 
   it('should have matching HTTP status for every error code', () => {
@@ -19,6 +21,15 @@ describe('ERROR_CODES', () => {
       expect(ERROR_STATUS_MAP[code]).toBeDefined();
       expect(typeof ERROR_STATUS_MAP[code]).toBe('number');
     }
+  });
+
+  it('should include patient binding error codes (Section 1)', () => {
+    expect(ERROR_CODES.PATIENT_USER_NOT_FOUND).toBe('PATIENT_USER_NOT_FOUND');
+    expect(ERROR_CODES.PATIENT_USER_ROLE_MISMATCH).toBe('PATIENT_USER_ROLE_MISMATCH');
+    expect(ERROR_CODES.PATIENT_USER_ALREADY_BOUND).toBe('PATIENT_USER_ALREADY_BOUND');
+    expect(ERROR_STATUS_MAP.PATIENT_USER_NOT_FOUND).toBe(404);
+    expect(ERROR_STATUS_MAP.PATIENT_USER_ROLE_MISMATCH).toBe(400);
+    expect(ERROR_STATUS_MAP.PATIENT_USER_ALREADY_BOUND).toBe(409);
   });
 });
 

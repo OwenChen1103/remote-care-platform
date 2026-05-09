@@ -75,24 +75,33 @@ export const ServiceRequestProviderConfirmSchema = z.object({
   provider_note: z.string().max(1000).optional(),
 });
 
+// Health data sub-schema — strictly typed structured fields collected during a service visit.
+// Exported separately so mobile readers (caregiver/patient/provider screens) can type-narrow.
+// `.strict()` ensures unknown keys are rejected — both the writer (provider mobile) and
+// any future API surface won't silently lose fields to schema drift.
+export const ProviderReportHealthDataSchema = z.object({
+  blood_pressure: z.object({
+    systolic: z.number().int().min(40).max(260),
+    diastolic: z.number().int().min(20).max(180),
+  }).strict().optional(),
+  heart_rate: z.number().int().min(20).max(220).optional(),
+  blood_glucose: z.number().min(20).max(600).optional(),
+  blood_oxygen: z.number().int().min(50).max(100).optional(),
+  height_cm: z.number().min(50).max(250).optional(),
+  weight_kg: z.number().min(10).max(300).optional(),
+  body_fat_pct: z.number().min(0).max(80).optional(),
+  muscle_mass_kg: z.number().min(0).max(150).optional(),
+  cholesterol: z.number().min(0).max(600).optional(),
+}).strict();
+
 export const ProviderReportSchema = z.object({
   service_date: z.string().optional(),
-  health_data: z.object({
-    blood_pressure: z.object({ systolic: z.number(), diastolic: z.number() }).optional(),
-    heart_rate: z.number().optional(),
-    blood_glucose: z.number().optional(),
-    blood_oxygen: z.number().optional(),
-    height_cm: z.number().optional(),
-    weight_kg: z.number().optional(),
-    body_fat_pct: z.number().optional(),
-    muscle_mass_kg: z.number().optional(),
-    cholesterol: z.number().optional(),
-  }).optional(),
+  health_data: ProviderReportHealthDataSchema.optional(),
   medication_notes: z.string().max(1000).optional(),
   doctor_instructions: z.string().max(1000).optional(),
   next_visit_date: z.string().optional(),
   additional_notes: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const ServiceRequestProviderProgressSchema = z.object({
   status: z.enum(['in_service', 'completed']),
@@ -108,3 +117,4 @@ export type ServiceRequestCaregiverConfirmInput = z.infer<typeof ServiceRequestC
 export type ServiceRequestProviderConfirmInput = z.infer<typeof ServiceRequestProviderConfirmSchema>;
 export type ServiceRequestProviderProgressInput = z.infer<typeof ServiceRequestProviderProgressSchema>;
 export type ProviderReportInput = z.infer<typeof ProviderReportSchema>;
+export type ProviderReportHealthData = z.infer<typeof ProviderReportHealthDataSchema>;

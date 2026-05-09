@@ -15,8 +15,8 @@
  * AI status labels from spec G.2.7:
  *   stable(綠) → attention(黃) → consult_doctor(紅)
  *
- * Provider review statuses from spec H.2.4:
- *   pending(黃) → approved(綠) → suspended(紅)
+ * Provider review statuses from spec H.2.4 (extended for review lifecycle Section 4):
+ *   pending(黃) → approved(綠) → rejected(橘, 可重新申請) / suspended(紅, ops-only)
  */
 
 import type { ServiceRequestStatus, AiStatusLabel, ProviderReviewStatus } from '../constants/enums';
@@ -138,6 +138,14 @@ export const PROVIDER_REVIEW_STATUS_DISPLAY: Record<ProviderReviewStatus, Status
     color: '#15803D',
     bg: '#DCFCE7',
     twClasses: 'bg-green-100 text-green-800',
+  },
+  // Reviewer rejected the application — provider can edit data and re-submit (Section 4.1.6).
+  // Orange (not red) signals a recoverable state vs suspended.
+  rejected: {
+    label: '未通過',
+    color: '#C2410C',
+    bg: '#FFEDD5',
+    twClasses: 'bg-orange-100 text-orange-800',
   },
   suspended: {
     label: '已停權',

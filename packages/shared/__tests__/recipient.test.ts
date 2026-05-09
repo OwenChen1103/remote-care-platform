@@ -90,3 +90,38 @@ describe('RecipientUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe('Patient binding (Section 1)', () => {
+  it('Create accepts patient_user_email (optional)', () => {
+    const result = RecipientCreateSchema.safeParse({
+      name: '王大明',
+      patient_user_email: 'patient@example.com',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.patient_user_email).toBe('patient@example.com');
+  });
+
+  it('Create rejects invalid email', () => {
+    expect(RecipientCreateSchema.safeParse({
+      name: '王大明',
+      patient_user_email: 'not-an-email',
+    }).success).toBe(false);
+  });
+
+  it('Update accepts null patient_user_email (explicit unbind)', () => {
+    const result = RecipientUpdateSchema.safeParse({ patient_user_email: null });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.patient_user_email).toBeNull();
+  });
+
+  it('Update accepts string patient_user_email (rebind)', () => {
+    const result = RecipientUpdateSchema.safeParse({ patient_user_email: 'new@example.com' });
+    expect(result.success).toBe(true);
+  });
+
+  it('Update accepts undefined patient_user_email (no change)', () => {
+    const result = RecipientUpdateSchema.safeParse({ name: '只改名字' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.patient_user_email).toBeUndefined();
+  });
+});

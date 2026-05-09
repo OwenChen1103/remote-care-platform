@@ -8,7 +8,10 @@ import {
   ServiceRequestProposeCandidateSchema,
   ServiceRequestCaregiverConfirmSchema,
   ServiceRequestProviderConfirmSchema,
+  ProviderReportSchema,
+  ProviderReportHealthDataSchema,
 } from '../src/schemas/service-request';
+import { ADMIN_STATUS_TRANSITIONS } from '../src/constants/enums';
 
 describe('ServiceRequestCreateSchema', () => {
   const valid = {
@@ -209,5 +212,91 @@ describe('ServiceRequestProviderConfirmSchema', () => {
         provider_note: 'x'.repeat(1001),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('ProviderReportSchema (Phase 0 strictify)', () => {
+  it('accepts a fully populated valid report', () => {
+    const result = ProviderReportSchema.safeParse({
+      service_date: '2026-05-08',
+      health_data: {
+        blood_pressure: { systolic: 120, diastolic: 80 },
+        heart_rate: 72,
+        blood_glucose: 95,
+        blood_oxygen: 98,
+      },
+      medication_notes: '每日早晚一次',
+      doctor_instructions: '注意水分攝取',
+      next_visit_date: '2026-05-22',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects unknown top-level keys (.strict)', () => {
+    const result = ProviderReportSchema.safeParse({
+      service_date: '2026-05-08',
+      unknown_field: 'should be rejected',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown keys inside health_data (.strict)', () => {
+    const result = ProviderReportSchema.safeParse({
+      health_data: {
+        blood_pressure: { systolic: 120, diastolic: 80 },
+        bogus_metric: 42,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown keys inside blood_pressure (.strict)', () => {
+    const result = ProviderReportSchema.safeParse({
+      health_data: {
+        blood_pressure: { systolic: 120, diastolic: 80, unit: 'mmHg' },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('enforces blood_pressure systolic upper bound (260)', () => {
+    expect(ProviderReportHealthDataSchema.safeParse({
+      blood_pressure: { systolic: 300, diastolic: 80 },
+    }).success).toBe(false);
+  });
+
+  it('enforces blood_oxygen 50–100 range', () => {
+    expect(ProviderReportHealthDataSchema.safeParse({ blood_oxygen: 105 }).success).toBe(false);
+    expect(ProviderReportHealthDataSchema.safeParse({ blood_oxygen: 95 }).success).toBe(true);
+  });
+
+  it('accepts empty report (all fields optional)', () => {
+    expect(ProviderReportSchema.safeParse({}).success).toBe(true);
+  });
+});
+
+describe('ADMIN_STATUS_TRANSITIONS (Section 2)', () => {
+  it('allows admin rescue from arranged → screening', () => {
+    expect(ADMIN_STATUS_TRANSITIONS.arranged).toContain('screening');
+  });
+
+  it('allows admin rescue from in_service → screening', () => {
+    expect(ADMIN_STATUS_TRANSITIONS.in_service).toContain('screening');
+  });
+
+  it('keeps provider_confirmed → arranged for manual rescue', () => {
+    // Decision B: main flow uses auto-transition, but admin can still
+    // manually advance from provider_confirmed if rescue path is invoked.
+    expect(ADMIN_STATUS_TRANSITIONS.provider_confirmed).toContain('arranged');
+  });
+
+  it('does not allow forward progress beyond rescue', () => {
+    // submitted should not be pushed forward to candidate_proposed by admin
+    expect(ADMIN_STATUS_TRANSITIONS.submitted).not.toContain('candidate_proposed');
+  });
+
+  it('does not allow transitions out of completed/cancelled', () => {
+    expect(ADMIN_STATUS_TRANSITIONS.completed).toHaveLength(0);
+    expect(ADMIN_STATUS_TRANSITIONS.cancelled).toHaveLength(0);
   });
 });

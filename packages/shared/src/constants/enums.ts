@@ -57,9 +57,27 @@ export const VALID_STATUS_TRANSITIONS: Record<ServiceRequestStatus, ServiceReque
   cancelled: [],
 };
 
+// Admin-only transition whitelist for PUT /service-requests/[id]/status (admin rescue).
+// Distinct from VALID_STATUS_TRANSITIONS — admin has narrower set focused on rescue,
+// not driving normal flow forward (caregiver/provider routes do that).
+// `provider_confirmed` listed for completeness even though main flow uses auto-transition
+// to `arranged` (see Decision B in UX_AUDIT_IMPLEMENTATION_PLAN.md).
+export const ADMIN_STATUS_TRANSITIONS: Record<ServiceRequestStatus, ServiceRequestStatus[]> = {
+  submitted: ['screening', 'cancelled'],
+  screening: ['submitted', 'cancelled'],
+  candidate_proposed: ['screening', 'cancelled'],
+  caregiver_confirmed: ['screening', 'cancelled'],
+  provider_confirmed: ['arranged', 'screening', 'cancelled'],
+  arranged: ['screening', 'cancelled'],
+  in_service: ['screening', 'cancelled'],
+  completed: [],
+  cancelled: [],
+};
+
 export const PROVIDER_REVIEW_STATUSES = {
   PENDING: 'pending',
   APPROVED: 'approved',
+  REJECTED: 'rejected',
   SUSPENDED: 'suspended',
 } as const;
 

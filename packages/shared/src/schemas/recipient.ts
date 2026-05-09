@@ -25,14 +25,25 @@ export const RecipientCreateSchema = z.object({
   emergency_contact_phone: z.string().max(20).optional(),
   address: z.string().max(500, '地址不得超過 500 字').optional(),
   notes: z.string().max(500, '備註不得超過 500 字').optional(),
+  // Patient binding by email (Section 1: caregiver invites patient).
+  // On POST, server resolves email → user.id and writes recipient.patient_user_id.
+  patient_user_email: z.string().email('請輸入有效的 Email').optional(),
 });
 
-export const RecipientUpdateSchema = RecipientCreateSchema.partial();
+// Update is partial of Create + explicit `null` semantics on `patient_user_email` for unbinding.
+// Sending `null` clears the binding; sending undefined leaves it unchanged; sending an email rebinds.
+export const RecipientUpdateSchema = RecipientCreateSchema.partial().extend({
+  patient_user_email: z.string().email('請輸入有效的 Email').nullable().optional(),
+});
 
 export const RecipientResponseSchema = z.object({
   id: z.string().uuid(),
   caregiver_id: z.string().uuid(),
   patient_user_id: z.string().uuid().nullable(),
+  // Surfaced binding info for caregiver UI (display "已連結 patient@example.com - 王奶奶")
+  // and admin override page. Always derivable from patient_user join; null when unbound.
+  patient_user_email: z.string().email().nullable(),
+  patient_user_name: z.string().nullable(),
   name: z.string(),
   date_of_birth: z.string().nullable(),
   gender: z.string().nullable(),
