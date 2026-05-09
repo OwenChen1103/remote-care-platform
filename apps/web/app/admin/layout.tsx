@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/admin/service-requests', label: '需求單管理' },
   { href: '/admin/providers', label: '服務人員管理' },
   { href: '/admin/recipients', label: '被照護者總覽' },
+  { href: '/admin/users', label: '使用者管理' },
   { href: '/admin/services', label: '服務類別管理' },
   { href: '/admin/preview', label: '角色預覽' },
 ];

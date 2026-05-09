@@ -17,6 +17,9 @@ interface Provider {
   availability_status: string;
   review_status: string;
   admin_note: string | null;
+  // Section 4.1.7: surface review lifecycle audit timestamps in metadata grid
+  submitted_at: string | null;
+  reviewed_at: string | null;
   created_at: string;
 }
 
@@ -26,9 +29,15 @@ interface ApiResponse {
   error?: { code: string; message: string };
 }
 
+// Section 4.1.7 — 4 review states (rejected new in Phase 0):
+//   pending  → 待審核 (yellow)
+//   approved → 已核准 (green)
+//   rejected → 未通過 (orange, recoverable via reapply)
+//   suspended → 已停權 (red, ops-only recovery)
 const REVIEW_STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending: { label: '待審核', color: 'bg-yellow-100 text-yellow-800' },
   approved: { label: '已核准', color: 'bg-green-100 text-green-800' },
+  rejected: { label: '未通過', color: 'bg-orange-100 text-orange-800' },
   suspended: { label: '已停權', color: 'bg-red-100 text-red-800' },
 };
 
@@ -76,7 +85,7 @@ export default function AdminProviderDetailPage() {
     void fetchProvider();
   }, [fetchProvider]);
 
-  const handleReview = async (reviewStatus: 'approved' | 'suspended') => {
+  const handleReview = async (reviewStatus: 'approved' | 'rejected' | 'suspended') => {
     setSubmitting(true);
     setActionError('');
     try {
@@ -121,6 +130,15 @@ export default function AdminProviderDetailPage() {
     label: provider.review_status,
     color: 'bg-gray-100 text-gray-600',
   };
+
+  // Button enable rules per Section 4.1.7 + state machine guards in API:
+  //   核准: enabled unless already approved
+  //   拒絕並退回: enabled only when current=pending AND admin_note non-empty
+  //                (rejected→approved must go through reapply→re-review, not direct re-approve here)
+  //   停權: enabled only when current=approved AND admin_note non-empty
+  const canApprove = provider.review_status !== 'approved';
+  const canReject = provider.review_status === 'pending' && adminNote.trim().length > 0;
+  const canSuspend = provider.review_status === 'approved' && adminNote.trim().length > 0;
 
   return (
     <div className="p-6">
@@ -172,6 +190,19 @@ export default function AdminProviderDetailPage() {
             {new Date(provider.created_at).toLocaleDateString('zh-TW')}
           </div>
         </div>
+        {/* Review lifecycle timestamps (Section 4.1.7) */}
+        <div>
+          <div className="text-sm text-gray-500">送審時間</div>
+          <div className="text-sm text-gray-900">
+            {provider.submitted_at ? new Date(provider.submitted_at).toLocaleString('zh-TW') : '尚未送審'}
+          </div>
+        </div>
+        <div>
+          <div className="text-sm text-gray-500">審核時間</div>
+          <div className="text-sm text-gray-900">
+            {provider.reviewed_at ? new Date(provider.reviewed_at).toLocaleString('zh-TW') : '尚未審核'}
+          </div>
+        </div>
       </div>
 
       <div className="mb-6">
@@ -215,6 +246,9 @@ export default function AdminProviderDetailPage() {
         <div className="mb-3">
           <label htmlFor="admin-note" className="mb-1 block text-sm text-gray-600">
             管理備註
+            <span className="ml-2 text-xs text-gray-400">
+              （拒絕或停權時必填，會通知服務人員）
+            </span>
           </label>
           <textarea
             id="admin-note"
@@ -230,22 +264,54 @@ export default function AdminProviderDetailPage() {
           <div className="mb-3 rounded-md bg-red-50 p-2 text-sm text-red-700">{actionError}</div>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
-            disabled={submitting || provider.review_status === 'approved'}
+            disabled={submitting || !canApprove}
             onClick={() => void handleReview('approved')}
-            className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+            className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             核准
           </button>
           <button
-            disabled={submitting || provider.review_status === 'suspended'}
+            disabled={submitting || !canReject}
+            onClick={() => void handleReview('rejected')}
+            title={
+              provider.review_status !== 'pending'
+                ? '僅待審核的服務人員可被拒絕'
+                : !adminNote.trim()
+                  ? '請先填寫管理備註說明拒絕原因'
+                  : ''
+            }
+            className="rounded bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            拒絕並退回
+          </button>
+          <button
+            disabled={submitting || !canSuspend}
             onClick={() => void handleReview('suspended')}
-            className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            title={
+              provider.review_status !== 'approved'
+                ? '僅已核准的服務人員可被停權'
+                : !adminNote.trim()
+                  ? '請先填寫停權原因'
+                  : ''
+            }
+            className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             停權
           </button>
         </div>
+
+        {provider.review_status === 'rejected' && (
+          <p className="mt-3 text-xs text-gray-500">
+            服務人員可透過 App 重新送審。送審後將回到「待審核」狀態。
+          </p>
+        )}
+        {provider.review_status === 'suspended' && (
+          <p className="mt-3 text-xs text-gray-500">
+            停權後僅管理員可恢復（重新核准）。
+          </p>
+        )}
       </div>
     </div>
   );

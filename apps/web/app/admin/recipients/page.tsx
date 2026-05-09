@@ -1,10 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
 interface Recipient {
   id: string;
   caregiver_id: string;
+  patient_user_id: string | null;
+  // Surfaced from /api/v1/admin/recipients GET include patient_user (Section 1.8.1).
+  patient_user_email: string | null;
+  patient_user_name: string | null;
   name: string;
   date_of_birth: string | null;
   gender: string | null;
@@ -84,8 +89,10 @@ export default function AdminRecipientsPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">性別</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">生日</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">疾病標籤</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">連結帳號</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">緊急聯絡人</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">建立時間</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
@@ -112,11 +119,29 @@ export default function AdminRecipientsPage() {
                         ))}
                       </div>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">
+                      {r.patient_user_email ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
+                          <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414L8.414 15l-4.121-4.121a1 1 0 111.414-1.415L8.414 12.17l7.293-7.293a1 1 0 011 0z" clipRule="evenodd" /></svg>
+                          {r.patient_user_email}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">未連結</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                       {r.emergency_contact_name ?? '-'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                       {new Date(r.created_at).toLocaleDateString('zh-TW')}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm">
+                      <Link
+                        href={`/admin/recipients/${r.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        編輯
+                      </Link>
                     </td>
                   </tr>
                 ))}

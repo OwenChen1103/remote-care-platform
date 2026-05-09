@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ADMIN_STATUS_TRANSITIONS } from '@remote-care/shared';
+import type { ServiceRequestStatus } from '@remote-care/shared';
 
 interface ServiceRequestDetail {
   id: string;
@@ -36,6 +38,7 @@ interface ProviderOptionFull {
   service_areas: string[];
 }
 
+// Section 3.6: extended provider shape for eligibility filtering.
 interface ProviderOption {
   id: string;
   name: string;
@@ -43,6 +46,10 @@ interface ProviderOption {
   phone: string | null;
   specialties: string[];
   certifications: string[];
+  experience_years: number | null;
+  service_areas: string[];
+  available_services: string[];
+  availability_status: string;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -62,6 +69,59 @@ const TIME_SLOT_LABELS: Record<string, string> = {
   afternoon: '下午',
   evening: '晚上',
 };
+
+// Section 2.8 — admin transition button labels per (current, target) pair.
+// Cancellation has its own /cancel route; status/route.ts rejects target='cancelled'.
+function statusActionLabel(current: string, target: string): string {
+  if (target === 'cancelled') return '取消需求';
+  if (current === 'submitted' && target === 'screening') return '開始審核';
+  if (current === 'screening' && target === 'submitted') return '退回送出';
+  if (target === 'screening') return '退回審核';
+  if (target === 'arranged') return '標記為已安排';
+  if (target === 'submitted') return '退回送出';
+  return STATUS_LABELS[target]?.label ?? target;
+}
+
+function statusActionClassName(target: string): string {
+  if (target === 'cancelled') return 'bg-red-500 hover:bg-red-600';
+  if (target === 'arranged') return 'bg-cyan-600 hover:bg-cyan-700';
+  if (target === 'screening') return 'bg-yellow-500 hover:bg-yellow-600';
+  if (target === 'submitted') return 'bg-blue-500 hover:bg-blue-600';
+  return 'bg-gray-500 hover:bg-gray-600';
+}
+
+// Section 3.2.D — informational eligibility filter (admin override allowed).
+type EligibilityResult = { eligible: boolean; reasons: string[] };
+
+function isProviderEligible(p: ProviderOption, req: ServiceRequestDetail): EligibilityResult {
+  const reasons: string[] = [];
+  if (p.availability_status !== 'available') reasons.push('not_available');
+
+  const services = p.available_services ?? [];
+  if (services.length > 0 && !services.includes(req.category.code)) {
+    reasons.push('category_mismatch');
+  }
+
+  const areas = p.service_areas ?? [];
+  // Best-effort area substring match against request location.
+  // Recipient address would help further but isn't exposed on the shared SR endpoint
+  // (Decision A: don't widen recipient select on /service-requests/[id]).
+  const target = req.location ?? '';
+  if (areas.length > 0 && !areas.some((a) => target.includes(a))) {
+    reasons.push('area_mismatch');
+  }
+
+  return { eligible: reasons.length === 0, reasons };
+}
+
+function eligibilityReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'not_available': return '目前不可接案';
+    case 'category_mismatch': return '不在該服務類別範圍';
+    case 'area_mismatch': return '不在服務區域';
+    default: return reason;
+  }
+}
 
 export default function AdminServiceRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -182,6 +242,25 @@ export default function AdminServiceRequestDetailPage() {
     }
   };
 
+  // Compute eligibility groups for the candidate dropdown (Section 3.6).
+  const { eligibleProviders, otherProviders } = useMemo(() => {
+    if (!request) return { eligibleProviders: [], otherProviders: [] };
+    const eligible: { p: ProviderOption; result: EligibilityResult }[] = [];
+    const other: { p: ProviderOption; result: EligibilityResult }[] = [];
+    for (const p of providers) {
+      const result = isProviderEligible(p, request);
+      (result.eligible ? eligible : other).push({ p, result });
+    }
+    return { eligibleProviders: eligible, otherProviders: other };
+  }, [providers, request]);
+
+  const selectedProviderEligibility = useMemo(() => {
+    if (!selectedProviderId || !request) return null;
+    const p = providers.find((x) => x.id === selectedProviderId);
+    if (!p) return null;
+    return { provider: p, result: isProviderEligible(p, request) };
+  }, [selectedProviderId, providers, request]);
+
   if (loading) return <div className="p-6 text-gray-500">載入中...</div>;
   if (error && !request) {
     return (
@@ -200,13 +279,9 @@ export default function AdminServiceRequestDetailPage() {
     color: 'bg-gray-100 text-gray-600',
   };
 
-  // Actions available based on current status
-  const canScreening = request.status === 'submitted';
-  const canReturnToSubmitted = request.status === 'screening';
+  // Section 2.8 — admin status transitions from the shared constant.
+  const allowedTransitions = ADMIN_STATUS_TRANSITIONS[request.status as ServiceRequestStatus] ?? [];
   const canPropose = request.status === 'screening';
-  const canReturnFromCandidate = request.status === 'candidate_proposed';
-  const canReturnFromConfirmed = request.status === 'caregiver_confirmed';
-  const canCancel = !['completed', 'cancelled'].includes(request.status);
 
   return (
     <div className="p-6">
@@ -275,7 +350,7 @@ export default function AdminServiceRequestDetailPage() {
               <div className="mt-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span className={request.caregiver_confirmed_at ? 'text-green-600' : 'text-gray-400'}>
-                    {request.caregiver_confirmed_at ? '\u2713' : '\u25CB'} 委託人確認
+                    {request.caregiver_confirmed_at ? '✓' : '○'} 委託人確認
                   </span>
                   {request.caregiver_confirmed_at && (
                     <span className="text-xs text-gray-400">
@@ -285,7 +360,7 @@ export default function AdminServiceRequestDetailPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={request.provider_confirmed_at ? 'text-green-600' : 'text-gray-400'}>
-                    {request.provider_confirmed_at ? '\u2713' : '\u25CB'} 服務人員確認
+                    {request.provider_confirmed_at ? '✓' : '○'} 服務人員確認
                   </span>
                   {request.provider_confirmed_at && (
                     <span className="text-xs text-gray-400">
@@ -306,27 +381,59 @@ export default function AdminServiceRequestDetailPage() {
                 className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm"
               >
                 <option value="">&mdash; 選擇服務人員 &mdash;</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}（{p.level}）{(p.certifications ?? []).length > 0 ? ` [${(p.certifications as string[]).join(',')}]` : ''}{p.phone ? ` ${p.phone}` : ''}
-                  </option>
-                ))}
+                {eligibleProviders.length > 0 && (
+                  <optgroup label={`建議候選（${eligibleProviders.length}）`}>
+                    {eligibleProviders.map(({ p }) => (
+                      <option key={p.id} value={p.id}>
+                        {formatProviderOptionLabel(p)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {otherProviders.length > 0 && (
+                  <optgroup label={`其他可選（${otherProviders.length}）`}>
+                    {otherProviders.map(({ p, result }) => (
+                      <option key={p.id} value={p.id}>
+                        {formatProviderOptionLabel(p)} ｜ {result.reasons.map(eligibilityReasonLabel).join('、')}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
-              {selectedProviderId && (() => {
-                const sp = providers.find(p => p.id === selectedProviderId);
-                if (!sp) return null;
-                return (
-                  <div className="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-sm">
-                    <p className="font-medium text-gray-900">{sp.name}（{sp.level}）</p>
-                    {(sp.specialties ?? []).length > 0 && (
-                      <p className="text-gray-600">專業：{(sp.specialties as string[]).join('、')}</p>
-                    )}
-                    {(sp.certifications ?? []).length > 0 && (
-                      <p className="text-gray-600">證照：{(sp.certifications as string[]).join('、')}</p>
-                    )}
-                  </div>
-                );
-              })()}
+
+              {selectedProviderEligibility && (
+                <div className={`mb-3 rounded border p-3 text-sm ${
+                  selectedProviderEligibility.result.eligible
+                    ? 'border-blue-100 bg-blue-50'
+                    : 'border-yellow-200 bg-yellow-50'
+                }`}>
+                  <p className="font-medium text-gray-900">
+                    {selectedProviderEligibility.provider.name}（{selectedProviderEligibility.provider.level}）
+                  </p>
+                  {(selectedProviderEligibility.provider.specialties ?? []).length > 0 && (
+                    <p className="text-gray-600">
+                      專業：{(selectedProviderEligibility.provider.specialties).join('、')}
+                    </p>
+                  )}
+                  {(selectedProviderEligibility.provider.certifications ?? []).length > 0 && (
+                    <p className="text-gray-600">
+                      證照：{(selectedProviderEligibility.provider.certifications).join('、')}
+                    </p>
+                  )}
+                  {!selectedProviderEligibility.result.eligible && (
+                    <div className="mt-2 rounded bg-yellow-100 p-2 text-xs text-yellow-800">
+                      <strong>注意：此服務人員不完全符合需求</strong>
+                      <ul className="mt-1 list-disc pl-5">
+                        {selectedProviderEligibility.result.reasons.map((r) => (
+                          <li key={r}>{eligibilityReasonLabel(r)}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-1">您仍可選擇此候選人，但建議再次確認。</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 disabled={!selectedProviderId || proposing}
                 onClick={() => void proposeCandidate()}
@@ -350,53 +457,26 @@ export default function AdminServiceRequestDetailPage() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {canScreening && (
-                <button
-                  disabled={updating}
-                  onClick={() => void updateStatus('screening')}
-                  className="rounded bg-yellow-500 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-600 disabled:opacity-50"
-                >
-                  開始審核
-                </button>
-              )}
-              {canReturnToSubmitted && (
-                <button
-                  disabled={updating}
-                  onClick={() => void updateStatus('submitted')}
-                  className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
-                >
-                  退回重審
-                </button>
-              )}
-              {canReturnFromCandidate && (
-                <button
-                  disabled={updating}
-                  onClick={() => void updateStatus('screening')}
-                  className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
-                >
-                  退回審核
-                </button>
-              )}
-              {canReturnFromConfirmed && (
-                <button
-                  disabled={updating}
-                  onClick={() => void updateStatus('screening')}
-                  className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
-                >
-                  退回審核
-                </button>
-              )}
-              {canCancel && (
-                <button
-                  disabled={updating}
-                  onClick={() => void cancelRequest()}
-                  className="rounded bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
-                >
-                  取消需求
-                </button>
-              )}
-              {!canScreening && !canReturnToSubmitted && !canReturnFromCandidate && !canReturnFromConfirmed && !canCancel && (
+              {allowedTransitions.length === 0 ? (
                 <p className="text-sm text-gray-500">此狀態無可用操作</p>
+              ) : (
+                allowedTransitions.map((next) => {
+                  const onClick = next === 'cancelled'
+                    ? () => void cancelRequest()
+                    : () => void updateStatus(next);
+                  return (
+                    <button
+                      key={next}
+                      disabled={updating}
+                      onClick={onClick}
+                      className={`rounded px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                        statusActionClassName(next)
+                      }`}
+                    >
+                      {statusActionLabel(request.status, next)}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
@@ -404,6 +484,14 @@ export default function AdminServiceRequestDetailPage() {
       </div>
     </div>
   );
+}
+
+function formatProviderOptionLabel(p: ProviderOption): string {
+  const parts: string[] = [`${p.name}（${p.level}）`];
+  if (p.experience_years != null) parts.push(`${p.experience_years}年`);
+  const areas = p.service_areas ?? [];
+  if (areas.length > 0) parts.push(areas.slice(0, 2).join('、'));
+  return parts.join(' · ');
 }
 
 const LEVEL_LABELS: Record<string, string> = { L1: '初級', L2: '中級', L3: '資深' };
