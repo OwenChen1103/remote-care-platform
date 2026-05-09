@@ -18,6 +18,9 @@ model User {
   timezone      String    @default("Asia/Taipei") @db.VarChar(50)
   date_of_birth DateTime? @db.Date
   address       String?   @db.VarChar(500)
+  // suspended_at: NULL = active; non-NULL = admin has suspended this user.
+  // verifyAuth checks `suspended_at IS NULL` to allow login. (Section 3 / Decision G)
+  suspended_at  DateTime? @db.Timestamptz
   created_at    DateTime  @default(now()) @db.Timestamptz
   updated_at    DateTime  @default(now()) @updatedAt @db.Timestamptz
 
@@ -31,25 +34,25 @@ model User {
 }
 
 model Recipient {
-  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  caregiver_id             String    @db.Uuid
-  patient_user_id          String?   @unique @db.Uuid
-  name                     String    @db.VarChar(100)
-  date_of_birth            DateTime? @db.Date
-  gender                   String?   @db.VarChar(10)
-  relationship             String?   @db.VarChar(20)
-  medical_tags             Json      @default("[]")
-  lifestyle_habits         Json      @default("{}")
-  emergency_contact_name   String?   @db.VarChar(100)
-  emergency_contact_phone  String?   @db.VarChar(20)
-  address                  String?   @db.VarChar(500)
-  notes                    String?   @db.Text
-  deleted_at               DateTime? @db.Timestamptz
-  created_at               DateTime  @default(now()) @db.Timestamptz
-  updated_at               DateTime  @default(now()) @updatedAt @db.Timestamptz
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caregiver_id            String    @db.Uuid
+  patient_user_id         String?   @unique @db.Uuid
+  name                    String    @db.VarChar(100)
+  date_of_birth           DateTime? @db.Date
+  gender                  String?   @db.VarChar(10)
+  relationship            String?   @db.VarChar(20)
+  medical_tags            Json      @default("[]")
+  lifestyle_habits        Json      @default("{}")
+  emergency_contact_name  String?   @db.VarChar(100)
+  emergency_contact_phone String?   @db.VarChar(20)
+  address                 String?   @db.VarChar(500)
+  notes                   String?   @db.Text
+  deleted_at              DateTime? @db.Timestamptz
+  created_at              DateTime  @default(now()) @db.Timestamptz
+  updated_at              DateTime  @default(now()) @updatedAt @db.Timestamptz
 
-  caregiver             User                 @relation("CaregiverRecipients", fields: [caregiver_id], references: [id])
-  patient_user          User?                @relation("PatientRecipient", fields: [patient_user_id], references: [id])
+  caregiver             User                  @relation("CaregiverRecipients", fields: [caregiver_id], references: [id])
+  patient_user          User?                 @relation("PatientRecipient", fields: [patient_user_id], references: [id])
   measurements          Measurement[]
   ai_reports            AiReport[]
   ai_interactions       AiInteraction[]
@@ -164,32 +167,32 @@ model ServiceCategory {
 }
 
 model ServiceRequest {
-  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  caregiver_id          String    @db.Uuid
-  recipient_id          String    @db.Uuid
-  category_id           String    @db.Uuid
-  status                String    @default("submitted") @db.VarChar(20)
-  preferred_date        DateTime  @db.Timestamptz
-  preferred_time_slot   String?   @db.VarChar(20)
-  location              String    @db.VarChar(500)
-  departure_location    String?   @db.VarChar(500)
-  destination           String?   @db.VarChar(500)
-  service_duration      Int?
-  description           String    @db.Text
-  metadata              Json      @default("{}")
-  candidate_provider_id String?   @db.Uuid
-  assigned_provider_id  String?   @db.Uuid
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caregiver_id           String    @db.Uuid
+  recipient_id           String    @db.Uuid
+  category_id            String    @db.Uuid
+  status                 String    @default("submitted") @db.VarChar(20)
+  preferred_date         DateTime  @db.Timestamptz
+  preferred_time_slot    String?   @db.VarChar(20)
+  location               String    @db.VarChar(500)
+  departure_location     String?   @db.VarChar(500)
+  destination            String?   @db.VarChar(500)
+  service_duration       Int?
+  description            String    @db.Text
+  metadata               Json      @default("{}")
+  candidate_provider_id  String?   @db.Uuid
+  assigned_provider_id   String?   @db.Uuid
   caregiver_confirmed_at DateTime? @db.Timestamptz
   provider_confirmed_at  DateTime? @db.Timestamptz
   provider_note          String?   @db.Text
   provider_report        Json?
-  admin_note            String?   @db.Text
-  created_at            DateTime  @default(now()) @db.Timestamptz
-  updated_at            DateTime  @default(now()) @updatedAt @db.Timestamptz
+  admin_note             String?   @db.Text
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @updatedAt @db.Timestamptz
 
-  caregiver         User             @relation(fields: [caregiver_id], references: [id])
-  recipient         Recipient        @relation(fields: [recipient_id], references: [id])
-  category          ServiceCategory  @relation(fields: [category_id], references: [id])
+  caregiver          User            @relation(fields: [caregiver_id], references: [id])
+  recipient          Recipient       @relation(fields: [recipient_id], references: [id])
+  category           ServiceCategory @relation(fields: [category_id], references: [id])
   candidate_provider Provider?       @relation("CandidateProviderRequests", fields: [candidate_provider_id], references: [id])
   assigned_provider  Provider?       @relation("AssignedProviderRequests", fields: [assigned_provider_id], references: [id])
 
@@ -215,16 +218,24 @@ model Provider {
   available_schedule  Json      @default("{}")
   schedule_note       String?   @db.Text
   availability_status String    @default("available") @db.VarChar(20)
+  // valid review_status: 'pending' | 'approved' | 'rejected' | 'suspended'
+  // (rejected = recoverable via reapply; suspended = ops-only recovery — Section 4)
   review_status       String    @default("pending") @db.VarChar(20)
   admin_note          String?   @db.Text
+  // submitted_at: timestamp of the most recent onboarding submission (or reapply).
+  // NULL = profile fields never populated yet. (Section 4.1.5)
+  submitted_at        DateTime? @db.Timestamptz
+  // reviewed_at: timestamp of the most recent admin review decision.
+  // Updated each time review_status changes (approve / reject / suspend). (Section 4.1.4)
+  reviewed_at         DateTime? @db.Timestamptz
   deleted_at          DateTime? @db.Timestamptz
   created_at          DateTime  @default(now()) @db.Timestamptz
   updated_at          DateTime  @default(now()) @updatedAt @db.Timestamptz
 
-  user             User?              @relation("ProviderUser", fields: [user_id], references: [id])
-  documents        ProviderDocument[]
-  candidate_requests ServiceRequest[] @relation("CandidateProviderRequests")
-  assigned_requests  ServiceRequest[] @relation("AssignedProviderRequests")
+  user               User?              @relation("ProviderUser", fields: [user_id], references: [id])
+  documents          ProviderDocument[]
+  candidate_requests ServiceRequest[]   @relation("CandidateProviderRequests")
+  assigned_requests  ServiceRequest[]   @relation("AssignedProviderRequests")
 
   @@index([review_status])
   @@map("providers")

@@ -449,6 +449,11 @@ async function seedServiceCategories(): Promise<SeedServiceCategory[]> {
 }
 
 async function seedProviders(providerUserId: string) {
+  // Use a stable past timestamp so demo data is reproducible across re-seeds.
+  // Aligns with what the production migration's backfill would produce for an approved provider.
+  const seedSubmittedAt = new Date('2026-03-01T09:00:00Z');
+  const seedReviewedAt = new Date('2026-03-02T15:00:00Z');
+
   const providerA = await prisma.provider.upsert({
     where: { user_id: providerUserId },
     update: {},
@@ -465,12 +470,18 @@ async function seedProviders(providerUserId: string) {
       availability_status: 'available',
       review_status: 'approved',
       admin_note: '示範帳號',
+      submitted_at: seedSubmittedAt,
+      reviewed_at: seedReviewedAt,
     },
   });
 
   const existingProviderB = await prisma.provider.findFirst({
     where: { email: 'pending.provider@remotecare.dev' },
   });
+
+  // providerB: pending review with profile populated → has submitted_at, no reviewed_at yet.
+  // Mirrors the migration backfill heuristic ("pending + non-empty specialties" gets submitted_at).
+  const providerBSubmittedAt = new Date('2026-04-15T10:00:00Z');
 
   const providerB = existingProviderB
     ? await prisma.provider.update({
@@ -499,6 +510,7 @@ async function seedProviders(providerUserId: string) {
           service_areas: ['台北市中山區'],
           availability_status: 'busy',
           review_status: 'pending',
+          submitted_at: providerBSubmittedAt,
         },
       });
 
