@@ -7,8 +7,11 @@ import {
   StyleSheet,
   RefreshControl,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
+import { navigateNotification, type Role } from '@/lib/notification-deeplink';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -154,6 +157,8 @@ function buildSections(notifications: Notification[]): ListSection[] {
 // ─── Component ────────────────────────────────────────────────
 
 export default function NotificationsScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -255,8 +260,13 @@ export default function NotificationsScreen() {
             return (
               <TouchableOpacity
                 style={[s.card, !n.is_read && s.cardUnread]}
-                onPress={!n.is_read ? () => void markAsRead(n.id) : undefined}
-                activeOpacity={n.is_read ? 1 : 0.7}
+                onPress={() => {
+                  // Always mark unread → read on tap; navigate via role-aware deep-link.
+                  // Section 2.9.3: caregiver/provider/patient each have their own destination per type.
+                  if (!n.is_read) void markAsRead(n.id);
+                  navigateNotification(router, n.type, n.data, (user?.role ?? 'caregiver') as Role);
+                }}
+                activeOpacity={0.7}
               >
                 <View style={[s.iconWrap, { backgroundColor: cfg.bg }]}>
                   {cfg.render(cfg.fg)}

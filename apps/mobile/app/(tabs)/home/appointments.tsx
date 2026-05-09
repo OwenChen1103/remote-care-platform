@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api, ApiError } from '@/lib/api-client';
@@ -90,6 +91,45 @@ export default function AppointmentsScreen() {
     );
   }
 
+  // Section 4.2.2: tap card → action sheet (編輯 / 刪除 / 取消).
+  const openActions = (item: Appointment) => {
+    Alert.alert(item.title, '請選擇要執行的操作', [
+      {
+        text: '編輯',
+        onPress: () => router.push(`/(tabs)/home/edit-appointment?id=${item.id}`),
+      },
+      {
+        text: '刪除',
+        style: 'destructive',
+        onPress: () => confirmDelete(item),
+      },
+      { text: '取消', style: 'cancel' },
+    ]);
+  };
+
+  const confirmDelete = (item: Appointment) => {
+    Alert.alert(
+      '刪除行程',
+      `確定要刪除「${item.title}」嗎？此動作無法復原。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '刪除',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/appointments/${item.id}`);
+              // Optimistic local removal so list flips immediately.
+              setAppointments((prev) => prev.filter((a) => a.id !== item.id));
+            } catch (e) {
+              Alert.alert('錯誤', e instanceof ApiError ? e.message : '刪除失敗');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderItem = ({ item }: { item: Appointment }) => {
     const days = daysUntil(item.appointment_date);
     const isPast = days < 0;
@@ -98,7 +138,12 @@ export default function AppointmentsScreen() {
     const daysColor = isPast ? colors.textDisabled : isToday ? colors.danger : days <= 3 ? colors.warning : colors.success;
 
     return (
-      <View style={[styles.card, isPast && styles.cardPast]}>
+      <TouchableOpacity
+        style={[styles.card, isPast && styles.cardPast]}
+        onPress={() => openActions(item)}
+        activeOpacity={0.7}
+        accessibilityLabel={`行程 ${item.title}，點擊以編輯或刪除`}
+      >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>{item.title}</Text>
           <Text style={[styles.daysLabel, { color: daysColor }]}>{daysLabel}</Text>
@@ -114,7 +159,7 @@ export default function AppointmentsScreen() {
           <Text style={styles.cardDetail}>醫師：{item.doctor_name}</Text>
         )}
         {item.note && <Text style={styles.cardNote}>{item.note}</Text>}
-      </View>
+      </TouchableOpacity>
     );
   };
 

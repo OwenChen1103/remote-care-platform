@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
+import type { ProviderReportInput as ProviderReport } from '@remote-care/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
@@ -35,7 +36,8 @@ interface ServiceRequestDetail {
   recipient: { id: string; name: string };
   assigned_provider: ProviderInfo | null;
   candidate_provider: ProviderInfo | null;
-  provider_report: Record<string, unknown> | null;
+  // Section 2.9.2 + 3.7.3: typed canonical nested shape (writer in provider-task-detail).
+  provider_report: ProviderReport | null;
 }
 
 interface ProviderInfo {
@@ -188,6 +190,16 @@ function IconShield() {
   return (
     <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
       <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={colors.textTertiary} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconReport() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+        stroke={colors.success} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 2v6h6M9 13h6M9 17h4"
+        stroke={colors.success} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -432,6 +444,25 @@ export default function ServiceRequestDetailScreen() {
         </>
       )}
 
+      {/* ─── Service Report (Section 2.9.2) ──────────────────
+          Provider's structured completion data (vitals, medication notes, doctor instructions, next visit).
+          Only meaningful when the request is completed AND a report was submitted. */}
+      {request.status === 'completed' && request.provider_report && (
+        <>
+          <View style={styles.sectionHeader}>
+            <IconReport />
+            <Text style={styles.sectionLabel}>服務報告</Text>
+          </View>
+          <View style={styles.card}>
+            <ProviderReportSection
+              report={request.provider_report}
+              providerNote={request.provider_note}
+              fallbackDate={request.preferred_date}
+            />
+          </View>
+        </>
+      )}
+
       {/* ─── Cancel ──────────────────────────────────────── */}
       {canCancel && (
         <TouchableOpacity
@@ -572,6 +603,87 @@ function InfoRow({ label, value, isLast }: { label: string; value: string; isLas
   );
 }
 
+// ─── Provider Report rendering (Section 2.9.2) ───────────────
+// Mirrors patient/schedule.tsx serviceRecords block — same data, same nested shape.
+// Caregiver-facing copy of the structured visit summary the provider submits.
+
+function ProviderReportSection({
+  report,
+  providerNote,
+  fallbackDate,
+}: {
+  report: ProviderReport;
+  providerNote: string | null;
+  fallbackDate: string;
+}) {
+  const hd = report.health_data ?? {};
+  const reportDate = report.service_date ?? new Date(fallbackDate).toLocaleDateString('zh-TW');
+
+  const dataItems: { label: string; value: string }[] = [];
+  if (hd.blood_pressure) {
+    dataItems.push({ label: '血壓', value: `${hd.blood_pressure.systolic}/${hd.blood_pressure.diastolic} mmHg` });
+  }
+  if (hd.heart_rate != null) dataItems.push({ label: '心率', value: `${hd.heart_rate} bpm` });
+  if (hd.blood_glucose != null) dataItems.push({ label: '血糖', value: `${hd.blood_glucose} mg/dL` });
+  if (hd.blood_oxygen != null) dataItems.push({ label: '血氧', value: `${hd.blood_oxygen}%` });
+  if (hd.weight_kg != null) dataItems.push({ label: '體重', value: `${hd.weight_kg} kg` });
+  if (hd.body_fat_pct != null) dataItems.push({ label: '體脂', value: `${hd.body_fat_pct}%` });
+  if (hd.cholesterol != null) dataItems.push({ label: '膽固醇', value: `${hd.cholesterol}` });
+
+  return (
+    <View>
+      <Text style={styles.reportDate}>{reportDate}</Text>
+
+      {dataItems.length > 0 && (
+        <View style={styles.reportGrid}>
+          {dataItems.map((item) => (
+            <View key={item.label} style={styles.reportGridItem}>
+              <Text style={styles.reportGridLabel}>{item.label}</Text>
+              <Text style={styles.reportGridValue}>{item.value}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {report.medication_notes ? (
+        <View style={styles.reportSubBlock}>
+          <Text style={styles.reportSubLabel}>用藥備註</Text>
+          <Text style={styles.reportSubText}>{report.medication_notes}</Text>
+        </View>
+      ) : null}
+
+      {report.doctor_instructions ? (
+        <View style={styles.reportSubBlock}>
+          <Text style={styles.reportSubLabel}>醫囑重點</Text>
+          <Text style={styles.reportSubText}>{report.doctor_instructions}</Text>
+        </View>
+      ) : null}
+
+      {report.next_visit_date ? (
+        <View style={styles.reportSubBlock}>
+          <Text style={styles.reportSubLabel}>下次看診</Text>
+          <Text style={styles.reportSubText}>{report.next_visit_date}</Text>
+        </View>
+      ) : null}
+
+      {report.additional_notes ? (
+        <View style={styles.reportSubBlock}>
+          <Text style={styles.reportSubLabel}>其他備註</Text>
+          <Text style={styles.reportSubText}>{report.additional_notes}</Text>
+        </View>
+      ) : null}
+
+      {/* Provider's free-text note is separate from the structured report. */}
+      {providerNote ? (
+        <View style={styles.reportSubBlock}>
+          <Text style={styles.reportSubLabel}>服務人員備註</Text>
+          <Text style={styles.reportSubText}>{providerNote}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -699,6 +811,54 @@ const styles = StyleSheet.create({
   noteText: {
     fontSize: typography.bodySm.fontSize,
     color: colors.textTertiary,
+    lineHeight: 20,
+  },
+
+  // ─── Provider Report rendering (Section 2.9.2) ────────────
+  reportDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+  },
+  reportGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  reportGridItem: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    backgroundColor: colors.bgScreen,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    borderWidth: 1, borderColor: colors.borderDefault,
+  },
+  reportGridLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: 2,
+  },
+  reportGridValue: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  reportSubBlock: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
+  },
+  reportSubLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: 2,
+  },
+  reportSubText: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textPrimary,
     lineHeight: 20,
   },
 

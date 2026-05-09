@@ -15,8 +15,11 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (data: { email: string; password: string; name: string; phone?: string; role?: string }) => Promise<void>;
+  // login/register return the freshly-authenticated User so callers can route based on
+  // the live role (Section 4.1.9 post-auth routing). The user is also persisted in context
+  // via setUser; the return is for immediate routing without waiting for re-render.
+  login: (email: string, password: string) => Promise<User>;
+  register: (data: { email: string; password: string; name: string; phone?: string; role?: string }) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -61,19 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void loadToken();
   }, [loadToken]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<User> => {
     const data = await api.post<LoginResponse>('/auth/login', { email, password });
     await SecureStore.setItemAsync('auth_token', data.token);
     setToken(data.token);
     setUser(data.user);
+    return data.user;
   }, []);
 
   const register = useCallback(
-    async (regData: { email: string; password: string; name: string; phone?: string; role?: string }) => {
+    async (regData: { email: string; password: string; name: string; phone?: string; role?: string }): Promise<User> => {
       const data = await api.post<LoginResponse>('/auth/register', regData);
       await SecureStore.setItemAsync('auth_token', data.token);
       setToken(data.token);
       setUser(data.user);
+      return data.user;
     },
     [],
   );

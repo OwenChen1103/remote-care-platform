@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth, ApiError } from '@/lib/auth-context';
+import { routeAfterAuth } from '@/lib/post-auth-route';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 export default function LoginScreen() {
@@ -32,8 +33,10 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      router.replace('/(tabs)/home');
+      const u = await login(email, password);
+      // Section 4.1.9: route to role-appropriate landing screen.
+      // Provider lands on profile if not yet approved; otherwise tasks.
+      await routeAfterAuth(u, router);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

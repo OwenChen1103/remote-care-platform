@@ -1,11 +1,15 @@
 /**
- * Add appointment screen (Section 4.2.1).
+ * Edit appointment screen (Section 4.2.2).
  *
- * Replaces manual YYYY-MM-DD text entry with two native DateTimePickers (date then time).
- * Date defaults to 7 days from now at 09:00 local. Server stores ISO 8601 (UTC); we send
- * `appointment_date.toISOString()` so backend gets the precise instant including time.
+ * Reads existing appointment via GET /appointments/[id] (added in Phase 2 Section 4),
+ * prefills the form, submits via PUT /appointments/[id].
+ *
+ * Mirror of add-appointment.tsx with:
+ *   - useLocalSearchParams<{ id: string }> instead of recipientId
+ *   - api.get on mount + api.put on submit (vs api.post)
+ *   - Title 「編輯就醫行程」, button 「儲存變更」
  */
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Text,
   View,
@@ -20,21 +24,57 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
-export default function AddAppointmentScreen() {
-  const { recipientId } = useLocalSearchParams<{ recipientId: string }>();
+interface Appointment {
+  id: string;
+  recipient_id: string;
+  title: string;
+  hospital_name: string | null;
+  department: string | null;
+  doctor_name: string | null;
+  appointment_date: string;
+  note: string | null;
+}
+
+export default function EditAppointmentScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
 
   const [title, setTitle] = useState('');
   const [hospitalName, setHospitalName] = useState('');
   const [department, setDepartment] = useState('');
   const [doctorName, setDoctorName] = useState('');
-  // Section 4.2.1: combined date+time as a single Date object. Null → not yet picked.
   const [appointmentDate, setAppointmentDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const fetchAppointment = useCallback(async () => {
+    setLoading(true);
+    setFetchError('');
+    try {
+      const data = await api.get<Appointment>(`/appointments/${id}`);
+      setTitle(data.title);
+      setHospitalName(data.hospital_name ?? '');
+      setDepartment(data.department ?? '');
+      setDoctorName(data.doctor_name ?? '');
+      setAppointmentDate(new Date(data.appointment_date));
+      setNote(data.note ?? '');
+    } catch (e) {
+      setFetchError(e instanceof ApiError ? e.message : '載入失敗');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void fetchAppointment();
+  }, [fetchAppointment]);
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -45,42 +85,49 @@ export default function AddAppointmentScreen() {
       Alert.alert('提示', '請選擇就診日期與時間');
       return;
     }
-    if (!recipientId) {
-      Alert.alert('錯誤', '缺少被照護者資訊');
-      return;
-    }
 
     setSubmitting(true);
     try {
-      await api.post('/appointments', {
-        recipient_id: recipientId,
+      await api.put(`/appointments/${id}`, {
         title: title.trim(),
-        hospital_name: hospitalName.trim() || undefined,
-        department: department.trim() || undefined,
-        doctor_name: doctorName.trim() || undefined,
+        hospital_name: hospitalName.trim() || null,
+        department: department.trim() || null,
+        doctor_name: doctorName.trim() || null,
         appointment_date: appointmentDate.toISOString(),
-        note: note.trim() || undefined,
+        note: note.trim() || null,
       });
 
-      Alert.alert('成功', '行程已新增', [
+      Alert.alert('成功', '行程已更新', [
         { text: '確定', onPress: () => router.back() },
       ]);
     } catch (err) {
       if (err instanceof ApiError) {
         Alert.alert('錯誤', err.message);
       } else {
-        Alert.alert('錯誤', '新增失敗，請稍後再試');
+        Alert.alert('錯誤', '更新失敗，請稍後再試');
       }
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loading) return <LoadingScreen />;
+
+  if (fetchError) {
+    return (
+      <View style={styles.errorWrap}>
+        <Text style={styles.errorText}>{fetchError}</Text>
+        <TouchableOpacity onPress={() => void fetchAppointment()} activeOpacity={0.7}>
+          <Text style={styles.retryText}>重試</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.heading}>新增就醫行程</Text>
+      <Text style={styles.heading}>編輯就醫行程</Text>
 
-      {/* Card 1 — 基本資訊 */}
       <Text style={styles.sectionLabel}>基本資訊</Text>
       <View style={styles.card}>
         <Text style={styles.label}>行程標題 *</Text>
@@ -119,25 +166,16 @@ export default function AddAppointmentScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Section 4.2.1: native pickers; iOS shows spinner inline, Android shows a modal that closes on selection. */}
         {showDatePicker && (
           <DateTimePicker
-            value={appointmentDate ?? (() => {
-              const d = new Date();
-              d.setDate(d.getDate() + 7);
-              d.setHours(9, 0, 0, 0);
-              return d;
-            })()}
+            value={appointmentDate ?? new Date()}
             mode="date"
-            minimumDate={new Date()}
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={(_, selected) => {
               if (Platform.OS === 'android') setShowDatePicker(false);
               if (selected) {
-                // Preserve existing time if user already picked one; otherwise default to 09:00.
                 const next = appointmentDate ? new Date(appointmentDate) : new Date();
                 next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-                if (!appointmentDate) next.setHours(9, 0, 0, 0);
                 setAppointmentDate(next);
               }
             }}
@@ -198,7 +236,6 @@ export default function AddAppointmentScreen() {
         />
       </View>
 
-      {/* Card 2 — 備註 */}
       <Text style={styles.sectionLabel}>備註</Text>
       <View style={styles.card}>
         <Text style={styles.label}>備註</Text>
@@ -218,7 +255,7 @@ export default function AddAppointmentScreen() {
         onPress={handleSubmit}
         disabled={submitting}
       >
-        <Text style={styles.submitText}>{submitting ? '新增中...' : '新增行程'}</Text>
+        <Text style={styles.submitText}>{submitting ? '儲存中...' : '儲存變更'}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -258,7 +295,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     minHeight: 50,
     justifyContent: 'center',
-    // Apply text styles directly so TextInput inherits them (Text-wrapped TouchableOpacity uses inputValue/inputPlaceholder).
     ...typography.headingSm,
     fontWeight: '400',
     color: colors.textPrimary,
@@ -293,4 +329,22 @@ const styles = StyleSheet.create({
   },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: colors.white, ...typography.bodyLg, fontWeight: '600' },
+  errorWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.bgScreen,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: typography.bodyMd.fontSize,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  retryText: {
+    color: colors.primary,
+    fontSize: typography.bodyMd.fontSize,
+    textDecorationLine: 'underline',
+  },
 });

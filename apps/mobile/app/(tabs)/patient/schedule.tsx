@@ -5,12 +5,15 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import type { ProviderReportInput as ProviderReport } from '@remote-care/shared';
 import { api, ApiError } from '@/lib/api-client';
+import { navigateNotification } from '@/lib/notification-deeplink';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
@@ -23,6 +26,8 @@ interface Notification {
   body: string;
   is_read: boolean;
   created_at: string;
+  // Section 2.9.4: deep-link payload (service_request_id / target_status / etc.)
+  data?: Record<string, unknown> | null;
 }
 
 interface Recipient {
@@ -38,19 +43,10 @@ interface Appointment {
   location?: string;
 }
 
-interface ProviderReport {
-  date?: string;
-  blood_pressure?: string;
-  blood_glucose?: string;
-  weight?: string;
-  body_fat?: string;
-  heart_rate?: string;
-  blood_oxygen?: string;
-  cholesterol?: string;
-  medications?: string;
-  doctor_notes?: string;
-  next_visit?: string;
-}
+// Section 3.7.3: drop the local flat ProviderReport. Use the canonical nested shape from
+// @remote-care/shared so this reader stays in lock-step with the writer (provider mobile)
+// and the API validator (ServiceRequestProviderProgressSchema). Below we re-format nested
+// fields into a flat {label, value} list at render time.
 
 interface CompletedService {
   id: string;
@@ -170,6 +166,7 @@ function NotificationIcon({ type }: { type: string }) {
 // ─── Component ────────────────────────────────────────────────
 
 export default function PatientScheduleScreen() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [serviceRecords, setServiceRecords] = useState<CompletedService[]>([]);
@@ -321,17 +318,24 @@ export default function PatientScheduleScreen() {
             {serviceRecords.map((svc) => {
               const rpt = svc.provider_report;
               if (!rpt) return null;
-              const reportDate = rpt.date ?? new Date(svc.preferred_date).toLocaleDateString('zh-TW');
-              const dataItems = [
-                rpt.blood_pressure && { label: '血壓', value: rpt.blood_pressure },
-                rpt.blood_glucose && { label: '血糖', value: rpt.blood_glucose },
-                rpt.weight && { label: '體重', value: rpt.weight },
-                rpt.heart_rate && { label: '心率', value: rpt.heart_rate },
-                rpt.body_fat && { label: '體脂', value: rpt.body_fat },
-                rpt.blood_oxygen && { label: '血氧', value: rpt.blood_oxygen },
-                rpt.cholesterol && { label: '膽固醇', value: rpt.cholesterol },
-                rpt.medications && { label: '用藥', value: rpt.medications },
-              ].filter(Boolean) as { label: string; value: string }[];
+              // Section 3.7.3: nested shape — health_data is its own object; service_date is top-level.
+              const hd = rpt.health_data ?? {};
+              const reportDate = rpt.service_date
+                ?? new Date(svc.preferred_date).toLocaleDateString('zh-TW');
+
+              const dataItems: { label: string; value: string }[] = [];
+              if (hd.blood_pressure) {
+                dataItems.push({
+                  label: '血壓',
+                  value: `${hd.blood_pressure.systolic}/${hd.blood_pressure.diastolic} mmHg`,
+                });
+              }
+              if (hd.heart_rate != null) dataItems.push({ label: '心率', value: `${hd.heart_rate} bpm` });
+              if (hd.blood_glucose != null) dataItems.push({ label: '血糖', value: `${hd.blood_glucose} mg/dL` });
+              if (hd.blood_oxygen != null) dataItems.push({ label: '血氧', value: `${hd.blood_oxygen}%` });
+              if (hd.weight_kg != null) dataItems.push({ label: '體重', value: `${hd.weight_kg} kg` });
+              if (hd.body_fat_pct != null) dataItems.push({ label: '體脂', value: `${hd.body_fat_pct}%` });
+              if (hd.cholesterol != null) dataItems.push({ label: '膽固醇', value: `${hd.cholesterol}` });
 
               return (
                 <View key={svc.id} style={s.serviceCard}>
@@ -351,17 +355,24 @@ export default function PatientScheduleScreen() {
                     </View>
                   )}
 
-                  {rpt.doctor_notes ? (
+                  {rpt.medication_notes ? (
                     <View style={s.doctorNotes}>
-                      <Text style={s.doctorNotesLabel}>醫囑重點</Text>
-                      <Text style={s.doctorNotesText}>{rpt.doctor_notes}</Text>
+                      <Text style={s.doctorNotesLabel}>用藥備註</Text>
+                      <Text style={s.doctorNotesText}>{rpt.medication_notes}</Text>
                     </View>
                   ) : null}
 
-                  {rpt.next_visit ? (
+                  {rpt.doctor_instructions ? (
+                    <View style={s.doctorNotes}>
+                      <Text style={s.doctorNotesLabel}>醫囑重點</Text>
+                      <Text style={s.doctorNotesText}>{rpt.doctor_instructions}</Text>
+                    </View>
+                  ) : null}
+
+                  {rpt.next_visit_date ? (
                     <View style={s.nextVisit}>
                       <Text style={s.nextVisitLabel}>下次看診</Text>
-                      <Text style={s.nextVisitText}>{rpt.next_visit}</Text>
+                      <Text style={s.nextVisitText}>{rpt.next_visit_date}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -388,9 +399,19 @@ export default function PatientScheduleScreen() {
           notifications.map((n) => {
             const isUnread = !n.is_read;
             return (
-              <View
+              <TouchableOpacity
                 key={n.id}
                 style={[s.notifCard, isUnread && s.notifCardUnread]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  // Section 2.9.4: tap → mark-as-read + role-aware deep-link.
+                  // Optimistic local update so the UI flips immediately even if the PUT lags.
+                  if (isUnread) {
+                    void api.put(`/notifications/${n.id}/read`, {}).catch(() => {});
+                    setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+                  }
+                  navigateNotification(router, n.type, n.data ?? null, 'patient');
+                }}
               >
                 <NotificationIcon type={n.type} />
                 <View style={s.notifContent}>
@@ -403,7 +424,7 @@ export default function PatientScheduleScreen() {
                   <Text style={s.notifBody} numberOfLines={3}>{n.body}</Text>
                   <Text style={s.notifTime}>{formatRelativeTime(n.created_at)}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}

@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -132,6 +132,7 @@ function nextMsgId(): string { return `msg-${++msgIdCounter}-${Date.now()}`; }
 // ─── Component ────────────────────────────────────────────────
 
 export default function AiAssistantScreen() {
+  const router = useRouter();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -357,6 +358,16 @@ export default function AiAssistantScreen() {
           <View style={s.heroHaloTopRight} />
           <View style={s.heroHaloBottomLeft} />
           <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+          {/* Section 4.2.7: history affordance — caregiver can browse past 安心報. */}
+          <TouchableOpacity
+            style={s.historyBtn}
+            onPress={() => router.push('/(tabs)/health/ai-report')}
+            activeOpacity={0.7}
+            accessibilityLabel="查看 AI 歷史紀錄"
+          >
+            <Text style={s.historyBtnText}>歷史紀錄 ›</Text>
+          </TouchableOpacity>
 
           <View style={s.heroContent}>
             <Text style={s.heroTagline}>WHOCARES AI</Text>
@@ -593,6 +604,23 @@ const s = StyleSheet.create({
     fontSize: typography.bodySm.fontSize,
     color: colors.textSecondary,
     marginTop: spacing.xxs,
+  },
+  // Section 4.2.7: history button anchored top-right of hero card.
+  historyBtn: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderWidth: 1, borderColor: 'rgba(46,141,201,0.18)',
+    zIndex: 1,
+  },
+  historyBtnText: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.primaryText,
+    fontWeight: '600',
   },
   recipientScroll: {
     marginTop: spacing.md,

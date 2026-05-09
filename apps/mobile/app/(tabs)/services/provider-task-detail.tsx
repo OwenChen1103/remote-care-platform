@@ -8,6 +8,7 @@ import {
   Alert,
   TextInput,
   Platform,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,7 +31,19 @@ interface TaskDetail {
   provider_note: string | null;
   provider_report: ProviderReport | null;
   category: { id: string; code: string; name: string };
-  recipient: { id: string; name: string };
+  // Section 3.7.1: extended recipient select for on-site provider context.
+  // Caregiver/patient_user_id deliberately NOT exposed (Section 3.5.4 — these are PII not needed for service).
+  recipient: {
+    id: string;
+    name: string;
+    date_of_birth: string | null;
+    gender: 'male' | 'female' | 'other' | null;
+    medical_tags: string[];
+    notes: string | null;
+    emergency_contact_name: string | null;
+    emergency_contact_phone: string | null;
+    address: string | null;
+  };
 }
 
 interface ProviderReport {
@@ -55,12 +68,14 @@ interface ProviderReport {
 // ─── Status mapping (brand-aligned, matches provider-tasks) ───
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  candidate_proposed: { label: '待確認', color: colors.warning,      bg: colors.warningLight },
-  provider_confirmed: { label: '已確認', color: colors.primaryText,  bg: colors.primaryLight },
-  arranged:           { label: '已安排', color: colors.primaryText,  bg: colors.primaryLight },
-  in_service:         { label: '服務中', color: colors.secondaryText, bg: colors.accentLight },
-  completed:          { label: '已完成', color: colors.success,      bg: colors.successLight },
-  cancelled:          { label: '已取消', color: colors.textTertiary,  bg: colors.bgSurfaceAlt },
+  // Section 2.9.1: provider may land on this screen for caregiver_confirmed via notification deep-link.
+  caregiver_confirmed: { label: '待您接案', color: colors.warning,      bg: colors.warningLight },
+  candidate_proposed:  { label: '待確認',   color: colors.warning,      bg: colors.warningLight },
+  provider_confirmed:  { label: '已確認',   color: colors.primaryText,  bg: colors.primaryLight },
+  arranged:            { label: '已安排',   color: colors.primaryText,  bg: colors.primaryLight },
+  in_service:          { label: '服務中',   color: colors.secondaryText, bg: colors.accentLight },
+  completed:           { label: '已完成',   color: colors.success,      bg: colors.successLight },
+  cancelled:           { label: '已取消',   color: colors.textTertiary,  bg: colors.bgSurfaceAlt },
 };
 
 const TIME_SLOT_LABELS: Record<string, string> = {
@@ -68,6 +83,17 @@ const TIME_SLOT_LABELS: Record<string, string> = {
   afternoon: '下午',
   evening: '晚上',
 };
+
+// Section 3.7.1: birthday string ("YYYY-MM-DD") → integer years today, with month/day rounding.
+function computeAge(dob: string): number {
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return 0;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+  return age;
+}
 
 // ─── Service icons + colors (shared with provider-tasks) ──────
 
@@ -365,6 +391,74 @@ export default function ProviderTaskDetailScreen() {
       </View>
       <View style={s.card}>
         <Text style={s.descriptionText}>{task.description}</Text>
+      </View>
+
+      {/* ─── Recipient Clinical Info (Section 3.7.1) ──────────
+          Surfaces age + medical_tags + emergency contact + address for the on-site visit.
+          Important for clinical safety: provider needs to know what conditions to watch for
+          and who to call in an emergency. */}
+      <View style={s.sectionHeader}>
+        <IconHeart />
+        <Text style={s.sectionLabel}>被照護者資訊</Text>
+      </View>
+      <View style={s.card}>
+        <View style={s.recipientHeader}>
+          <Text style={s.recipientName}>{task.recipient.name}</Text>
+          {task.recipient.date_of_birth && (
+            <Text style={s.recipientMeta}>
+              {computeAge(task.recipient.date_of_birth)} 歲
+            </Text>
+          )}
+          {task.recipient.gender && (
+            <Text style={s.recipientMeta}>
+              · {task.recipient.gender === 'male' ? '男' : task.recipient.gender === 'female' ? '女' : '其他'}
+            </Text>
+          )}
+        </View>
+
+        {task.recipient.medical_tags.length > 0 && (
+          <View style={s.tagRow}>
+            {task.recipient.medical_tags.map((tag) => (
+              <View key={tag} style={s.medicalTag}>
+                <Text style={s.medicalTagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {task.recipient.address && (
+          <View style={s.recipientField}>
+            <Text style={s.recipientFieldLabel}>地址</Text>
+            <Text style={s.recipientFieldValue}>{task.recipient.address}</Text>
+          </View>
+        )}
+
+        {task.recipient.emergency_contact_name && (
+          <View style={s.recipientField}>
+            <Text style={s.recipientFieldLabel}>緊急聯絡人</Text>
+            <View style={s.emergencyRow}>
+              <Text style={s.recipientFieldValue}>{task.recipient.emergency_contact_name}</Text>
+              {task.recipient.emergency_contact_phone && (
+                <TouchableOpacity
+                  onPress={() => {
+                    const phone = task.recipient.emergency_contact_phone;
+                    if (phone) Linking.openURL(`tel:${phone}`).catch(() => {});
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={s.emergencyPhone}>{task.recipient.emergency_contact_phone}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {task.recipient.notes && (
+          <View style={s.recipientField}>
+            <Text style={s.recipientFieldLabel}>備註</Text>
+            <Text style={s.recipientFieldValue}>{task.recipient.notes}</Text>
+          </View>
+        )}
       </View>
 
       {/* ─── Status: arranged → start service ─────────────── */}
@@ -827,6 +921,68 @@ const s = StyleSheet.create({
     fontSize: typography.bodyMd.fontSize,
     color: colors.textSecondary,
     lineHeight: 22,
+  },
+
+  // ─── Recipient Clinical Info (Section 3.7.1) ─────────────
+  recipientHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  recipientName: {
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  recipientMeta: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  medicalTag: {
+    backgroundColor: colors.dangerLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  medicalTagText: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.danger,
+    fontWeight: '600',
+  },
+  recipientField: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderDefault,
+  },
+  recipientFieldLabel: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginBottom: 2,
+  },
+  recipientFieldValue: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  emergencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  emergencyPhone: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.primary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 
   // ─── Field ────────────────────────────────────────────────

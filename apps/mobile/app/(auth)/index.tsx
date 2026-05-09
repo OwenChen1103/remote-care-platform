@@ -13,14 +13,7 @@ const BRAND = {
   border: 'rgba(46,141,201,0.12)',
 } as const;
 
-// ─── Social Login Placeholder ────────────────────────────────
-function SocialIcon({ label }: { label: string }) {
-  return (
-    <View style={s.socialIcon}>
-      <Text style={s.socialIconText}>{label}</Text>
-    </View>
-  );
-}
+// Section 4.2.5: SocialIcon stub removed — social login (FB/G/LINE) is Phase 2 scope per TODO.md.
 
 // ─── Component ───────────────────────────────────────────────
 export default function LandingScreen() {
@@ -58,15 +51,7 @@ export default function LandingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Social Login (MVP placeholder) ──── */}
-        <View style={s.socialArea}>
-          <View style={s.socialRow}>
-            <SocialIcon label="FB" />
-            <SocialIcon label="G" />
-            <SocialIcon label="LINE" />
-          </View>
-          <Text style={s.socialHint}>更多登入方式即將開放</Text>
-        </View>
+        {/* Section 4.2.5: social login row removed — Phase 2 scope per TODO.md. */}
 
       </ScrollView>
     </LinearGradient>
@@ -87,20 +72,7 @@ const s = StyleSheet.create({
   // Logo
   logoArea: { alignItems: 'center', marginBottom: spacing['3xl'] },
   logoImage: { width: 300, height: 300, marginBottom: 0 },
-  domainBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: '#FFFFFF', borderRadius: radius.full,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
-    marginTop: spacing.md,
-    borderWidth: 1, borderColor: BRAND.border,
-  },
-  domainHeart: { fontSize: 11, color: BRAND.accent },
-  domainText: { fontSize: typography.bodySm.fontSize, color: BRAND.dark, fontWeight: '600', letterSpacing: 0.5 },
-  subtitle: {
-    fontSize: 14, color: BRAND.mid, fontWeight: '500',
-    letterSpacing: 8, marginTop: 0,
-  },
-  // (unused styles removed — logo image contains all brand elements)
+  // (Section 4.2.5: unused domain/subtitle styles removed — logo image contains all brand elements)
 
   // CTA
   ctaArea: { width: '100%', gap: spacing.md, marginBottom: spacing['3xl'] },
@@ -118,28 +90,5 @@ const s = StyleSheet.create({
   },
   secondaryBtnText: { color: BRAND.dark, fontSize: typography.bodyMd.fontSize, fontWeight: '600' },
 
-  // Social
-  socialArea: { alignItems: 'center', marginBottom: spacing['3xl'] },
-  socialLabel: { fontSize: typography.caption.fontSize, color: colors.textDisabled, marginBottom: spacing.md },
-  socialRow: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.sm },
-  socialIcon: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: BRAND.bg, borderWidth: 1, borderColor: BRAND.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  socialIconText: { fontSize: typography.bodySm.fontSize, color: BRAND.light, fontWeight: '600' },
-  socialHint: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled },
-
-  // Ad placeholder
-  adPlaceholder: {
-    width: '100%', borderRadius: radius.xl,
-    backgroundColor: BRAND.bg, borderWidth: 1, borderColor: BRAND.border,
-    borderStyle: 'dashed',
-    paddingVertical: spacing['3xl'], alignItems: 'center',
-    marginBottom: spacing['2xl'],
-  },
-  adText: { fontSize: typography.bodySm.fontSize, color: colors.textDisabled },
-
-  // Footer
-  copyright: { fontSize: typography.captionSm.fontSize, color: colors.textDisabled },
+  // Section 4.2.5: removed unused styles for the social-login + ad-placeholder + footer placeholders.
 });

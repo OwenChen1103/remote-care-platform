@@ -22,7 +22,13 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen';
 interface ProviderProfile {
   id: string;
   name: string;
+  // Section 4.1.1: 4 review states — pending / approved / rejected / suspended.
+  // 'rejected' provider can reapply via /provider/me/reapply (section 4.1.6).
   review_status: string;
+  // Section 4.1.8: surface review lifecycle audit fields for the banner UI.
+  admin_note: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
   level: string;
   phone: string;
   email: string;
@@ -164,9 +170,11 @@ export default function ProviderProfileScreen() {
   const [obSelectedServices, setObSelectedServices] = useState<string[]>([]);
   const [obSaving, setObSaving] = useState(false);
 
-  const isOnboarding = profile?.review_status === 'pending'
-    && !(profile.specialties as string[])?.length
-    && !profile.education;
+  // Section 4.1.8: replace brittle "no fields filled" heuristic with a true onboarding signal.
+  // submitted_at is only stamped after the first real PUT with onboarding fields (see provider/me PUT).
+  // If submitted_at IS NULL → never submitted → still onboarding.
+  // If submitted_at present → either pending review or post-decision; show normal profile view.
+  const isOnboarding = profile?.review_status === 'pending' && !profile?.submitted_at;
 
   function toggleObService(code: string) {
     setObSelectedServices((prev) =>
@@ -200,12 +208,25 @@ export default function ProviderProfileScreen() {
       }
       const result = await api.put<ProviderProfile>('/provider/me', payload);
       setProfile(result);
+      // Section 4.1.8: don't silently swallow DOB save error — provider deserves to know
+      // their birthday didn't save. The provider-profile data already committed via /provider/me,
+      // so we partial-succeed rather than failing the whole submission.
+      let dobError: string | null = null;
       if (obDateOfBirth.trim()) {
         try {
           await api.put('/auth/me', { date_of_birth: obDateOfBirth.trim() });
-        } catch { /* non-critical */ }
+        } catch (e) {
+          dobError = e instanceof ApiError ? e.message : '生日儲存失敗';
+        }
       }
-      Alert.alert('已送出', '您的資料已送出，等待審核通知。');
+      if (dobError) {
+        Alert.alert(
+          '部分送出成功',
+          `服務人員資料已送出審核，但生日未能儲存：${dobError}\n您可稍後在個人資料頁更新。`,
+        );
+      } else {
+        Alert.alert('已送出', '您的資料已送出，等待審核通知。');
+      }
     } catch (e) {
       if (e instanceof ApiError) Alert.alert('錯誤', e.message);
       else Alert.alert('錯誤', '送出失敗，請稍後再試');
@@ -228,6 +249,36 @@ export default function ProviderProfileScreen() {
     } finally {
       setUpdating(false);
     }
+  };
+
+  // Section 4.1.6: provider re-submits for review after rejection.
+  // Server requires acknowledged_note: true (provider has read the rejection reason).
+  const handleReapply = async () => {
+    Alert.alert(
+      '重新送審',
+      '確定要重新送出審核嗎？平台將重新檢視您目前的資料。建議您先確認個人資料已修正前次未通過的問題。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '送出',
+          onPress: async () => {
+            setUpdating(true);
+            try {
+              const result = await api.post<ProviderProfile>('/provider/me/reapply', {
+                acknowledged_note: true,
+              });
+              setProfile(result);
+              Alert.alert('已送出', '已重新送出審核，請耐心等候管理員審核結果。');
+            } catch (e) {
+              if (e instanceof ApiError) Alert.alert('錯誤', e.message);
+              else Alert.alert('錯誤', '送出失敗，請稍後再試');
+            } finally {
+              setUpdating(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const toggleService = async (code: string) => {
@@ -488,6 +539,45 @@ export default function ProviderProfileScreen() {
         </View>
       </View>
 
+      {/* ── Section 4.1.8: Review status banners ────────────────
+          Rejected: shown above all profile content with admin_note + reapply CTA.
+          Suspended: shown with admin_note + customer-service hint (no self-recovery). */}
+      {profile.review_status === 'rejected' && (
+        <View style={s.rejectionCard}>
+          <View style={s.rejectionHeader}>
+            <Text style={s.rejectionTitle}>審核未通過</Text>
+            {profile.reviewed_at && (
+              <Text style={s.rejectionDate}>
+                {new Date(profile.reviewed_at).toLocaleDateString('zh-TW')}
+              </Text>
+            )}
+          </View>
+          {profile.admin_note ? (
+            <Text style={s.rejectionBody}>原因：{profile.admin_note}</Text>
+          ) : (
+            <Text style={s.rejectionBody}>請聯繫客服了解詳情。</Text>
+          )}
+          <TouchableOpacity
+            style={[s.reapplyBtn, updating && { opacity: 0.6 }]}
+            onPress={() => void handleReapply()}
+            disabled={updating}
+            activeOpacity={0.8}
+          >
+            <Text style={s.reapplyBtnText}>{updating ? '送出中...' : '修正後重新送審'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {profile.review_status === 'suspended' && (
+        <View style={s.suspendedCard}>
+          <Text style={s.suspendedTitle}>帳號已停權</Text>
+          {profile.admin_note ? (
+            <Text style={s.suspendedBody}>{profile.admin_note}</Text>
+          ) : null}
+          <Text style={s.suspendedHint}>如需恢復，請聯繫客服。</Text>
+        </View>
+      )}
+
       {/* ── Section: 基本資訊 ──────────────────── */}
       <View style={s.sectionHeader}>
         <IconUser />
@@ -732,6 +822,70 @@ const s = StyleSheet.create({
   reviewBadgeText: {
     fontSize: typography.captionSm.fontSize,
     fontWeight: '700',
+  },
+
+  // ─── Section 4.1.8: review status banners ───────────────
+  rejectionCard: {
+    backgroundColor: '#FFEDD5', // orange-100
+    borderWidth: 1, borderColor: '#FED7AA', // orange-200
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  rejectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  rejectionTitle: {
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '700',
+    color: '#9A3412', // orange-800
+  },
+  rejectionDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: '#C2410C',
+  },
+  rejectionBody: {
+    fontSize: typography.bodySm.fontSize,
+    color: '#7C2D12',
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  reapplyBtn: {
+    backgroundColor: '#EA580C', // orange-600
+    borderRadius: radius.full,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  reapplyBtnText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  suspendedCard: {
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1, borderColor: 'rgba(217,83,79,0.3)',
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  suspendedTitle: {
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '700',
+    color: colors.danger,
+    marginBottom: spacing.sm,
+  },
+  suspendedBody: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.danger,
+    lineHeight: 20,
+    marginBottom: spacing.sm,
+  },
+  suspendedHint: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
 
   // ─── Hero halos (shared) ─────────────────────────────────

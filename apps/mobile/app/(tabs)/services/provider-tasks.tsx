@@ -35,18 +35,21 @@ interface ProviderTask {
 // ─── Status — brand-aligned ───────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  candidate_proposed: { label: '待確認', color: colors.warning,      bg: colors.warningLight },
-  provider_confirmed: { label: '已確認', color: colors.primaryText,  bg: colors.primaryLight },
-  arranged:           { label: '已安排', color: colors.primaryText,  bg: colors.primaryLight },
-  in_service:         { label: '服務中', color: colors.secondaryText, bg: colors.accentLight },
-  completed:          { label: '已完成', color: colors.success,      bg: colors.successLight },
+  // Section 2.9.1: caregiver_confirmed = caregiver agreed; provider needs to accept next.
+  // Show as "待您接案" so provider knows it's an actionable item, not a generic pending.
+  caregiver_confirmed: { label: '待您接案', color: colors.warning,      bg: colors.warningLight },
+  candidate_proposed:  { label: '待確認',   color: colors.warning,      bg: colors.warningLight },
+  provider_confirmed:  { label: '已確認',   color: colors.primaryText,  bg: colors.primaryLight },
+  arranged:            { label: '已安排',   color: colors.primaryText,  bg: colors.primaryLight },
+  in_service:          { label: '服務中',   color: colors.secondaryText, bg: colors.accentLight },
+  completed:           { label: '已完成',   color: colors.success,      bg: colors.successLight },
 };
 
 const TIME_SLOT_LABELS: Record<string, string> = {
   morning: '上午', afternoon: '下午', evening: '晚上',
 };
 
-const PENDING_STATUSES = ['candidate_proposed', 'provider_confirmed', 'arranged'];
+const PENDING_STATUSES = ['caregiver_confirmed', 'candidate_proposed', 'provider_confirmed', 'arranged'];
 const IN_SERVICE_STATUSES = ['in_service'];
 
 type StatFilter = null | 'pending' | 'in_service' | 'completed';
@@ -176,11 +179,12 @@ function IconBellMenu({ color = colors.primary }: { color?: string }) {
   );
 }
 
-function IconSettings({ color = colors.secondaryText }: { color?: string }) {
+// IconCalendarMenu — used for 任務歷史 menu row (Section 4.2.6).
+function IconCalendarMenu({ color = colors.accent }: { color?: string }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <SvgCircle cx="12" cy="12" r="3" stroke={color} strokeWidth={1.8} />
-      <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -382,7 +386,15 @@ export default function ProviderTasksScreen() {
     return (
       <TouchableOpacity
         style={s.taskCard}
-        onPress={() => router.push(`/(tabs)/services/provider-task-detail?taskId=${item.id}`)}
+        onPress={() => {
+          // Section 2.9.1: caregiver_confirmed = candidate task awaiting provider's accept/reject;
+          // route to provider-confirm. Other statuses go to the regular task detail view.
+          if (item.status === 'caregiver_confirmed') {
+            router.push(`/(tabs)/services/provider-confirm?requestId=${item.id}`);
+          } else {
+            router.push(`/(tabs)/services/provider-task-detail?taskId=${item.id}`);
+          }
+        }}
         activeOpacity={0.7}
       >
         <View style={[s.taskIconWrap, { backgroundColor: clr.bg }]}>
@@ -657,12 +669,21 @@ export default function ProviderTasksScreen() {
               </View>
             </View>
 
-            {/* Group: 我的 */}
+            {/* Group: 我的 (Section 4.2.6 menu consistency).
+                Order: 個人資料 → 通知中心 → 任務歷史. Settings stub removed (Decision F). */}
             <Text style={s.menuGroupLabel}>我的</Text>
             <View style={s.menuGroup}>
               {[
                 { key: 'profile', label: '個人資料', icon: <IconUserMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/services/provider-profile') },
                 { key: 'notif',   label: '通知中心', icon: <IconBellMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/home/notifications') },
+                {
+                  key: 'history',
+                  label: '任務歷史',
+                  icon: <IconCalendarMenu />,
+                  bg: colors.accentLight,
+                  // Filters the same screen to completed status — minimal scope, no new screen needed.
+                  onPress: () => { setStatFilter('completed'); },
+                },
               ].map((item) => (
                 <TouchableOpacity
                   key={item.key}
@@ -675,22 +696,6 @@ export default function ProviderTasksScreen() {
                   <IconChevron color={colors.textDisabled} />
                 </TouchableOpacity>
               ))}
-            </View>
-
-            {/* Group: 系統 */}
-            <Text style={s.menuGroupLabel}>系統</Text>
-            <View style={s.menuGroup}>
-              <TouchableOpacity
-                style={s.menuRow}
-                onPress={() => { setMenuVisible(false); Alert.alert('提示', '設定功能即將推出'); }}
-                activeOpacity={0.7}
-              >
-                <View style={[s.menuIconWrap, { backgroundColor: colors.bgSurfaceAlt }]}>
-                  <IconSettings />
-                </View>
-                <Text style={s.menuRowText}>設定</Text>
-                <IconChevron color={colors.textDisabled} />
-              </TouchableOpacity>
             </View>
 
             {/* Logout */}

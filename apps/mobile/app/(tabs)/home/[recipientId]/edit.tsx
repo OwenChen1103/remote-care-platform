@@ -48,6 +48,10 @@ interface Recipient {
   emergency_contact_phone: string | null;
   address: string | null;
   notes: string | null;
+  // Section 1.7.2: surfaced binding info — populated when recipient.patient_user_id is set.
+  patient_user_id: string | null;
+  patient_user_email: string | null;
+  patient_user_name: string | null;
 }
 
 // ─── Section icons ────────────────────────────────────────────
@@ -126,6 +130,13 @@ export default function EditRecipientScreen() {
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [notes, setNotes] = useState('');
+  // Section 1.7.2: patient binding state. `boundEmail` snapshots the server-side current
+  // binding for diffing on save (knowing whether to send `null` for explicit unbind).
+  const [patientEmail, setPatientEmail] = useState('');
+  const [boundEmail, setBoundEmail] = useState<string | null>(null);
+  const [boundName, setBoundName] = useState<string | null>(null);
+  // Section 4.2.3: destructive zone state.
+  const [deleting, setDeleting] = useState(false);
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) =>
@@ -155,6 +166,10 @@ export default function EditRecipientScreen() {
       setEmergencyName(data.emergency_contact_name ?? '');
       setEmergencyPhone(data.emergency_contact_phone ?? '');
       setNotes(data.notes ?? '');
+      // Patient binding hydration (Section 1.7.2)
+      setBoundEmail(data.patient_user_email);
+      setBoundName(data.patient_user_name);
+      setPatientEmail(data.patient_user_email ?? '');
     } catch (e) {
       if (e instanceof ApiError) {
         setFetchError(e.message);
@@ -189,6 +204,16 @@ export default function EditRecipientScreen() {
       data.emergency_contact_name = emergencyName.trim() || null;
       data.emergency_contact_phone = emergencyPhone.trim() || null;
       data.notes = notes.trim() || null;
+      // Patient binding update semantics (Section 1.7.2):
+      //   - Email entered → server resolves & binds (or returns typed error)
+      //   - Email cleared but was previously bound → send null for explicit unbind
+      //   - Email empty AND wasn't bound → omit field (no change)
+      const trimmedEmail = patientEmail.trim().toLowerCase();
+      if (trimmedEmail) {
+        data.patient_user_email = trimmedEmail;
+      } else if (boundEmail) {
+        data.patient_user_email = null;
+      }
 
       await api.put(`/recipients/${recipientId}`, data);
       Alert.alert('成功', '已更新被照護者資料', [{ text: '確定', onPress: () => router.back() }]);
@@ -201,6 +226,35 @@ export default function EditRecipientScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Section 4.2.3: soft-delete recipient (server-side guards against in-flight SR).
+  function confirmDelete() {
+    Alert.alert(
+      '刪除被照護者',
+      `確定要刪除「${name}」？此動作無法復原。量測紀錄會保留但不可訪問，已建立的服務需求需先完成或取消。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '刪除',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await api.delete(`/recipients/${recipientId}`);
+              Alert.alert('已刪除', '已將此被照護者從列表中移除', [
+                { text: '確定', onPress: () => router.replace('/(tabs)/home') },
+              ]);
+            } catch (e) {
+              if (e instanceof ApiError) Alert.alert('無法刪除', e.message);
+              else Alert.alert('錯誤', '刪除失敗，請稍後再試');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   if (loading) return <LoadingScreen />;
@@ -356,6 +410,39 @@ export default function EditRecipientScreen() {
         </View>
       </View>
 
+      {/* ── Section: Patient Account Binding (Section 1.7.2) ───── */}
+      <View style={s.sectionHeader}>
+        <IconLink />
+        <Text style={s.sectionTitle}>連結被照護者帳號</Text>
+      </View>
+      <View style={s.card}>
+        {boundEmail ? (
+          <View style={s.bindingPill}>
+            <Text style={s.bindingPillLabel}>已連結</Text>
+            <Text style={s.bindingPillBody}>
+              {boundName ?? '(無名稱)'}（{boundEmail}）
+            </Text>
+            <Text style={s.bindingPillHint}>
+              清空下方欄位並儲存可解除連結。
+            </Text>
+          </View>
+        ) : (
+          <Text style={s.helperHint}>
+            若被照護者本人也想用 App 查看自己的健康資料，請輸入他/她的註冊 Email。對方需先以「被照護者」角色註冊。
+          </Text>
+        )}
+        <TextInput
+          style={[s.input, { marginTop: spacing.sm }]}
+          value={patientEmail}
+          onChangeText={setPatientEmail}
+          placeholder="patient@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          accessibilityLabel="被照護者 Email"
+        />
+      </View>
+
       {/* ── Section: Medical Info ────────────────────────────── */}
       <View style={s.sectionHeader}>
         <IconHeart />
@@ -505,6 +592,24 @@ export default function EditRecipientScreen() {
           <Text style={s.submitText}>{saving ? '儲存中...' : '儲存變更'}</Text>
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* ── Danger Zone (Section 4.2.3) ──────────────────────── */}
+      <View style={s.dangerZone}>
+        <Text style={s.dangerLabel}>危險區域</Text>
+        <TouchableOpacity
+          style={[s.deleteBtn, deleting && { opacity: 0.6 }]}
+          onPress={() => confirmDelete()}
+          activeOpacity={0.85}
+          disabled={deleting}
+          accessibilityRole="button"
+          accessibilityLabel="刪除被照護者"
+        >
+          <Text style={s.deleteBtnText}>{deleting ? '刪除中...' : '刪除被照護者'}</Text>
+        </TouchableOpacity>
+        <Text style={s.dangerHint}>
+          刪除後將不再顯示此被照護者，量測紀錄會保留但不可訪問。如有進行中的服務需求，需先完成或取消。
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -713,5 +818,71 @@ const s = StyleSheet.create({
     fontSize: typography.bodyMd.fontSize,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  // Patient binding (Section 1.7.2)
+  helperHint: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  bindingPill: {
+    backgroundColor: colors.successLight,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  bindingPillLabel: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    color: colors.success,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bindingPillBody: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  bindingPillHint: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    marginTop: 4,
+  },
+
+  // Danger zone (Section 4.2.3)
+  dangerZone: {
+    marginTop: spacing.xl,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.dangerLight,
+    backgroundColor: colors.dangerLight,
+  },
+  dangerLabel: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    color: colors.danger,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  deleteBtn: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  deleteBtnText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+  },
+  dangerHint: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
 });

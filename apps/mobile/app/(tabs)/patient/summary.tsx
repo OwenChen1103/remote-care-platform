@@ -8,7 +8,6 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -68,6 +67,16 @@ interface Notification {
   is_read: boolean;
   created_at: string;
   type: string;
+  // Section 2.9.4: included in deep-link payload (service_request_id, target_status, etc.)
+  data?: Record<string, unknown> | null;
+}
+
+// Section 1.7.5: latest AI 安心報 surfaced inside patient summary.
+interface LatestReport {
+  id: string;
+  status_label: string;
+  summary: string;
+  generated_at: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -188,19 +197,19 @@ function IconBellMenu({ color = colors.primary }: { color?: string }) {
     </Svg>
   );
 }
+function IconUserMenu({ color = colors.primary }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth={1.8} fill="none" />
+      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
 function IconCalendarMenu({ color = colors.accent }: { color?: string }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
       <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
       <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-function IconSettings({ color = colors.textSecondary }: { color?: string }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={1.8} />
-      <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -287,6 +296,8 @@ export default function PatientSummaryScreen() {
   const [bgStats, setBgStats] = useState<MeasurementStats | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  // Section 1.7.5: latest AI 安心報 (most-recent health_summary report).
+  const [latestReport, setLatestReport] = useState<LatestReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -303,15 +314,19 @@ export default function PatientSummaryScreen() {
         setBgStats(null);
         setAppointments([]);
         setNotifications([]);
+        setLatestReport(null);
         return;
       }
 
-      const [mData, bpStatsData, bgStatsData, apptData, notifData] = await Promise.allSettled([
+      // Section 1.7.5: fetch all dashboard data in parallel; allSettled so a single
+      // failure doesn't black-hole the whole dashboard.
+      const [mData, bpStatsData, bgStatsData, apptData, notifData, reportData] = await Promise.allSettled([
         api.get<Measurement[]>(`/measurements?recipient_id=${first.id}&limit=10`),
         api.get<MeasurementStats>(`/measurements/stats?recipient_id=${first.id}&type=blood_pressure&period=7d`),
         api.get<MeasurementStats>(`/measurements/stats?recipient_id=${first.id}&type=blood_glucose&period=7d`),
         api.get<Appointment[]>(`/appointments?recipient_id=${first.id}&limit=3`),
         api.get<Notification[]>('/notifications?limit=3'),
+        api.get<LatestReport[]>(`/ai/reports?recipient_id=${first.id}&report_type=health_summary&limit=1`),
       ]);
 
       setMeasurements(mData.status === 'fulfilled' ? mData.value : []);
@@ -319,6 +334,7 @@ export default function PatientSummaryScreen() {
       setBgStats(bgStatsData.status === 'fulfilled' ? bgStatsData.value : null);
       setAppointments(apptData.status === 'fulfilled' ? apptData.value : []);
       setNotifications(notifData.status === 'fulfilled' ? notifData.value : []);
+      setLatestReport(reportData.status === 'fulfilled' ? (reportData.value[0] ?? null) : null);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError('載入資料失敗');
@@ -358,11 +374,31 @@ export default function PatientSummaryScreen() {
     );
   }
 
+  // Section 1.7.3: actionable empty state — patient logs in but caregiver hasn't bound them yet.
+  // Shows their email so they know what to share with the caregiver, plus refresh CTA.
   if (!recipient) {
     return (
-      <View style={s.center}>
-        <Text style={s.emptyText}>尚未建立被照護者資料</Text>
-      </View>
+      <ScrollView
+        contentContainerStyle={s.emptyStateWrap}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <View style={s.emptyHeroIcon}>
+          <Text style={{ fontSize: 36 }}>💚</Text>
+        </View>
+        <Text style={s.emptyTitle}>尚未連結照護資料</Text>
+        <Text style={s.emptySubtitle}>
+          請通知您的家屬（委託人）在 App 的「新增/編輯被照護者」頁，於「邀請被照護者帳號」區塊輸入您註冊的 Email：
+        </Text>
+        <View style={s.emptyEmailPill}>
+          <Text style={s.emptyEmailText}>{user?.email}</Text>
+        </View>
+        <TouchableOpacity style={s.emptyRefreshBtn} onPress={onRefresh} activeOpacity={0.8}>
+          <Text style={s.emptyRefreshText}>重新整理</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/patient/profile')} activeOpacity={0.7}>
+          <Text style={s.emptySecondaryLink}>編輯個人資料</Text>
+        </TouchableOpacity>
+      </ScrollView>
     );
   }
 
@@ -405,7 +441,7 @@ export default function PatientSummaryScreen() {
           <View style={s.topRight}>
             <TouchableOpacity
               style={s.iconBtn}
-              onPress={() => router.push('/(tabs)/patient/schedule')}
+              onPress={() => router.push('/(tabs)/home/notifications')}
               accessibilityLabel="通知"
             >
               <IconBell size={20} color={colors.textTertiary} />
@@ -543,6 +579,38 @@ export default function PatientSummaryScreen() {
           </View>
         )}
 
+        {/* ── Section: 安心報 (Section 1.7.5) ─────────────────
+            Surfaces the latest AI health_summary so patient can read it themselves.
+            Tap → opens the same /health/ai-report screen caregiver uses, scoped to this recipient. */}
+        {latestReport && (
+          <>
+            <View style={s.sectionHeader}>
+              <IconCalendar />
+              <Text style={s.sectionTitle}>安心報</Text>
+            </View>
+            <TouchableOpacity
+              style={s.reportCard}
+              onPress={() => router.push({
+                pathname: '/(tabs)/health/ai-report',
+                params: { recipient_id: recipient.id },
+              })}
+              activeOpacity={0.85}
+              accessibilityLabel="查看 AI 安心報"
+            >
+              <View style={s.reportCardHeader}>
+                <Text style={s.reportCardLabel}>{latestReport.status_label}</Text>
+                <Text style={s.reportCardDate}>
+                  {new Date(latestReport.generated_at).toLocaleDateString('zh-TW')}
+                </Text>
+              </View>
+              <Text style={s.reportCardSummary} numberOfLines={3}>
+                {latestReport.summary}
+              </Text>
+              <Text style={s.reportCardCta}>查看完整報告 ›</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         {/* ── Section: 近期行程 ────────────────────────────── */}
         <View style={s.sectionHeader}>
           <IconCalendar />
@@ -636,12 +704,26 @@ export default function PatientSummaryScreen() {
               </View>
             </View>
 
-            {/* Group: 我的 */}
+            {/* Group: 我的 (Sections 1.7.4 + 4.2.6 menu consistency).
+                Order: 個人資料 → 通知中心 → 行程與紀錄.
+                Settings stub removed (Decision F). */}
             <Text style={s.menuGroupLabel}>我的</Text>
             <View style={s.menuGroup}>
               <TouchableOpacity
                 style={s.menuRow}
-                onPress={() => { setMenuVisible(false); router.push('/(tabs)/patient/schedule'); }}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/patient/profile'); }}
+                activeOpacity={0.7}
+              >
+                <View style={[s.menuIconWrap, { backgroundColor: colors.primaryLight }]}>
+                  <IconUserMenu />
+                </View>
+                <Text style={s.menuRowText}>個人資料</Text>
+                <IconChevron color={colors.textDisabled} />
+              </TouchableOpacity>
+              <View style={s.menuItemDivider} />
+              <TouchableOpacity
+                style={s.menuRow}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/home/notifications'); }}
                 activeOpacity={0.7}
               >
                 <View style={[s.menuIconWrap, { backgroundColor: colors.primaryLight }]}>
@@ -660,22 +742,6 @@ export default function PatientSummaryScreen() {
                   <IconCalendarMenu />
                 </View>
                 <Text style={s.menuRowText}>行程與紀錄</Text>
-                <IconChevron color={colors.textDisabled} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Group: 系統 */}
-            <Text style={s.menuGroupLabel}>系統</Text>
-            <View style={s.menuGroup}>
-              <TouchableOpacity
-                style={s.menuRow}
-                onPress={() => { setMenuVisible(false); Alert.alert('提示', '設定功能即將推出'); }}
-                activeOpacity={0.7}
-              >
-                <View style={[s.menuIconWrap, { backgroundColor: colors.bgSurfaceAlt }]}>
-                  <IconSettings />
-                </View>
-                <Text style={s.menuRowText}>設定</Text>
                 <IconChevron color={colors.textDisabled} />
               </TouchableOpacity>
             </View>
@@ -709,6 +775,107 @@ const s = StyleSheet.create({
   },
   errorText: { ...typography.bodyLg, color: colors.danger, textAlign: 'center' },
   emptyText: { ...typography.bodyLg, color: colors.textDisabled, textAlign: 'center' },
+
+  // Section 1.7.5: AI 安心報 surfaced card.
+  reportCard: {
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.borderDefault,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  reportCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  reportCardLabel: {
+    backgroundColor: colors.primaryLight,
+    color: colors.primaryText,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
+  reportCardDate: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+  },
+  reportCardSummary: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textPrimary,
+    lineHeight: 22,
+  },
+  reportCardCta: {
+    marginTop: spacing.sm,
+    fontSize: typography.captionSm.fontSize,
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
+
+  // Section 1.7.3: empty-state styles for un-bound patient.
+  emptyStateWrap: {
+    flexGrow: 1,
+    backgroundColor: colors.bgScreen,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing['3xl'] * 2,
+    paddingBottom: spacing['3xl'],
+    alignItems: 'center',
+  },
+  emptyHeroIcon: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  emptyTitle: {
+    ...typography.headingMd,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptySubtitle: {
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+  },
+  emptyEmailPill: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderWidth: 1, borderColor: colors.primary,
+    marginBottom: spacing['2xl'],
+  },
+  emptyEmailText: {
+    ...typography.bodyMd,
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
+  emptyRefreshBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.xl + spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  emptyRefreshText: {
+    color: colors.white,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  emptySecondaryLink: {
+    color: colors.primaryText,
+    fontSize: typography.bodySm.fontSize,
+    textDecorationLine: 'underline',
+  },
 
   // ── Top Bar ───────────────────────────────────────────────
   topBar: {

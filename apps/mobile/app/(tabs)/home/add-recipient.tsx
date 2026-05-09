@@ -100,6 +100,16 @@ function IconUserPlus() {
     </Svg>
   );
 }
+function IconLink() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.5 1.5"
+        stroke={colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.5"
+        stroke={colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────
 
@@ -126,6 +136,10 @@ export default function AddRecipientScreen() {
 
   // ─── Medical tags manager fill ────────────────────────────
   const [managerFillMedical, setManagerFillMedical] = useState(false);
+
+  // Section 1.7.1: optional email-based binding to a patient User account.
+  // If filled, server resolves email → user.id and writes recipient.patient_user_id.
+  const [patientEmail, setPatientEmail] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -182,6 +196,9 @@ export default function AddRecipientScreen() {
       if (emergencyName.trim()) data.emergency_contact_name = emergencyName.trim();
       if (emergencyPhone.trim()) data.emergency_contact_phone = emergencyPhone.trim();
       if (notes.trim()) data.notes = notes.trim();
+      // Patient binding by email (Section 1.7.1). Server validates user exists,
+      // role='patient', and not already bound. Errors surface via ApiError.message.
+      if (patientEmail.trim()) data.patient_user_email = patientEmail.trim().toLowerCase();
 
       await api.post('/recipients', data);
       router.back();
@@ -328,6 +345,29 @@ export default function AddRecipientScreen() {
               );
             })}
           </View>
+        </View>
+      </View>
+
+      {/* ── Section: Patient Account Binding (Section 1.7.1) ───── */}
+      <View style={s.sectionHeader}>
+        <IconLink />
+        <Text style={s.sectionTitle}>邀請被照護者帳號（選填）</Text>
+      </View>
+      <View style={s.card}>
+        <View style={s.field}>
+          <Text style={s.helperHint}>
+            若被照護者本人也想用 App 查看自己的健康資料，請輸入他/她的註冊 Email。對方需先以「被照護者」角色註冊。
+          </Text>
+          <TextInput
+            style={[s.input, { marginTop: spacing.sm }]}
+            value={patientEmail}
+            onChangeText={setPatientEmail}
+            placeholder="patient@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+            accessibilityLabel="被照護者 Email"
+          />
         </View>
       </View>
 

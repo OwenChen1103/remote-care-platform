@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth, ApiError } from '@/lib/auth-context';
+import { routeAfterAuth } from '@/lib/post-auth-route';
 import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 const ROLE_OPTIONS = [
@@ -52,8 +53,10 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      await register({ email, password, name, phone: phone || undefined, role });
-      router.replace('/(tabs)/home');
+      const u = await register({ email, password, name, phone: phone || undefined, role });
+      // Section 4.1.9 — newly-registered patient lands on summary (will see empty state until
+      // caregiver invites them); newly-registered provider lands on profile (review_status=pending).
+      await routeAfterAuth(u, router);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

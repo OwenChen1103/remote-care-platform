@@ -228,6 +228,9 @@ export default function TabLayout() {
       <Tabs.Screen name="home/profile" options={{ href: null, title: '個人資料管理' }} />
       <Tabs.Screen name="home/appointments" options={{ href: null, title: '行程管理' }} />
       <Tabs.Screen name="home/add-appointment" options={{ href: null, title: '新增行程' }} />
+      <Tabs.Screen name="home/edit-appointment" options={{ href: null, title: '編輯行程' }} />
+      {/* Patient profile — pushable from patient menu, never in tab bar (Section 1.7.7) */}
+      <Tabs.Screen name="patient/profile" options={{ href: null, title: '個人資料' }} />
     </Tabs>
   );
 }
