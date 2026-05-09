@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
           caregiver: {
             select: { id: true, name: true, email: true },
           },
+          // Surface bound patient user for admin "linked account" column (Section 1.8.1)
+          patient_user: { select: { email: true, name: true } },
           measurements: {
             select: { measured_at: true },
             orderBy: { measured_at: 'desc' },

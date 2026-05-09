@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
       return errorResponse('AUTH_INVALID_CREDENTIALS', '帳號或密碼錯誤');
     }
 
+    // Decision G enforcement at the LOGIN entry point (audit finding #1).
+    // verifyAuth blocks suspended users on subsequent requests via DB lookup, but without
+    // this guard, a suspended user could still POST /auth/login and walk away with a fresh
+    // 7-day JWT. Block here so suspension takes effect immediately and uniformly.
+    if (user.suspended_at) {
+      return errorResponse('AUTH_FORBIDDEN', '此帳號已被停權，請聯繫客服');
+    }
+
     const token = signJwt({ userId: user.id, role: user.role as 'caregiver' | 'patient' | 'provider' | 'admin' });
 
     return successResponse({

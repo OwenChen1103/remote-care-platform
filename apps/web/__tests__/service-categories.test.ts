@@ -5,6 +5,10 @@ process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // Required by verifyAuth's suspended_at check.
+      findUnique: vi.fn(),
+    },
     serviceCategory: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -74,6 +78,8 @@ const mockCategories = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth DB lookup default — active user.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
 });
 
 describe('GET /api/v1/service-categories (public)', () => {

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { notifyServiceRequestUpdate } from '@/lib/service-notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -62,6 +63,42 @@ export async function PUT(
         recipient: { select: { id: true, name: true } },
       },
     });
+
+    // Section 2.3 rows 6-7: notify caregiver (always); notify admins on completion.
+    if (targetStatus === 'in_service') {
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'in_service',
+        recipients: { caregiverUserId: updated.caregiver_id },
+        messages: {
+          caregiver: {
+            title: '服務開始進行',
+            body: `${updated.recipient.name} 的「${updated.category.name}」服務已開始`,
+          },
+        },
+      });
+    } else {
+      // completed
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'completed',
+        recipients: {
+          caregiverUserId: updated.caregiver_id,
+          notifyAllAdmins: true,
+        },
+        messages: {
+          caregiver: {
+            title: '服務已完成',
+            body: `${updated.recipient.name} 的「${updated.category.name}」服務已完成${parsed.data.provider_report ? '，可查看服務報告' : ''}`,
+          },
+          admin: {
+            title: '服務已完成',
+            body: `服務需求 ${id.slice(0, 8)} 已完成`,
+          },
+        },
+        extraData: { has_report: !!parsed.data.provider_report },
+      });
+    }
 
     return successResponse(updated);
   } catch {

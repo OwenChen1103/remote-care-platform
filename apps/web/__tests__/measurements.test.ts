@@ -5,6 +5,10 @@ process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // Required by verifyAuth's suspended_at check.
+      findUnique: vi.fn(),
+    },
     recipient: {
       findFirst: vi.fn(),
     },
@@ -18,6 +22,13 @@ const { mockPrisma } = vi.hoisted(() => {
     notification: {
       findFirst: vi.fn(),
       create: vi.fn(),
+    },
+    // For provider read-access path in measurements GET (Section 3.5.2)
+    provider: {
+      findFirst: vi.fn(),
+    },
+    serviceRequest: {
+      findFirst: vi.fn(),
     },
   };
   return { mockPrisma };
@@ -110,6 +121,8 @@ const validBgData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth DB lookup default — active user.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
 });
 
 // ─── POST /api/v1/measurements ────────────────────────────────

@@ -16,6 +16,10 @@ const mockPrisma = vi.hoisted(() => ({
     update: vi.fn(),
     count: vi.fn(),
   },
+  // Review route creates a notification when provider has user_id; tests opt-in by setting user_id.
+  notification: {
+    create: vi.fn().mockResolvedValue({ id: 'notif-1' }),
+  },
 }));
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
@@ -307,6 +311,168 @@ describe('PUT /api/v1/providers/[id]/review', () => {
     const response = await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
     expect(response.status).toBe(403);
   });
+
+  // ── Audit fix #3: review state transitions for the new 'rejected' state (Section 4.1.4) ──
+
+  it('should reject a pending provider with admin_note', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'admin-1', role: 'admin' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: null, review_status: 'pending', deleted_at: null, admin_note: null,
+    });
+    mockPrisma.provider.update.mockResolvedValue({
+      id: 'prov-1', review_status: 'rejected', admin_note: '證書不齊全',
+    });
+
+    const { PUT } = await import('../app/api/v1/providers/[id]/review/route');
+    const request = createParamsRequest('PUT', 'prov-1', {
+      review_status: 'rejected', admin_note: '證書不齊全',
+    });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(200);
+    expect(json.data.review_status).toBe('rejected');
+  });
+
+  it('should reject the rejection request when admin_note is missing (Zod refine)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'admin-1', role: 'admin' });
+
+    const { PUT } = await import('../app/api/v1/providers/[id]/review/route');
+    const request = createParamsRequest('PUT', 'prov-1', { review_status: 'rejected' });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should block rejecting a suspended provider (state machine guard)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'admin-1', role: 'admin' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: null, review_status: 'suspended', deleted_at: null, admin_note: '...',
+    });
+
+    const { PUT } = await import('../app/api/v1/providers/[id]/review/route');
+    const request = createParamsRequest('PUT', 'prov-1', {
+      review_status: 'rejected', admin_note: '應拒絕',
+    });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should block suspending a non-approved provider (state machine guard)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'admin-1', role: 'admin' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: null, review_status: 'pending', deleted_at: null, admin_note: null,
+    });
+
+    const { PUT } = await import('../app/api/v1/providers/[id]/review/route');
+    const request = createParamsRequest('PUT', 'prov-1', {
+      review_status: 'suspended', admin_note: '違規',
+    });
+    const response = await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should send notification when provider has user_id and review changes', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'admin-1', role: 'admin' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: 'user-prov-1', review_status: 'pending', deleted_at: null, admin_note: null,
+    });
+    mockPrisma.provider.update.mockResolvedValue({
+      id: 'prov-1', review_status: 'approved', admin_note: '通過',
+    });
+    mockPrisma.notification.create.mockResolvedValue({ id: 'notif-1' });
+
+    const { PUT } = await import('../app/api/v1/providers/[id]/review/route');
+    const request = createParamsRequest('PUT', 'prov-1', {
+      review_status: 'approved', admin_note: '通過',
+    });
+    await PUT(request, { params: Promise.resolve({ id: 'prov-1' }) });
+
+    expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          user_id: 'user-prov-1',
+          type: 'provider_review_result',
+        }),
+      }),
+    );
+  });
+});
+
+// ── Audit fix #3: reapply route (Section 4.1.6) ──
+describe('POST /api/v1/provider/me/reapply', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should transition rejected provider back to pending', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: 'user-prov-1', review_status: 'rejected', deleted_at: null,
+    });
+    mockPrisma.provider.update.mockResolvedValue({
+      id: 'prov-1', review_status: 'pending',
+    });
+
+    const { POST } = await import('../app/api/v1/provider/me/reapply/route');
+    const url = new URL('http://localhost:3000/api/v1/provider/me/reapply');
+    const request = new NextRequest(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+      body: JSON.stringify({ acknowledged_note: true }),
+    });
+    const response = await POST(request);
+    const json = await response.json();
+    expect(response.status).toBe(200);
+    expect(json.data.review_status).toBe('pending');
+    // Verify it actually resets the lifecycle timestamps.
+    expect(mockPrisma.provider.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          review_status: 'pending',
+          submitted_at: expect.any(Date),
+          reviewed_at: null,
+        }),
+      }),
+    );
+  });
+
+  it('should refuse reapply when current state is approved (not rejected)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', user_id: 'user-prov-1', review_status: 'approved', deleted_at: null,
+    });
+
+    const { POST } = await import('../app/api/v1/provider/me/reapply/route');
+    const url = new URL('http://localhost:3000/api/v1/provider/me/reapply');
+    const request = new NextRequest(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+      body: JSON.stringify({ acknowledged_note: true }),
+    });
+    const response = await POST(request);
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should refuse reapply when acknowledged_note is missing (Zod refine)', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+
+    const { POST } = await import('../app/api/v1/provider/me/reapply/route');
+    const url = new URL('http://localhost:3000/api/v1/provider/me/reapply');
+    const request = new NextRequest(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+      body: JSON.stringify({ acknowledged_note: false }),
+    });
+    const response = await POST(request);
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 // --- Provider Self-Service /api/v1/provider/me ---
@@ -361,13 +527,27 @@ describe('PUT /api/v1/provider/me', () => {
 
   it('should update own availability_status', async () => {
     mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
-    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1', deleted_at: null });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1', deleted_at: null, review_status: 'approved' });
     mockPrisma.provider.update.mockResolvedValue({ id: 'prov-1', availability_status: 'busy' });
     const { PUT } = await import('../app/api/v1/provider/me/route');
     const response = await PUT(createMeRequest('PUT', { availability_status: 'busy' }));
     const json = await response.json();
     expect(response.status).toBe(200);
     expect(json.data.availability_status).toBe('busy');
+  });
+
+  // Audit fix #2: rejected providers must be forced through /reapply, not silent edit.
+  it('should block PUT when review_status is rejected and tell user to reapply', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({
+      id: 'prov-1', deleted_at: null, review_status: 'rejected', submitted_at: new Date(),
+    });
+    const { PUT } = await import('../app/api/v1/provider/me/route');
+    const response = await PUT(createMeRequest('PUT', { availability_status: 'busy' }));
+    const json = await response.json();
+    expect(response.status).toBe(400);
+    expect(json.error.code).toBe('INVALID_STATE_TRANSITION');
+    expect(mockPrisma.provider.update).not.toHaveBeenCalled();
   });
 
   it('should strip fields not in ProviderSelfUpdateSchema', async () => {

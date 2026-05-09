@@ -7,6 +7,10 @@ process.env.AI_DEBUG_LOGGING = 'true';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // Required by verifyAuth's suspended_at check.
+      findUnique: vi.fn(),
+    },
     recipient: {
       findFirst: vi.fn(),
     },
@@ -123,6 +127,8 @@ const mockSavedReport = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth DB lookup default — active user.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
   mockCheckReportRateLimit.mockResolvedValue({ allowed: true, remaining: 2, reset: 0 });
   mockCheckChatRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });

@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import {
+  notifyServiceRequestUpdate,
+  resolveProviderUserId,
+} from '@/lib/service-notifications';
 
 // Non-completed, non-cancelled statuses can be cancelled
 const CANCELLABLE_STATUSES = [
@@ -65,6 +69,7 @@ export async function PUT(
       );
     }
 
+    const fromStatus = serviceRequest.status;
     const updated = await prisma.serviceRequest.update({
       where: { id },
       data: {
@@ -78,6 +83,52 @@ export async function PUT(
         recipient: { select: { id: true, name: true } },
       },
     });
+
+    // Section 2.3 rows 8-9: cancellation notifications fan out by who cancelled.
+    // Resolve from pre-update snapshot so candidate/assigned provider relationship is captured
+    // even though the cancel doesn't null those fields (they're left for audit trail).
+    const providerUserId = await resolveProviderUserId(
+      serviceRequest.assigned_provider_id ?? serviceRequest.candidate_provider_id,
+    );
+    if (auth.role === 'caregiver') {
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'cancelled',
+        recipients: { providerUserId, notifyAllAdmins: true },
+        messages: {
+          provider: {
+            title: '服務需求已被取消',
+            body: `委託人取消了「${updated.category.name}」需求${parsed.data.reason ? `（原因：${parsed.data.reason}）` : ''}`,
+          },
+          admin: {
+            title: '委託人已取消需求',
+            body: `服務需求 ${id.slice(0, 8)} 已被委託人取消`,
+          },
+        },
+        extraData: { cancelled_by: 'caregiver', from_status: fromStatus, reason: parsed.data.reason ?? null },
+      });
+    } else {
+      // admin
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'cancelled',
+        recipients: {
+          caregiverUserId: updated.caregiver_id,
+          providerUserId,
+        },
+        messages: {
+          caregiver: {
+            title: '服務需求已被管理員取消',
+            body: `${updated.recipient.name} 的「${updated.category.name}」已被管理員取消${parsed.data.reason ? `（原因：${parsed.data.reason}）` : ''}`,
+          },
+          provider: {
+            title: '服務需求已被取消',
+            body: `「${updated.category.name}」需求已被管理員取消`,
+          },
+        },
+        extraData: { cancelled_by: 'admin', from_status: fromStatus, reason: parsed.data.reason ?? null },
+      });
+    }
 
     return successResponse(updated);
   } catch {

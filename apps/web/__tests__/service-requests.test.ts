@@ -5,6 +5,11 @@ process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // verifyAuth's suspended_at check; admin fan-out for notifyAllAdmins.
+      findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     recipient: { findFirst: vi.fn() },
     serviceCategory: { findUnique: vi.fn() },
     serviceRequest: {
@@ -15,6 +20,10 @@ const { mockPrisma } = vi.hoisted(() => {
       update: vi.fn(),
     },
     provider: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    notification: {
+      // notifyServiceRequestUpdate calls createMany; allow it to no-op.
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   };
   return { mockPrisma };
 });
@@ -108,6 +117,11 @@ const validCreateBody = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth DB lookup default — active user.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
+  // Re-set findMany default since clearAllMocks resets it.
+  mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 
 // ─── POST /service-requests ───

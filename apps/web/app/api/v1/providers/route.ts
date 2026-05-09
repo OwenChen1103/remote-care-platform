@@ -32,12 +32,18 @@ export async function GET(request: NextRequest) {
         orderBy: { created_at: 'desc' },
         skip,
         take: limit,
+        // Section 3.6 candidate filter: dropdown needs availability + areas + experience
+        // + available_services + certifications to compute isProviderEligible client-side.
         select: {
           id: true,
           name: true,
           phone: true,
           level: true,
           specialties: true,
+          certifications: true,
+          experience_years: true,
+          service_areas: true,
+          available_services: true,
           availability_status: true,
           review_status: true,
         },

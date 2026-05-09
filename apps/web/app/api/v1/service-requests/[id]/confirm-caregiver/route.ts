@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import {
+  notifyServiceRequestUpdate,
+  resolveProviderUserId,
+} from '@/lib/service-notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -77,6 +81,49 @@ export async function PUT(
         candidate_provider: { select: { id: true, name: true } },
       },
     });
+
+    // Provider relationship may have been cleared (rejection branch nulls candidate_provider_id);
+    // resolve from the snapshot pre-update for the rejection notification.
+    const candidateProviderId = parsed.data.confirm
+      ? updated.candidate_provider_id
+      : serviceRequest.candidate_provider_id;
+    const providerUserId = await resolveProviderUserId(candidateProviderId);
+
+    if (parsed.data.confirm) {
+      // Section 2.3 row 4a: caregiver_confirmed. Tell the candidate provider it's their turn.
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'caregiver_confirmed',
+        recipients: { providerUserId },
+        messages: {
+          provider: {
+            title: '委託人已確認，請確認接案',
+            body: `委託人已同意您接「${updated.recipient.name} 的${updated.category.name}」服務，請於任務頁確認接案`,
+          },
+        },
+      });
+    } else {
+      // Section 2.3 row 4b: caregiver rejected; back to screening.
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'screening',
+        recipients: {
+          providerUserId,
+          notifyAllAdmins: true,
+        },
+        messages: {
+          provider: {
+            title: '候選未獲委託人確認',
+            body: `委託人婉拒了「${updated.category.name}」需求的候選邀請`,
+          },
+          admin: {
+            title: '候選被婉拒，需重新媒合',
+            body: `服務需求 ${id.slice(0, 8)} 委託人婉拒候選人，請重新審核或更換候選`,
+          },
+        },
+        extraData: { reason: 'caregiver_rejected' },
+      });
+    }
 
     return successResponse(updated);
   } catch {

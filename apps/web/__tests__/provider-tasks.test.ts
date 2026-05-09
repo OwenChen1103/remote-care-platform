@@ -2,12 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mockPrisma = vi.hoisted(() => ({
-  provider: { findFirst: vi.fn() },
+  // Used by notifyServiceRequestUpdate (notifyAllAdmins fan-out for in_service → completed).
+  // Default mockResolvedValue([]) makes notifications a no-op when not exercised by a test.
+  user: { findMany: vi.fn().mockResolvedValue([]) },
+  provider: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn().mockResolvedValue(null),
+  },
   serviceRequest: {
     findMany: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
     count: vi.fn(),
+  },
+  notification: {
+    // notifyServiceRequestUpdate calls createMany; allow it to no-op.
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
 }));
 
@@ -60,7 +70,28 @@ describe('GET /api/v1/provider/tasks', () => {
     );
   });
 
-  it('should default to task statuses when no filter', async () => {
+  it('should include caregiver_confirmed (as candidate) when filter status=caregiver_confirmed', async () => {
+    // Section 2.7.2: caregiver_confirmed scope is by candidate_provider_id, not assigned.
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findMany.mockResolvedValue([]);
+    mockPrisma.serviceRequest.count.mockResolvedValue(0);
+
+    const { GET } = await import('../app/api/v1/provider/tasks/route');
+    await GET(createTaskRequest('GET', '/api/v1/provider/tasks?status=caregiver_confirmed'));
+    expect(mockPrisma.serviceRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'caregiver_confirmed',
+          candidate_provider_id: 'prov-1',
+        }),
+      }),
+    );
+  });
+
+  it('should default to OR-merged ownership scope (caregiver_confirmed candidate + assigned others)', async () => {
+    // Section 2.7.2: default fetches caregiver_confirmed (candidate) OR assigned-status tasks.
+    // Replaces the old single-clause `status: { in: [...] }` shape.
     mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
     mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
     mockPrisma.serviceRequest.findMany.mockResolvedValue([]);
@@ -68,8 +99,15 @@ describe('GET /api/v1/provider/tasks', () => {
 
     const { GET } = await import('../app/api/v1/provider/tasks/route');
     await GET(createTaskRequest('GET'));
-    expect(mockPrisma.serviceRequest.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['arranged', 'in_service', 'completed'] } }) }),
+    const call = mockPrisma.serviceRequest.findMany.mock.calls[0]?.[0] as { where: { OR: unknown[] } };
+    expect(call.where.OR).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'caregiver_confirmed', candidate_provider_id: 'prov-1' }),
+        expect.objectContaining({
+          status: { in: ['provider_confirmed', 'arranged', 'in_service', 'completed'] },
+          assigned_provider_id: 'prov-1',
+        }),
+      ]),
     );
   });
 

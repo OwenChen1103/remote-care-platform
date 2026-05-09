@@ -5,6 +5,72 @@ import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
 
+/**
+ * GET /api/v1/appointments/[id] — fetch a single appointment for edit-screen prefill.
+ *
+ * Authorization (Section 4.2.2):
+ *   - admin     : any
+ *   - caregiver : owns the recipient (recipient.caregiver_id = me)
+ *   - patient   : linked to recipient (recipient.patient_user_id = me) — read-only access
+ *   - provider  : DENY (appointments are caregiver/patient calendar, not provider tasks)
+ *
+ * Soft-deleted recipients return 404 (not visible).
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const auth = await verifyAuth(request);
+    if (!auth) {
+      return errorResponse('AUTH_REQUIRED', '請先登入');
+    }
+
+    const { id } = await params;
+    const a = await prisma.appointment.findUnique({
+      where: { id },
+      include: {
+        recipient: {
+          select: {
+            id: true,
+            name: true,
+            caregiver_id: true,
+            patient_user_id: true,
+            deleted_at: true,
+          },
+        },
+      },
+    });
+
+    // 404 also covers soft-deleted recipients — caller can't access an orphaned appointment.
+    if (!a || a.recipient.deleted_at !== null) {
+      return errorResponse('RESOURCE_NOT_FOUND', '找不到此行程');
+    }
+
+    const allowed =
+      auth.role === 'admin' ||
+      (auth.role === 'caregiver' && a.recipient.caregiver_id === auth.userId) ||
+      (auth.role === 'patient' && a.recipient.patient_user_id === auth.userId);
+    if (!allowed) {
+      return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此行程');
+    }
+
+    return successResponse({
+      id: a.id,
+      recipient_id: a.recipient_id,
+      title: a.title,
+      hospital_name: a.hospital_name,
+      department: a.department,
+      doctor_name: a.doctor_name,
+      appointment_date: a.appointment_date.toISOString(),
+      note: a.note,
+      created_at: a.created_at.toISOString(),
+    });
+  } catch {
+    return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },

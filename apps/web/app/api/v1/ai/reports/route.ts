@@ -3,7 +3,22 @@ import { AiReportListQuerySchema, AI_DISCLAIMER } from '@remote-care/shared';
 import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { errorResponse, paginatedResponse } from '@/lib/api-response';
+import { ensureRecipientAccess } from '@/lib/recipient-access';
 
+/**
+ * AI report list (Section 3.5.1).
+ *
+ * Authorization (Decision C):
+ *   - caregiver : own recipients only
+ *   - patient   : own (where patient_user_id matches)
+ *   - admin     : any
+ *   - provider  : DENY — AI reports are caregiver/patient facing longitudinal diagnostics,
+ *                 not visit-relevant. Providers see recent measurements via /measurements instead.
+ *
+ * Previously this route only blocked caregivers who weren't owners — patient/provider tokens
+ * could pass any recipient_id and read AI reports. Fixed by routing through the centralized
+ * ensureRecipientAccess helper which enforces role policy + ownership atomically.
+ */
 export async function GET(request: NextRequest) {
   try {
     const auth = await verifyAuth(request);
@@ -28,17 +43,20 @@ export async function GET(request: NextRequest) {
 
     const { recipient_id, report_type, page, limit } = parsed.data;
 
-    // Ownership check
-    const recipient = await prisma.recipient.findFirst({
-      where: { id: recipient_id, deleted_at: null },
+    const access = await ensureRecipientAccess(auth, recipient_id, {
+      caregiver: true,
+      patient: true,
+      provider: false,
+      admin: true,
     });
-
-    if (!recipient) {
-      return errorResponse('RESOURCE_NOT_FOUND', '找不到此被照護者');
-    }
-
-    if (auth.role === 'caregiver' && recipient.caregiver_id !== auth.userId) {
-      return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
+    if (!access.ok) {
+      const message =
+        access.code === 'RESOURCE_NOT_FOUND'
+          ? '找不到此被照護者'
+          : access.code === 'RESOURCE_OWNERSHIP_DENIED'
+            ? '無權存取此被照護者'
+            : '無權存取';
+      return errorResponse(access.code, message);
     }
 
     const where: Record<string, unknown> = { recipient_id };

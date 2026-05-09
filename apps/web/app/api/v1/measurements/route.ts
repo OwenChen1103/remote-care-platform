@@ -123,7 +123,11 @@ export async function GET(request: NextRequest) {
 
     const { recipient_id, type, from, to, page, limit } = parsed.data;
 
-    // Ownership check
+    // Ownership check (Section 3.5.2):
+    //   - caregiver : must own the recipient
+    //   - patient   : must be linked (recipient.patient_user_id = me)
+    //   - provider  : must have an active assignment (arranged | in_service) on this recipient
+    //   - admin     : unrestricted
     const recipient = await prisma.recipient.findFirst({
       where: { id: recipient_id, deleted_at: null },
     });
@@ -132,8 +136,38 @@ export async function GET(request: NextRequest) {
       return errorResponse('RESOURCE_NOT_FOUND', '找不到此被照護者');
     }
 
-    if (auth.role === 'caregiver' && recipient.caregiver_id !== auth.userId) {
-      return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
+    if (auth.role === 'caregiver') {
+      if (recipient.caregiver_id !== auth.userId) {
+        return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
+      }
+    } else if (auth.role === 'patient') {
+      if (recipient.patient_user_id !== auth.userId) {
+        return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
+      }
+    } else if (auth.role === 'provider') {
+      // Provider gets read access ONLY while there's an active service request.
+      // Once status moves out of arranged/in_service, access is revoked — provider
+      // shouldn't retain visibility into a recipient they're no longer serving.
+      const provider = await prisma.provider.findFirst({
+        where: { user_id: auth.userId, deleted_at: null },
+        select: { id: true },
+      });
+      if (!provider) {
+        return errorResponse('AUTH_FORBIDDEN', '找不到服務人員資料');
+      }
+      const assignment = await prisma.serviceRequest.findFirst({
+        where: {
+          assigned_provider_id: provider.id,
+          recipient_id,
+          status: { in: ['arranged', 'in_service'] },
+        },
+        select: { id: true },
+      });
+      if (!assignment) {
+        return errorResponse('RESOURCE_OWNERSHIP_DENIED', '您未被指派此被照護者的進行中任務');
+      }
+    } else if (auth.role !== 'admin') {
+      return errorResponse('AUTH_FORBIDDEN', '無權存取');
     }
 
     const where: Record<string, unknown> = { recipient_id };

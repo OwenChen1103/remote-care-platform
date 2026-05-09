@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { notifyServiceRequestUpdate } from '@/lib/service-notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -88,6 +89,52 @@ export async function PUT(
         assigned_provider: { select: { id: true, name: true, phone: true } },
       },
     });
+
+    // Decision B: provider confirm → status jumps directly to 'arranged' (auto-transition).
+    // We notify caregiver + all admins on the auto-arrange success;
+    // on rejection (confirm:false), notify caregiver + admins so admin can re-screen.
+    // Provider isn't notified about their own action (no value, just noise).
+    if (parsed.data.confirm) {
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'arranged',
+        recipients: {
+          caregiverUserId: updated.caregiver_id,
+          notifyAllAdmins: true,
+        },
+        messages: {
+          caregiver: {
+            title: '服務人員已確認接案',
+            body: `${updated.recipient.name} 的「${updated.category.name}」服務已確認指派${updated.assigned_provider?.name ?? '服務人員'}`,
+          },
+          admin: {
+            title: '服務媒合完成',
+            body: `服務需求 ${id.slice(0, 8)} 已完成媒合並進入「已安排」狀態`,
+          },
+        },
+        extraData: { assigned_provider_id: updated.assigned_provider_id },
+      });
+    } else {
+      await notifyServiceRequestUpdate({
+        serviceRequestId: id,
+        targetStatus: 'screening',
+        recipients: {
+          caregiverUserId: updated.caregiver_id,
+          notifyAllAdmins: true,
+        },
+        messages: {
+          caregiver: {
+            title: '服務人員婉拒此次媒合',
+            body: `「${updated.category.name}」需求已退回審核，平台將重新尋找合適服務人員`,
+          },
+          admin: {
+            title: '服務人員婉拒，需重新媒合',
+            body: `服務需求 ${id.slice(0, 8)} 已退回 screening`,
+          },
+        },
+        extraData: { reason: 'provider_rejected' },
+      });
+    }
 
     return successResponse(updated);
   } catch {

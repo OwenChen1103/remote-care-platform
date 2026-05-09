@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse, paginatedResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { notifyServiceRequestUpdate } from '@/lib/service-notifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,6 +73,24 @@ export async function POST(request: NextRequest) {
       include: {
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
+      },
+    });
+
+    // Section 2.3 row 1: notify all admins of a new service request.
+    // Caregiver isn't notified — they just submitted it.
+    await notifyServiceRequestUpdate({
+      serviceRequestId: serviceRequest.id,
+      targetStatus: 'submitted',
+      recipients: { notifyAllAdmins: true },
+      messages: {
+        admin: {
+          title: '新服務需求待審核',
+          body: `${serviceRequest.recipient.name} 的「${serviceRequest.category.name}」需求已送出，請開始審核`,
+        },
+      },
+      extraData: {
+        recipient_name: serviceRequest.recipient.name,
+        category_name: serviceRequest.category.name,
       },
     });
 

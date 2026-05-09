@@ -5,6 +5,10 @@ process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // Required by verifyAuth's suspended_at check. Default in beforeEach returns active.
+      findUnique: vi.fn(),
+    },
     recipient: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -14,6 +18,9 @@ const { mockPrisma } = vi.hoisted(() => {
     },
     measurementReminder: {
       createMany: vi.fn(),
+    },
+    serviceRequest: {
+      count: vi.fn(),
     },
     $transaction: vi.fn(),
   };
@@ -79,6 +86,9 @@ const validCreateData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth now performs a DB lookup to check user.suspended_at.
+  // Default to active user; tests that need to test suspension override per-test.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
 });
 
 // ─── POST /api/v1/recipients ────────────────────────────────

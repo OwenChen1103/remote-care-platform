@@ -1,7 +1,16 @@
+/**
+ * Recipient response formatter (shared by caregiver routes + admin routes).
+ *
+ * Surfaces `patient_user_email` and `patient_user_name` when the caller `include`s
+ * `patient_user: { select: { email, name } }` in their Prisma query. When include is
+ * absent, both surface as null — caller still gets a structurally valid response
+ * (matches RecipientResponseSchema in shared package).
+ */
 export function formatRecipient(r: {
   id: string;
   caregiver_id: string;
   patient_user_id?: string | null;
+  patient_user?: { email: string; name: string } | null;
   name: string;
   date_of_birth: Date | null;
   gender: string | null;
@@ -18,6 +27,8 @@ export function formatRecipient(r: {
     id: r.id,
     caregiver_id: r.caregiver_id,
     patient_user_id: r.patient_user_id ?? null,
+    patient_user_email: r.patient_user?.email ?? null,
+    patient_user_name: r.patient_user?.name ?? null,
     name: r.name,
     date_of_birth: r.date_of_birth ? r.date_of_birth.toISOString().split('T')[0] : null,
     gender: r.gender,

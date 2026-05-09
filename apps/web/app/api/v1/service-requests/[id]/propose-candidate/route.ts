@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import {
+  notifyServiceRequestUpdate,
+  resolveProviderUserId,
+} from '@/lib/service-notifications';
 
 export async function PUT(
   request: NextRequest,
@@ -67,6 +71,30 @@ export async function PUT(
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
         candidate_provider: { select: { id: true, name: true } },
+      },
+    });
+
+    // Section 2.3 row 3: notify caregiver + candidate provider.
+    const providerUserId = await resolveProviderUserId(updated.candidate_provider_id);
+    await notifyServiceRequestUpdate({
+      serviceRequestId: id,
+      targetStatus: 'candidate_proposed',
+      recipients: {
+        caregiverUserId: updated.caregiver_id,
+        providerUserId,
+      },
+      messages: {
+        caregiver: {
+          title: '已為您推薦候選服務人員',
+          body: `${updated.recipient.name} 的「${updated.category.name}」已推薦${updated.candidate_provider?.name ?? '候選服務人員'}，請確認是否同意`,
+        },
+        provider: {
+          title: '您有新的候選邀請',
+          body: `平台已將您列為「${updated.category.name}」需求的候選服務人員，等待委託人確認`,
+        },
+      },
+      extraData: {
+        candidate_provider_id: updated.candidate_provider_id,
       },
     });
 

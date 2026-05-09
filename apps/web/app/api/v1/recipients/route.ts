@@ -5,6 +5,7 @@ import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse, paginatedResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
 import { formatRecipient } from '@/lib/format-recipient';
+import { resolvePatientBinding, isAlreadyBoundConflict } from '@/lib/resolve-patient-binding';
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
         orderBy: { created_at: 'desc' },
         skip,
         take: limit,
+        include: { patient_user: { select: { email: true, name: true } } },
       }),
       prisma.recipient.count({ where }),
     ]);
@@ -88,7 +90,15 @@ export async function POST(request: NextRequest) {
       return errorResponse('RECIPIENT_LIMIT_EXCEEDED', `每位委託人最多 ${RECIPIENT_LIMITS.MAX_PER_CAREGIVER} 位被照護者`);
     }
 
-    const { date_of_birth, ...rest } = parsed.data;
+    const { date_of_birth, patient_user_email, ...rest } = parsed.data;
+
+    // Optional patient binding by email — see Section 1 / resolve-patient-binding helper.
+    let patient_user_id: string | null = null;
+    if (patient_user_email) {
+      const binding = await resolvePatientBinding(patient_user_email);
+      if (!binding.ok) return errorResponse(binding.code, binding.message);
+      patient_user_id = binding.patientUserId;
+    }
 
     const recipient = await prisma.$transaction(async (tx) => {
       const created = await tx.recipient.create({
@@ -96,7 +106,9 @@ export async function POST(request: NextRequest) {
           ...rest,
           date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
           caregiver_id: auth.userId,
+          patient_user_id,
         },
+        include: { patient_user: { select: { email: true, name: true } } },
       });
 
       await tx.measurementReminder.createMany({
@@ -120,7 +132,11 @@ export async function POST(request: NextRequest) {
     });
 
     return successResponse(formatRecipient(recipient), 201);
-  } catch {
+  } catch (err) {
+    // Race protection: two caregivers bound same patient concurrently → DB unique violation
+    if (isAlreadyBoundConflict(err)) {
+      return errorResponse('PATIENT_USER_ALREADY_BOUND', '此 Email 已連結至其他被照護者');
+    }
     return errorResponse('SERVER_ERROR', '伺服器錯誤，請稍後再試');
   }
 }

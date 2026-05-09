@@ -6,6 +6,10 @@ process.env.CRON_SECRET = 'test-cron-secret';
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockPrisma = {
+    user: {
+      // Required by verifyAuth's suspended_at check.
+      findUnique: vi.fn(),
+    },
     notification: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -94,6 +98,8 @@ const mockRecipient = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // verifyAuth DB lookup default — active user.
+  mockPrisma.user.findUnique.mockResolvedValue({ id: 'any', suspended_at: null });
 });
 
 // ─── GET /api/v1/notifications ──────────────────────────────

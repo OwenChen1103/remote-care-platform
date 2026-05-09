@@ -4,6 +4,16 @@ import { NextRequest } from 'next/server';
 // Set JWT_SECRET before any imports that use it
 process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
 
+// Mock prisma — admin-login now does a DB lookup to check suspended_at (audit fix #1b).
+const { mockPrisma } = vi.hoisted(() => {
+  const mockPrisma = {
+    user: { findUnique: vi.fn() },
+  };
+  return { mockPrisma };
+});
+
+vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
+
 vi.mock('@/lib/csrf', () => ({
   checkOrigin: () => true,
 }));
@@ -25,6 +35,12 @@ function createRequest(method: string, body?: unknown): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: token resolves to an active (non-suspended) admin in DB.
+  // Tests that verify the suspension guard override this per-test with mockResolvedValueOnce.
+  mockPrisma.user.findUnique.mockResolvedValue({
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    suspended_at: null,
+  });
 });
 
 // ─── Admin Login ────────────────────────────────────────────
@@ -95,6 +111,34 @@ describe('POST /api/v1/auth/admin-login', () => {
     expect(response.status).toBe(400);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  // Audit fix #1b — admin-login must reject suspended admin even if their JWT is signature-valid.
+  it('should return 403 AUTH_FORBIDDEN when admin user is suspended', async () => {
+    const token = signJwt({ userId: '550e8400-e29b-41d4-a716-446655440000', role: 'admin' });
+    mockPrisma.user.findUnique.mockResolvedValueOnce({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      suspended_at: new Date('2026-05-01T00:00:00Z'),
+    });
+
+    const request = createRequest('POST', { token });
+    const response = await adminLoginHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe('AUTH_FORBIDDEN');
+  });
+
+  it('should return 401 when admin user no longer exists in DB', async () => {
+    const token = signJwt({ userId: '550e8400-e29b-41d4-a716-446655440000', role: 'admin' });
+    mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+
+    const request = createRequest('POST', { token });
+    const response = await adminLoginHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error.code).toBe('AUTH_INVALID_CREDENTIALS');
   });
 
   it('should return 400 VALIDATION_ERROR when body has empty token', async () => {
