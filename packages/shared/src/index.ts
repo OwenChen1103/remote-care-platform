@@ -17,3 +17,4 @@ export * from './constants/error-codes';
 export * from './constants/enums';
 export * from './constants/thresholds';
 export * from './constants/status-display';
+export * from './constants/service-metadata-labels';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RecipientCreateSchema, RecipientUpdateSchema } from '../src/schemas/recipient';
+import { RecipientCreateSchema, RecipientUpdateSchema, RecipientResponseSchema } from '../src/schemas/recipient';
 
 describe('RecipientCreateSchema', () => {
   it('should accept valid input with all fields', () => {
@@ -123,5 +123,62 @@ describe('Patient binding (Section 1)', () => {
     const result = RecipientUpdateSchema.safeParse({ name: '只改名字' });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.patient_user_email).toBeUndefined();
+  });
+});
+
+// G6 — RecipientResponseSchema returns lifestyle_habits (default {} when unset).
+// Without these tests we'd silently regress the response shape if formatRecipient
+// stops returning the field again.
+describe('RecipientResponseSchema lifestyle_habits (G6)', () => {
+  const baseResponse = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    caregiver_id: '660e8400-e29b-41d4-a716-446655440001',
+    patient_user_id: null,
+    patient_user_email: null,
+    patient_user_name: null,
+    name: '王奶奶',
+    date_of_birth: null,
+    gender: null,
+    relationship: null,
+    medical_tags: [],
+    emergency_contact_name: null,
+    emergency_contact_phone: null,
+    address: null,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('defaults lifestyle_habits to empty object when omitted', () => {
+    const result = RecipientResponseSchema.safeParse(baseResponse);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.lifestyle_habits).toEqual({});
+  });
+
+  it('accepts manager_fill flag without other fields', () => {
+    const result = RecipientResponseSchema.safeParse({
+      ...baseResponse,
+      lifestyle_habits: { manager_fill: true },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.lifestyle_habits.manager_fill).toBe(true);
+  });
+
+  it('accepts all 5 detail fields', () => {
+    const result = RecipientResponseSchema.safeParse({
+      ...baseResponse,
+      lifestyle_habits: {
+        water_intake: '2000ml',
+        exercise_frequency: '每週3次',
+        exercise_intensity: '中強度',
+        starch_intake: '半碗飯',
+        protein_intake: '一顆蛋',
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.lifestyle_habits.water_intake).toBe('2000ml');
+      expect(result.data.lifestyle_habits.exercise_frequency).toBe('每週3次');
+    }
   });
 });

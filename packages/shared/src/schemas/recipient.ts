@@ -49,6 +49,16 @@ export const RecipientResponseSchema = z.object({
   gender: z.string().nullable(),
   relationship: z.string().nullable(),
   medical_tags: z.array(z.string()),
+  // Same shape as RecipientCreateSchema.lifestyle_habits but always returned (never undefined),
+  // hence `.default({})` instead of `.optional()`. Caller can safely read fields without null-check.
+  lifestyle_habits: z.object({
+    water_intake: z.string().optional(),
+    exercise_frequency: z.string().optional(),
+    exercise_intensity: z.string().optional(),
+    starch_intake: z.string().optional(),
+    protein_intake: z.string().optional(),
+    manager_fill: z.boolean().optional(),
+  }).default({}),
   emergency_contact_name: z.string().nullable(),
   emergency_contact_phone: z.string().nullable(),
   address: z.string().nullable(),
