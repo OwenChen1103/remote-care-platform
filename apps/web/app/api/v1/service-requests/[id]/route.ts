@@ -23,6 +23,9 @@ export async function GET(
         assigned_provider: {
           select: {
             id: true, name: true, phone: true, level: true,
+            // photo_url surfaces in mobile [requestId].tsx ProviderCard + admin candidate cards.
+            // Without this select, photo_url is always null even when set in DB.
+            photo_url: true,
             specialties: true, certifications: true,
             experience_years: true, service_areas: true,
           },
@@ -30,6 +33,9 @@ export async function GET(
         candidate_provider: {
           select: {
             id: true, name: true, phone: true, level: true,
+            // photo_url surfaces in mobile [requestId].tsx ProviderCard + admin candidate cards.
+            // Without this select, photo_url is always null even when set in DB.
+            photo_url: true,
             specialties: true, certifications: true,
             experience_years: true, service_areas: true,
           },

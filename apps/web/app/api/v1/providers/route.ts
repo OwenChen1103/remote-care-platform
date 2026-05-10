@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
           name: true,
           phone: true,
           level: true,
+          // photo_url for admin candidate cards + mobile review screens.
+          photo_url: true,
           specialties: true,
           certifications: true,
           experience_years: true,

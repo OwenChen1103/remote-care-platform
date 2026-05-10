@@ -16,6 +16,9 @@ export function formatRecipient(r: {
   gender: string | null;
   relationship?: string | null;
   medical_tags: unknown;
+  // Json column on Recipient (added by 20260329000000_add_lifestyle_habits migration).
+  // Shape matches RecipientCreateSchema.lifestyle_habits — see packages/shared/src/schemas/recipient.ts.
+  lifestyle_habits?: unknown;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   address?: string | null;
@@ -34,6 +37,8 @@ export function formatRecipient(r: {
     gender: r.gender,
     relationship: r.relationship ?? null,
     medical_tags: r.medical_tags as string[],
+    // Default to {} so callers never see undefined; keys inside may all be optional.
+    lifestyle_habits: (r.lifestyle_habits as Record<string, unknown>) ?? {},
     emergency_contact_name: r.emergency_contact_name,
     emergency_contact_phone: r.emergency_contact_phone,
     address: r.address ?? null,
