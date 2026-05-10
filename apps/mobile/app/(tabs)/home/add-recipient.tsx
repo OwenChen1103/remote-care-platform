@@ -540,10 +540,12 @@ export default function AddRecipientScreen() {
         </View>
       </View>
 
-      {/* ── Section: Emergency Contact ───────────────────── */}
+      {/* ── Section: Primary Contact (PDF p2 (5)「聯絡方式」) ──
+          Schema column names stay `emergency_contact_*` (no migration in MVP);
+          UI label rename is the G11 fix per MVP_GAPS_IMPLEMENTATION_PLAN.md. */}
       <View style={s.sectionHeader}>
         <IconPhone />
-        <Text style={s.sectionTitle}>緊急聯絡人</Text>
+        <Text style={s.sectionTitle}>主要聯絡人</Text>
       </View>
       <View style={s.card}>
         <View style={s.field}>
@@ -554,7 +556,7 @@ export default function AddRecipientScreen() {
             onChangeText={setEmergencyName}
             placeholder="選填"
             placeholderTextColor={colors.textDisabled}
-            accessibilityLabel="緊急聯絡人姓名"
+            accessibilityLabel="主要聯絡人姓名"
           />
         </View>
         <View style={[s.field, { marginBottom: 0 }]}>
@@ -566,7 +568,7 @@ export default function AddRecipientScreen() {
             keyboardType="phone-pad"
             placeholder="選填"
             placeholderTextColor={colors.textDisabled}
-            accessibilityLabel="緊急聯絡人電話"
+            accessibilityLabel="主要聯絡人電話"
           />
         </View>
       </View>

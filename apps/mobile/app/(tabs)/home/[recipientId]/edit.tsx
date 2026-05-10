@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Switch,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -37,6 +38,15 @@ const PRESET_MEDICAL_TAGS = [
   '骨質疏鬆', '關節炎',
 ] as const;
 
+interface LifestyleHabits {
+  water_intake?: string;
+  exercise_frequency?: string;
+  exercise_intensity?: string;
+  starch_intake?: string;
+  protein_intake?: string;
+  manager_fill?: boolean;
+}
+
 interface Recipient {
   id: string;
   name: string;
@@ -44,6 +54,9 @@ interface Recipient {
   gender: string | null;
   relationship: string | null;
   medical_tags: string[];
+  // Lifestyle JSON column — RecipientResponseSchema returns `{}` when unset (never undefined).
+  // Field shape mirrors RecipientCreateSchema.lifestyle_habits in shared package.
+  lifestyle_habits: LifestyleHabits;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   address: string | null;
@@ -68,6 +81,13 @@ function IconHeart() {
   return (
     <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
       <Path d="M12 21s-7-4.5-7-11a4 4 0 017-2.5A4 4 0 0119 10c0 6.5-7 11-7 11z" stroke={colors.danger} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconLeaf() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 3c-9 0-15 6-15 13M21 3c0 7-6 13-13 13H4v-3c0-9 7-13 17-13z" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -130,6 +150,13 @@ export default function EditRecipientScreen() {
   const [emergencyName, setEmergencyName] = useState('');
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [notes, setNotes] = useState('');
+  // Lifestyle habits — mirror add-recipient.tsx state shape so save serialization is identical.
+  const [waterIntake, setWaterIntake] = useState('');
+  const [exerciseFrequency, setExerciseFrequency] = useState('');
+  const [exerciseIntensity, setExerciseIntensity] = useState('');
+  const [starchIntake, setStarchIntake] = useState('');
+  const [proteinIntake, setProteinIntake] = useState('');
+  const [managerFillLifestyle, setManagerFillLifestyle] = useState(false);
   // Section 1.7.2: patient binding state. `boundEmail` snapshots the server-side current
   // binding for diffing on save (knowing whether to send `null` for explicit unbind).
   const [patientEmail, setPatientEmail] = useState('');
@@ -166,6 +193,15 @@ export default function EditRecipientScreen() {
       setEmergencyName(data.emergency_contact_name ?? '');
       setEmergencyPhone(data.emergency_contact_phone ?? '');
       setNotes(data.notes ?? '');
+      // Lifestyle hydration — `data.lifestyle_habits` is always object (default {}),
+      // so optional chaining + nullish coalesce on each field is safe.
+      const lh = data.lifestyle_habits ?? {};
+      setWaterIntake(lh.water_intake ?? '');
+      setExerciseFrequency(lh.exercise_frequency ?? '');
+      setExerciseIntensity(lh.exercise_intensity ?? '');
+      setStarchIntake(lh.starch_intake ?? '');
+      setProteinIntake(lh.protein_intake ?? '');
+      setManagerFillLifestyle(lh.manager_fill === true);
       // Patient binding hydration (Section 1.7.2)
       setBoundEmail(data.patient_user_email);
       setBoundName(data.patient_user_name);
@@ -200,6 +236,20 @@ export default function EditRecipientScreen() {
       data.gender = gender || null;
       data.relationship = relationship || null;
       data.medical_tags = selectedTags;
+      // Lifestyle serialization — mirrors add-recipient.tsx pattern for parity.
+      // Manager-fill toggle short-circuits the 5 detail fields (server stores either form).
+      const lifestylePayload: Record<string, unknown> = {};
+      if (managerFillLifestyle) {
+        lifestylePayload.manager_fill = true;
+      } else {
+        if (waterIntake.trim()) lifestylePayload.water_intake = waterIntake.trim();
+        if (exerciseFrequency.trim()) lifestylePayload.exercise_frequency = exerciseFrequency.trim();
+        if (exerciseIntensity.trim()) lifestylePayload.exercise_intensity = exerciseIntensity.trim();
+        if (starchIntake.trim()) lifestylePayload.starch_intake = starchIntake.trim();
+        if (proteinIntake.trim()) lifestylePayload.protein_intake = proteinIntake.trim();
+      }
+      // Always send (could be {}) — server overwrites the column, allowing user to clear all fields.
+      data.lifestyle_habits = lifestylePayload;
       data.address = address.trim() || null;
       data.emergency_contact_name = emergencyName.trim() || null;
       data.emergency_contact_phone = emergencyPhone.trim() || null;
@@ -508,10 +558,92 @@ export default function EditRecipientScreen() {
         </View>
       </View>
 
-      {/* ── Section: Emergency Contact ───────────────────────── */}
+      {/* ── Section: Lifestyle Habits ────────────────────────── */}
+      <View style={s.sectionHeader}>
+        <IconLeaf />
+        <Text style={s.sectionTitle}>生活習慣</Text>
+      </View>
+      <View style={s.card}>
+        <View style={s.helperRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.helperTitle}>讓健康管家幫忙填寫</Text>
+            <Text style={s.helperHint}>不確定怎麼填？我們可以協助您完成</Text>
+          </View>
+          <Switch
+            value={managerFillLifestyle}
+            onValueChange={setManagerFillLifestyle}
+            trackColor={{ false: colors.borderStrong, true: colors.accent }}
+            thumbColor={colors.white}
+            accessibilityLabel="讓健康管家幫忙填寫生活習慣"
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>每日喝水量</Text>
+          <TextInput
+            style={[s.input, managerFillLifestyle && s.inputDisabled]}
+            value={waterIntake}
+            onChangeText={setWaterIntake}
+            placeholder="例：2000ml"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>運動頻次</Text>
+          <TextInput
+            style={[s.input, managerFillLifestyle && s.inputDisabled]}
+            value={exerciseFrequency}
+            onChangeText={setExerciseFrequency}
+            placeholder="例：每週3次"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>運動強度</Text>
+          <TextInput
+            style={[s.input, managerFillLifestyle && s.inputDisabled]}
+            value={exerciseIntensity}
+            onChangeText={setExerciseIntensity}
+            placeholder="例：低強度散步"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.fieldLabel}>澱粉補充量</Text>
+          <TextInput
+            style={[s.input, managerFillLifestyle && s.inputDisabled]}
+            value={starchIntake}
+            onChangeText={setStarchIntake}
+            placeholder="例：每日半碗飯"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+          />
+        </View>
+
+        <View style={[s.field, { marginBottom: 0 }]}>
+          <Text style={s.fieldLabel}>蛋白質補充量</Text>
+          <TextInput
+            style={[s.input, managerFillLifestyle && s.inputDisabled]}
+            value={proteinIntake}
+            onChangeText={setProteinIntake}
+            placeholder="例：每日一顆蛋"
+            placeholderTextColor={colors.textDisabled}
+            editable={!managerFillLifestyle}
+          />
+        </View>
+      </View>
+
+      {/* ── Section: Primary Contact (PDF p2 (5)「聯絡方式」) ──
+          Schema columns remain `emergency_contact_*`; G11 is a UI label rename only. */}
       <View style={s.sectionHeader}>
         <IconPhone />
-        <Text style={s.sectionTitle}>緊急聯絡人</Text>
+        <Text style={s.sectionTitle}>主要聯絡人</Text>
       </View>
       <View style={s.card}>
         <View style={s.field}>
@@ -745,7 +877,28 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   inputText: { fontSize: typography.bodyMd.fontSize, color: colors.textPrimary },
+  inputDisabled: {
+    opacity: 0.45,
+    backgroundColor: colors.bgSurfaceAlt,
+  },
   textArea: { minHeight: 88, textAlignVertical: 'top', paddingTop: spacing.md },
+
+  // Manager-fill row (used in 生活習慣 section, mirrors add-recipient.tsx)
+  helperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  helperTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.secondaryText,
+  },
 
   dateRow: {
     flexDirection: 'row',

@@ -19,9 +19,14 @@ import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
 
 const ROLE_OPTIONS = [
   { key: 'caregiver' as const, label: '委託人（家屬）', desc: '為家人安排照護服務' },
-  { key: 'patient' as const, label: '被照護者', desc: '查看自己的健康資料' },
-  { key: 'provider' as const, label: '服務人員', desc: '提供照護服務（需審核）' },
+  { key: 'patient' as const, label: '被照護者', desc: '需家屬以您註冊的 Email 邀請後使用' },
+  { key: 'provider' as const, label: '服務人員', desc: '需提交專業資料審核（約 1–2 個工作天）' },
 ];
+
+// Mirror server-side RegisterSchema (packages/shared/src/schemas/auth.ts):
+// 8+ chars, must contain lowercase + uppercase + digit. Catching this client-side
+// gives instant feedback instead of a server round-trip rejection.
+const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -34,6 +39,8 @@ export default function RegisterScreen() {
   const [role, setRole] = useState<'caregiver' | 'patient' | 'provider'>('caregiver');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   async function handleRegister() {
     if (!name || !email || !password) {
@@ -44,8 +51,8 @@ export default function RegisterScreen() {
       setError('兩次密碼輸入不一致');
       return;
     }
-    if (password.length < 8) {
-      setError('密碼至少 8 個字元');
+    if (!PASSWORD_RE.test(password)) {
+      setError('密碼需 8 字元以上，並包含大寫、小寫字母與數字');
       return;
     }
 
@@ -141,23 +148,45 @@ export default function RegisterScreen() {
             autoCapitalize="none"
             autoComplete="email"
           />
-          <TextInput
-            style={styles.input}
-            placeholder="密碼（至少 8 字元，含大小寫與數字）"
-            placeholderTextColor={colors.textDisabled}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoComplete="new-password"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="確認密碼"
-            placeholderTextColor={colors.textDisabled}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
+          <View style={styles.passwordWrapper}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="密碼（至少 8 字元，含大小寫與數字）"
+              placeholderTextColor={colors.textDisabled}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoComplete="new-password"
+            />
+            <TouchableOpacity
+              style={styles.passwordToggle}
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            >
+              <Text style={styles.passwordToggleText}>
+                {showPassword ? '隱藏' : '顯示'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.passwordWrapper}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="確認密碼"
+              placeholderTextColor={colors.textDisabled}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <TouchableOpacity
+              style={styles.passwordToggle}
+              onPress={() => setShowConfirmPassword((v) => !v)}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            >
+              <Text style={styles.passwordToggleText}>
+                {showConfirmPassword ? '隱藏' : '顯示'}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={[styles.input, styles.inputLast]}
             placeholder="電話（選填）"
@@ -303,6 +332,28 @@ const styles = StyleSheet.create({
   },
   inputLast: {
     marginBottom: 0,
+  },
+
+  // Password field with show/hide toggle
+  passwordWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingRight: 64,
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 16,
+    top: 0,
+    bottom: spacing.md,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  passwordToggleText: {
+    color: colors.primaryText,
+    fontSize: 13,
+    fontWeight: '500',
   },
 
   // Register button

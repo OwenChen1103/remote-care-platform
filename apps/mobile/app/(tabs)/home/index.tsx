@@ -13,6 +13,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Alert,
 } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
@@ -759,6 +760,19 @@ export default function HomeScreen() {
             {[
               { label: '個人資料', icon: 'user', onPress: () => router.push('/(tabs)/home/profile') },
               { label: '通知中心', icon: 'bell', onPress: () => router.push('/(tabs)/home/notifications') },
+              // PDF p1 「漢堡頁：個人資料管理、首頁、訂單紀錄、設定等項目」— MVP 階段唯一有意義的
+              // 設定項是被照護者量測提醒。直接連到對應 recipient 詳情頁的提醒區段，避免重做設定頁。
+              { label: '量測提醒', icon: 'alarm', onPress: () => {
+                if (recipients.length === 0) {
+                  Alert.alert('提示', '請先新增被照護者，才能設定量測提醒');
+                } else if (recipients.length === 1) {
+                  // Single recipient → straight to detail page where the reminder section lives.
+                  router.push(`/(tabs)/home/${recipients[0]!.id}`);
+                } else {
+                  // Multiple recipients → user already on home; hint to pick a card.
+                  Alert.alert('選擇被照護者', '請從首頁的被照護者卡片進入要設定量測提醒的對象。');
+                }
+              }},
             ].map((item) => (
               <TouchableOpacity
                 key={item.label}
@@ -777,6 +791,12 @@ export default function HomeScreen() {
                     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                       <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
                       <Path d="M13.7 21a2 2 0 01-3.4 0" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+                    </Svg>
+                  )}
+                  {item.icon === 'alarm' && (
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Circle cx="12" cy="13" r="8" stroke={colors.primary} strokeWidth={1.8} />
+                      <Path d="M12 9v4l3 2M5 4l-2 2M19 4l2 2" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" />
                     </Svg>
                   )}
                 </View>

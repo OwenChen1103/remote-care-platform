@@ -34,6 +34,15 @@ interface RecentMeasurement {
   measured_at: string;
 }
 
+interface LifestyleHabits {
+  water_intake?: string;
+  exercise_frequency?: string;
+  exercise_intensity?: string;
+  starch_intake?: string;
+  protein_intake?: string;
+  manager_fill?: boolean;
+}
+
 interface Recipient {
   id: string;
   caregiver_id: string;
@@ -41,6 +50,8 @@ interface Recipient {
   date_of_birth: string | null;
   gender: string | null;
   medical_tags: string[];
+  // Always returned by formatRecipient (default `{}` when not set).
+  lifestyle_habits: LifestyleHabits;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   notes: string | null;
@@ -315,7 +326,8 @@ export default function RecipientDetailScreen() {
               <>
                 <View style={styles.profileInfoDivider} />
                 <View style={styles.profileInfoItem}>
-                  <Text style={styles.profileInfoLabel}>緊急聯絡</Text>
+                  {/* G11: schema column kept as emergency_contact_*; UI surfaces as 主要聯絡 per PDF. */}
+                  <Text style={styles.profileInfoLabel}>主要聯絡</Text>
                   <Text style={styles.profileInfoValue} numberOfLines={1}>
                     {recipient.emergency_contact_name}
                   </Text>
@@ -331,6 +343,41 @@ export default function RecipientDetailScreen() {
               <Text style={styles.profileNotesText}>{recipient.notes}</Text>
             </View>
           ) : null}
+
+          {/* Lifestyle habits — only if any field is set OR manager_fill flagged.
+              Mirrors the 5 fields from add-recipient.tsx, plus a "由健康管家代填" hint when applicable. */}
+          {(() => {
+            const lh = recipient.lifestyle_habits ?? {};
+            const hasAny =
+              lh.manager_fill === true ||
+              !!lh.water_intake || !!lh.exercise_frequency || !!lh.exercise_intensity ||
+              !!lh.starch_intake || !!lh.protein_intake;
+            if (!hasAny) return null;
+            const items: { label: string; value: string }[] = [];
+            if (lh.manager_fill === true) {
+              return (
+                <View style={styles.profileNotes}>
+                  <Text style={styles.profileNotesLabel}>生活習慣</Text>
+                  <Text style={styles.profileNotesText}>由健康管家代填中</Text>
+                </View>
+              );
+            }
+            if (lh.water_intake) items.push({ label: '每日喝水量', value: lh.water_intake });
+            if (lh.exercise_frequency) items.push({ label: '運動頻次', value: lh.exercise_frequency });
+            if (lh.exercise_intensity) items.push({ label: '運動強度', value: lh.exercise_intensity });
+            if (lh.starch_intake) items.push({ label: '澱粉補充', value: lh.starch_intake });
+            if (lh.protein_intake) items.push({ label: '蛋白質補充', value: lh.protein_intake });
+            return (
+              <View style={styles.profileNotes}>
+                <Text style={styles.profileNotesLabel}>生活習慣</Text>
+                {items.map((it) => (
+                  <Text key={it.label} style={styles.profileNotesText}>
+                    {it.label}：{it.value}
+                  </Text>
+                ))}
+              </View>
+            );
+          })()}
         </View>
       </View>
 

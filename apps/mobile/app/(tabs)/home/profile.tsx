@@ -110,8 +110,23 @@ export default function ProfileScreen() {
   useEffect(() => { void fetchProfile(); }, [fetchProfile]);
 
   const handleSave = async () => {
+    // PDF p1-2 marks all 5 fields ★ required. We enforce it client-side here so the user
+    // gets immediate feedback. Server `UpdateProfileSchema` stays lax (admin / partial updates
+    // legitimately need to PATCH a single field) — required-ness is a UI policy, not data invariant.
     if (!name.trim()) {
       setError('姓名為必填');
+      return;
+    }
+    if (!phone.trim()) {
+      setError('聯絡電話為必填');
+      return;
+    }
+    if (!dateOfBirth.trim()) {
+      setError('生日為必填');
+      return;
+    }
+    if (!address.trim()) {
+      setError('居住地址為必填');
       return;
     }
     setSaving(true);
@@ -191,13 +206,13 @@ export default function ProfileScreen() {
         <View style={s.field}>
           <View style={s.fieldHeader}>
             <IconPhone />
-            <Text style={s.fieldLabel}>聯絡電話</Text>
+            <Text style={s.fieldLabel}>聯絡電話 <Text style={s.required}>*</Text></Text>
           </View>
           <TextInput
             style={s.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="選填"
+            placeholder="例：0912345678"
             placeholderTextColor={colors.textDisabled}
             keyboardType="phone-pad"
           />
@@ -207,11 +222,11 @@ export default function ProfileScreen() {
         <View style={s.field}>
           <View style={s.fieldHeader}>
             <IconCalendar />
-            <Text style={s.fieldLabel}>生日</Text>
+            <Text style={s.fieldLabel}>生日 <Text style={s.required}>*</Text></Text>
           </View>
           <TouchableOpacity style={s.input} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
             <Text style={[styles_textInput, !formattedDob && { color: colors.textDisabled }]}>
-              {formattedDob || '選擇生日（選填）'}
+              {formattedDob || '選擇生日'}
             </Text>
           </TouchableOpacity>
           {showDatePicker && (
@@ -242,13 +257,13 @@ export default function ProfileScreen() {
         <View style={[s.field, { marginBottom: 0 }]}>
           <View style={s.fieldHeader}>
             <IconLocation />
-            <Text style={s.fieldLabel}>居住地址</Text>
+            <Text style={s.fieldLabel}>居住地址 <Text style={s.required}>*</Text></Text>
           </View>
           <TextInput
             style={s.input}
             value={address}
             onChangeText={setAddress}
-            placeholder="選填"
+            placeholder="例：台北市大安區忠孝東路四段"
             placeholderTextColor={colors.textDisabled}
           />
         </View>
