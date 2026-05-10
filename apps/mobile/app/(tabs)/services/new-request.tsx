@@ -18,6 +18,8 @@ import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { TIME_SLOT_DISPLAY } from '@remote-care/shared';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { COMMON_HOSPITALS } from '@/lib/constants/hospitals';
+import { TW_REGIONS, composeLocation } from '@/lib/constants/taiwan-regions';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -39,6 +41,17 @@ interface ServiceCategory {
 const TIME_SLOT_OPTIONS = Object.entries(TIME_SLOT_DISPLAY).map(
   ([value, config]) => ({ value, label: config.label }),
 );
+
+// PDF p3 (6) escort + p4 exercise: 「相關專業證照」preference list.
+// Stored to metadata.preferred_certifications as string[]; admin uses as match hint.
+// Display end is handled by SERVICE_METADATA_LABELS in shared package.
+const CERTIFICATION_OPTIONS = [
+  { value: '護理師',      label: '護理師' },
+  { value: '照服員',      label: '照服員' },
+  { value: '物理治療師',  label: '物理治療師' },
+  { value: '職能治療師',  label: '職能治療師' },
+  { value: '急救證照',    label: '急救證照' },
+] as const;
 
 // ─── Service Visual Info ──────────────────────────────────────
 
@@ -143,9 +156,19 @@ export default function NewServiceRequestScreen() {
   const [department, setDepartment] = useState('');
   const [doctorName, setDoctorName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
+  // PDF p3 (5) escort visit also requires 「診別」 — early/afternoon/evening clinic session.
+  const [session, setSession] = useState('');
+  // PDF p3 (6) escort: 「相關專業證照」, p4 exercise: same → preferred_certifications metadata.
+  // Used by admin during candidate matching (informational only — no auto-filter in MVP).
+  const [preferredCerts, setPreferredCerts] = useState<string[]>([]);
   const [spaceSize, setSpaceSize] = useState('');
   const [hasPets, setHasPets] = useState(false);
   const [exerciseType, setExerciseType] = useState('');
+  // PDF p4/p5 (運動養生 + 居家打掃): 縣市 + 區域 二級下拉 + 詳細地址 free input.
+  // For escort the existing destination/departure_location free-text fields apply instead;
+  // these two only render for exercise_program and home_cleaning categories.
+  const [city, setCity] = useState('');
+  const [district, setDistrict] = useState('');
 
   const selectedCategoryCode = useMemo(
     () => categories.find((c) => c.id === categoryId)?.code ?? '',
@@ -182,10 +205,29 @@ export default function NewServiceRequestScreen() {
     setDepartment('');
     setDoctorName('');
     setRegistrationNumber('');
+    setSession('');
+    setPreferredCerts([]);
     setSpaceSize('');
     setHasPets(false);
     setExerciseType('');
+    setCity('');
+    setDistrict('');
   }, [categoryId]);
+
+  // Reset district whenever city changes (district list is city-dependent).
+  useEffect(() => {
+    setDistrict('');
+  }, [city]);
+
+  // City-scoped district options (memoized — avoids re-find on every render).
+  const districtOptions = useMemo(
+    () => TW_REGIONS.find((r) => r.city === city)?.districts ?? [],
+    [city],
+  );
+
+  // Categories that require 縣市/區域 hierarchical selectors per PDF.
+  const usesRegionPicker =
+    selectedCategoryCode === 'exercise_program' || selectedCategoryCode === 'home_cleaning';
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -228,23 +270,34 @@ export default function NewServiceRequestScreen() {
         if (department) metadata.department = department;
         if (doctorName) metadata.doctor_name = doctorName;
         if (registrationNumber) metadata.registration_number = registrationNumber;
+        if (session) metadata.session = session;
         metadata.needs_pickup = needsPickup;
         if (preferredGender) metadata.preferred_gender = preferredGender;
+        if (preferredCerts.length > 0) metadata.preferred_certifications = preferredCerts;
       } else if (selectedCategoryCode === 'exercise_program') {
         if (exerciseType) metadata.exercise_type = exerciseType;
         if (preferredGender) metadata.preferred_gender = preferredGender;
+        if (preferredCerts.length > 0) metadata.preferred_certifications = preferredCerts;
       } else if (selectedCategoryCode === 'home_cleaning') {
         if (spaceSize) metadata.space_size = spaceSize;
         metadata.has_pets = hasPets;
         if (preferredGender) metadata.preferred_gender = preferredGender;
       }
 
+      // For exercise/cleaning categories, compose final location from city + district + detail.
+      // Escort uses the location field as-is (it's the patient's address; departure/destination
+      // carry the journey endpoints separately). Other categories (consult/shopping/...) also
+      // use location as-is since they have no city/district picker.
+      const finalLocation = usesRegionPicker
+        ? composeLocation(city, district, location)
+        : location;
+
       await api.post('/service-requests', {
         recipient_id: recipientId,
         category_id: categoryId,
         preferred_date: new Date(preferredDate).toISOString(),
         preferred_time_slot: timeSlot || undefined,
-        location,
+        location: finalLocation,
         departure_location: departureLocation || undefined,
         destination: destination || undefined,
         service_duration: serviceDuration ?? undefined,
@@ -263,6 +316,13 @@ export default function NewServiceRequestScreen() {
   const handleSubmit = () => {
     if (!recipientId || !categoryId || !preferredDate || !location || !description) {
       setError('請填寫所有必填欄位');
+      return;
+    }
+
+    // G10 — exercise/cleaning need both city + district selected (location alone is the
+    // detailed address; city/district are mandatory pickers per PDF p4/p5).
+    if (usesRegionPicker && (!city || !district)) {
+      setError('請選擇縣市與區域');
       return;
     }
 
@@ -447,12 +507,57 @@ export default function NewServiceRequestScreen() {
               })}
             </View>
 
-            <Text style={styles.label}>服務地點 *</Text>
+            {/* G10 — exercise/cleaning categories use 縣市/區域 hierarchical chips
+                + a 詳細地址 input. Other categories keep the single 服務地點 input.
+                Final location is composed via composeLocation() at submit time. */}
+            {usesRegionPicker && (
+              <>
+                <Text style={styles.label}>縣市 *</Text>
+                <View style={styles.chipRow}>
+                  {TW_REGIONS.map((r) => {
+                    const isActive = city === r.city;
+                    return (
+                      <TouchableOpacity
+                        key={r.city}
+                        style={[styles.chip, isActive && styles.chipActive]}
+                        onPress={() => setCity(isActive ? '' : r.city)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{r.city}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {city ? (
+                  <>
+                    <Text style={styles.label}>區域 *</Text>
+                    <View style={styles.chipRow}>
+                      {districtOptions.map((d) => {
+                        const isActive = district === d;
+                        return (
+                          <TouchableOpacity
+                            key={d}
+                            style={[styles.chip, isActive && styles.chipActive]}
+                            onPress={() => setDistrict(isActive ? '' : d)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{d}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+              </>
+            )}
+
+            <Text style={styles.label}>{usesRegionPicker ? '詳細地址 *' : '服務地點 *'}</Text>
             <TextInput
               style={styles.input}
               value={location}
               onChangeText={setLocation}
-              placeholder="台北市信義區..."
+              placeholder={usesRegionPicker ? '街道門牌號碼' : '台北市信義區...'}
               placeholderTextColor={colors.textDisabled}
             />
 
@@ -484,11 +589,30 @@ export default function NewServiceRequestScreen() {
               />
 
               <Text style={styles.label}>目的地（醫院）</Text>
+              {/* PDF p3: 「抵達地：縣市/區域/醫院選單（保留其他可手動填寫）」.
+                  Chip select sets destination to preset; free-text input is shown when destination
+                  isn't in preset list (so it doesn't visually duplicate the selected chip).
+                  COMMON_HOSPITALS is a curated MVP list — see lib/constants/hospitals.ts. */}
+              <View style={styles.chipRow}>
+                {COMMON_HOSPITALS.map((h) => {
+                  const isActive = destination === h;
+                  return (
+                    <TouchableOpacity
+                      key={h}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setDestination(isActive ? '' : h)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{h}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <TextInput
-                style={styles.input}
-                value={destination}
+                style={[styles.input, { marginTop: 8 }]}
+                value={(COMMON_HOSPITALS as readonly string[]).includes(destination) ? '' : destination}
                 onChangeText={setDestination}
-                placeholder="醫院名稱或地址"
+                placeholder="不在清單內？輸入醫院名稱或地址"
                 placeholderTextColor={colors.textDisabled}
               />
 
@@ -520,6 +644,27 @@ export default function NewServiceRequestScreen() {
                 keyboardType="number-pad"
               />
 
+              <Text style={styles.label}>診別</Text>
+              <View style={styles.chipRow}>
+                {[
+                  { value: 'morning',   label: '早診' },
+                  { value: 'afternoon', label: '午診' },
+                  { value: 'evening',   label: '夜診' },
+                ].map((opt) => {
+                  const isActive = session === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setSession(isActive ? '' : opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
               <View style={styles.switchRow}>
                 <Text style={styles.switchLabel}>需要接送</Text>
                 <Switch
@@ -544,6 +689,27 @@ export default function NewServiceRequestScreen() {
                       key={opt.value}
                       style={[styles.chip, isActive && styles.chipActive]}
                       onPress={() => setPreferredGender(opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>證照偏好（多選）</Text>
+              <View style={styles.chipRow}>
+                {CERTIFICATION_OPTIONS.map((opt) => {
+                  const isActive = preferredCerts.includes(opt.value);
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setPreferredCerts((prev) =>
+                        prev.includes(opt.value)
+                          ? prev.filter((v) => v !== opt.value)
+                          : [...prev, opt.value],
+                      )}
                       activeOpacity={0.7}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
@@ -610,6 +776,27 @@ export default function NewServiceRequestScreen() {
                       key={opt.value}
                       style={[styles.chip, isActive && styles.chipActive]}
                       onPress={() => setPreferredGender(opt.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>證照偏好（多選）</Text>
+              <View style={styles.chipRow}>
+                {CERTIFICATION_OPTIONS.map((opt) => {
+                  const isActive = preferredCerts.includes(opt.value);
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.chip, isActive && styles.chipActive]}
+                      onPress={() => setPreferredCerts((prev) =>
+                        prev.includes(opt.value)
+                          ? prev.filter((v) => v !== opt.value)
+                          : [...prev, opt.value],
+                      )}
                       activeOpacity={0.7}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{opt.label}</Text>

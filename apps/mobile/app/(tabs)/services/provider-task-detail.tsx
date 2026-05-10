@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
+import { formatMetadataEntries } from '@remote-care/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
@@ -31,6 +32,9 @@ interface TaskDetail {
   provider_note: string | null;
   provider_report: ProviderReport | null;
   category: { id: string; code: string; name: string };
+  // Category-specific structured fields (department, session, needs_pickup, etc).
+  // See packages/shared/src/constants/service-metadata-labels.ts for renderable keys.
+  metadata: Record<string, unknown> | null;
   // Section 3.7.1: extended recipient select for on-site provider context.
   // Caregiver/patient_user_id deliberately NOT exposed (Section 3.5.4 — these are PII not needed for service).
   recipient: {
@@ -383,6 +387,32 @@ export default function ProviderTaskDetailScreen() {
         <InfoRow label="服務日期" value={`${dateStr}${timeStr ? ` ${timeStr}` : ''}`} />
         <InfoRow label="服務地點" value={task.location} isLast />
       </View>
+
+      {/* ─── Detail Info — category-specific metadata ───────
+          Provider needs department/doctor/session for escort visits, exercise_type for exercise tasks, etc.
+          Renders via shared SERVICE_METADATA_LABELS so format is consistent with caregiver/admin views. */}
+      {(() => {
+        const entries = formatMetadataEntries(task.metadata);
+        if (entries.length === 0) return null;
+        return (
+          <>
+            <View style={s.sectionHeader}>
+              <IconInfo />
+              <Text style={s.sectionLabel}>詳細資訊</Text>
+            </View>
+            <View style={s.card}>
+              {entries.map((e, idx) => (
+                <InfoRow
+                  key={e.key}
+                  label={e.label}
+                  value={e.value}
+                  isLast={idx === entries.length - 1}
+                />
+              ))}
+            </View>
+          </>
+        );
+      })()}
 
       {/* ─── Description ───────────────────────────────────── */}
       <View style={s.sectionHeader}>

@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import type { ProviderReportInput as ProviderReport } from '@remote-care/shared';
+import { formatMetadataEntries } from '@remote-care/shared';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
@@ -38,6 +39,9 @@ interface ServiceRequestDetail {
   candidate_provider: ProviderInfo | null;
   // Section 2.9.2 + 3.7.3: typed canonical nested shape (writer in provider-task-detail).
   provider_report: ProviderReport | null;
+  // Category-specific structured fields (department, session, needs_pickup, etc).
+  // See packages/shared/src/constants/service-metadata-labels.ts for renderable keys.
+  metadata: Record<string, unknown> | null;
 }
 
 interface ProviderInfo {
@@ -358,6 +362,32 @@ export default function ServiceRequestDetailScreen() {
         <InfoRow label="服務地點" value={request.location} isLast />
       </View>
 
+      {/* ─── Detail Info — category-specific metadata ───────
+          Renders structured fields (department/doctor_name/session/needs_pickup/...)
+          via shared SERVICE_METADATA_LABELS so display order + formatting are stable. */}
+      {(() => {
+        const entries = formatMetadataEntries(request.metadata);
+        if (entries.length === 0) return null;
+        return (
+          <>
+            <View style={styles.sectionHeader}>
+              <IconInfo />
+              <Text style={styles.sectionLabel}>詳細資訊</Text>
+            </View>
+            <View style={styles.card}>
+              {entries.map((e, idx) => (
+                <InfoRow
+                  key={e.key}
+                  label={e.label}
+                  value={e.value}
+                  isLast={idx === entries.length - 1}
+                />
+              ))}
+            </View>
+          </>
+        );
+      })()}
+
       {/* ─── Description ─────────────────────────────────── */}
       <View style={styles.sectionHeader}>
         <IconNote />
@@ -584,8 +614,9 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       {((provider.specialties ?? []) as string[]).length > 0 && (
         <InfoRow label="專業" value={((provider.specialties ?? []) as string[]).join('、')} />
       )}
-      {((provider.certifications ?? []) as string[]).length > 0 && (
-        <InfoRow label="證照" value={((provider.certifications ?? []) as string[]).join('、')} />
+      {/* Filter ';' — see provider-profile.tsx onboarding submit (相關 vs 其他 separator). */}
+      {((provider.certifications ?? []) as string[]).filter((c) => c !== ';').length > 0 && (
+        <InfoRow label="證照" value={((provider.certifications ?? []) as string[]).filter((c) => c !== ';').join('、')} />
       )}
       {((provider.service_areas ?? []) as string[]).length > 0 && (
         <InfoRow label="服務區域" value={((provider.service_areas ?? []) as string[]).join('、')} isLast />

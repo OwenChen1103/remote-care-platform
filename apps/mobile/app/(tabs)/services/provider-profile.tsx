@@ -8,7 +8,9 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -16,6 +18,7 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { colors, typography, spacing, radius } from '@/lib/theme';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { ProviderPhotoUploader } from '@/components/forms/ProviderPhotoUploader';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -32,6 +35,8 @@ interface ProviderProfile {
   level: string;
   phone: string;
   email: string;
+  // G12: photo_url is mutated via POST/DELETE /provider/me/photo (separate from PUT /provider/me).
+  photo_url: string | null;
   education: string | null;
   experience_years: number | null;
   specialties: string[];
@@ -135,6 +140,7 @@ function IconCalendarSm({ color = colors.textTertiary }: { color?: string }) {
 // ─── Component ────────────────────────────────────────────────
 
 export default function ProviderProfileScreen() {
+  const router = useRouter();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -158,13 +164,27 @@ export default function ProviderProfileScreen() {
     void fetchProfile();
   }, [fetchProfile]);
 
+  // Re-fetch when this screen regains focus (e.g. user returns from provider-edit).
+  // Without this, edits made in provider-edit.tsx wouldn't reflect until tab switch / app restart.
+  useFocusEffect(
+    useCallback(() => {
+      void fetchProfile();
+    }, [fetchProfile]),
+  );
+
   // ── Onboarding state ─────────────────────────────────────
   const [obDateOfBirth, setObDateOfBirth] = useState('');
   const [obShowDatePicker, setObShowDatePicker] = useState(false);
+  const [obAddress, setObAddress] = useState('');
   const [obEducation, setObEducation] = useState('');
   const [obPhone, setObPhone] = useState('');
   const [obSpecialties, setObSpecialties] = useState('');
-  const [obCertifications, setObCertifications] = useState('');
+  // PDF p7: 「相關證照、其他證照」two distinct fields. We keep the schema's single
+  // `certifications: string[]` but split UI input into two boxes; submission joins them
+  // with ';' as a category separator. Display end filters ';' (see provider-profile post-onboarding
+  // chip render, [requestId].tsx ProviderCard, admin candidate cards).
+  const [obRelatedCerts, setObRelatedCerts] = useState('');
+  const [obOtherCerts, setObOtherCerts] = useState('');
   const [obExperienceYears, setObExperienceYears] = useState('');
   const [obServiceAreas, setObServiceAreas] = useState('');
   const [obSelectedServices, setObSelectedServices] = useState<string[]>([]);
@@ -194,8 +214,13 @@ export default function ProviderProfileScreen() {
       if (obSpecialties.trim()) {
         payload.specialties = obSpecialties.split(',').map((s) => s.trim()).filter(Boolean);
       }
-      if (obCertifications.trim()) {
-        payload.certifications = obCertifications.split(',').map((s) => s.trim()).filter(Boolean);
+      // 證照拆兩格 → 合成單一 array，用 ';' 作為「相關 vs 其他」分隔標記
+      const relatedCerts = obRelatedCerts.split(',').map((s) => s.trim()).filter(Boolean);
+      const otherCerts = obOtherCerts.split(',').map((s) => s.trim()).filter(Boolean);
+      if (relatedCerts.length > 0 || otherCerts.length > 0) {
+        payload.certifications = otherCerts.length > 0
+          ? [...relatedCerts, ';', ...otherCerts]
+          : relatedCerts;
       }
       if (obExperienceYears.trim()) {
         payload.experience_years = parseInt(obExperienceYears, 10);
@@ -208,21 +233,25 @@ export default function ProviderProfileScreen() {
       }
       const result = await api.put<ProviderProfile>('/provider/me', payload);
       setProfile(result);
-      // Section 4.1.8: don't silently swallow DOB save error — provider deserves to know
-      // their birthday didn't save. The provider-profile data already committed via /provider/me,
+      // Section 4.1.8: don't silently swallow user-meta save error — provider deserves to know
+      // their birthday/address didn't save. The provider-profile data already committed via /provider/me,
       // so we partial-succeed rather than failing the whole submission.
-      let dobError: string | null = null;
-      if (obDateOfBirth.trim()) {
+      // PDF p7 lists 居住地址 as required* basic info — stored on User (not Provider) since OPT-07.
+      let userMetaError: string | null = null;
+      if (obDateOfBirth.trim() || obAddress.trim()) {
         try {
-          await api.put('/auth/me', { date_of_birth: obDateOfBirth.trim() });
+          await api.put('/auth/me', {
+            ...(obDateOfBirth.trim() ? { date_of_birth: obDateOfBirth.trim() } : {}),
+            ...(obAddress.trim() ? { address: obAddress.trim() } : {}),
+          });
         } catch (e) {
-          dobError = e instanceof ApiError ? e.message : '生日儲存失敗';
+          userMetaError = e instanceof ApiError ? e.message : '個人資料儲存失敗';
         }
       }
-      if (dobError) {
+      if (userMetaError) {
         Alert.alert(
           '部分送出成功',
-          `服務人員資料已送出審核，但生日未能儲存：${dobError}\n您可稍後在個人資料頁更新。`,
+          `服務人員資料已送出審核，但個人資料未能儲存：${userMetaError}\n您可稍後在個人資料頁更新。`,
         );
       } else {
         Alert.alert('已送出', '您的資料已送出，等待審核通知。');
@@ -341,6 +370,23 @@ export default function ProviderProfileScreen() {
           </View>
         </View>
 
+        {/* ── Section: 個人照片 (G12) ─────────────
+            Photo upload happens against the existing Provider record (created at registration),
+            so providerId is non-empty here. Updates flow back via onPhotoUpdated → setProfile,
+            which keeps the post-onboarding view (after submit) consistent without a refetch. */}
+        <View style={s.sectionHeader}>
+          <IconUser />
+          <Text style={s.sectionLabel}>個人照片</Text>
+        </View>
+        <View style={s.card}>
+          <ProviderPhotoUploader
+            providerId={profile.id}
+            providerName={profile.name}
+            photoUrl={profile.photo_url}
+            onPhotoUpdated={(newUrl) => setProfile({ ...profile, photo_url: newUrl })}
+          />
+        </View>
+
         {/* ── Section: 基本資料 ──────────────────── */}
         <View style={s.sectionHeader}>
           <IconUser />
@@ -394,6 +440,17 @@ export default function ProviderProfileScreen() {
           </View>
 
           <View style={s.field}>
+            <Text style={s.fieldLabel}>居住地址</Text>
+            <TextInput
+              style={s.input}
+              value={obAddress}
+              onChangeText={setObAddress}
+              placeholder="例：台北市大安區忠孝東路四段（選填）"
+              placeholderTextColor={colors.textDisabled}
+            />
+          </View>
+
+          <View style={s.field}>
             <Text style={s.fieldLabel}>學歷科系</Text>
             <TextInput
               style={s.input}
@@ -427,9 +484,20 @@ export default function ProviderProfileScreen() {
             <Text style={s.fieldLabel}>相關證照</Text>
             <TextInput
               style={s.input}
-              value={obCertifications}
-              onChangeText={setObCertifications}
-              placeholder="多項以逗號分隔，例：護理師執照,照服員證"
+              value={obRelatedCerts}
+              onChangeText={setObRelatedCerts}
+              placeholder="與接案項目相關的證照，多項以逗號分隔"
+              placeholderTextColor={colors.textDisabled}
+            />
+          </View>
+
+          <View style={s.field}>
+            <Text style={s.fieldLabel}>其他證照</Text>
+            <TextInput
+              style={s.input}
+              value={obOtherCerts}
+              onChangeText={setObOtherCerts}
+              placeholder="例：駕照、急救證（選填，多項以逗號分隔）"
               placeholderTextColor={colors.textDisabled}
             />
           </View>
@@ -524,9 +592,19 @@ export default function ProviderProfileScreen() {
         <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
         <View style={s.profileHeroContent}>
-          <View style={s.heroAvatar}>
-            <Text style={s.heroAvatarText}>{initial}</Text>
-          </View>
+          {/* G12: post-onboarding hero avatar uses photo_url when present, falls back to first-letter.
+              Visual size matches s.heroAvatar dims so layout stays identical. */}
+          {profile.photo_url ? (
+            <Image
+              key={profile.photo_url}
+              source={{ uri: profile.photo_url }}
+              style={s.heroAvatar}
+            />
+          ) : (
+            <View style={s.heroAvatar}>
+              <Text style={s.heroAvatarText}>{initial}</Text>
+            </View>
+          )}
           <Text style={s.heroName}>{profile.name}</Text>
           <View style={s.heroBadgesRow}>
             <View style={s.levelBadge}>
@@ -576,6 +654,29 @@ export default function ProviderProfileScreen() {
           ) : null}
           <Text style={s.suspendedHint}>如需恢復，請聯繫客服。</Text>
         </View>
+      )}
+
+      {/* G7 — Approved providers can edit phone/education/certifications/service_areas/
+          available_services/available_schedule/schedule_note + dob/address (User-side).
+          Hidden when pending (in review), rejected (must reapply first), or suspended. */}
+      {profile.review_status === 'approved' && (
+        <TouchableOpacity
+          style={s.editEntryBtn}
+          onPress={() => router.push('/(tabs)/services/provider-edit')}
+          activeOpacity={0.7}
+        >
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"
+              stroke={colors.primary}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+          <Text style={s.editEntryText}>編輯個人資料</Text>
+          <Text style={s.editEntryArrow}>›</Text>
+        </TouchableOpacity>
       )}
 
       {/* ── Section: 基本資訊 ──────────────────── */}
@@ -653,8 +754,10 @@ export default function ProviderProfileScreen() {
         )}
       </View>
 
-      {/* ── Section: 證照 ──────────────────────── */}
-      {profile.certifications.length > 0 && (
+      {/* ── Section: 證照 ────────────────────────
+          Schema stores 相關 + 其他 in single certifications[] separated by ';' marker.
+          Display end strips the separator (UI flat list); future provider-edit form will parse apart. */}
+      {profile.certifications.filter((c) => c !== ';').length > 0 && (
         <>
           <View style={s.sectionHeader}>
             <IconBriefcase color={colors.primary} />
@@ -662,7 +765,7 @@ export default function ProviderProfileScreen() {
           </View>
           <View style={s.card}>
             <View style={s.tagRow}>
-              {profile.certifications.map((c) => (
+              {profile.certifications.filter((c) => c !== ';').map((c) => (
                 <View key={c} style={s.tagAlt}>
                   <Text style={s.tagAltText}>{c}</Text>
                 </View>
@@ -886,6 +989,30 @@ const s = StyleSheet.create({
     fontSize: typography.captionSm.fontSize,
     color: colors.textSecondary,
     fontStyle: 'italic',
+  },
+
+  // G7: Edit-profile entry button (only shown when review_status === 'approved').
+  editEntryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.18)',
+  },
+  editEntryText: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.primaryText,
+    fontWeight: '600',
+  },
+  editEntryArrow: {
+    fontSize: 22,
+    color: colors.primaryText,
+    fontWeight: '300',
   },
 
   // ─── Hero halos (shared) ─────────────────────────────────
