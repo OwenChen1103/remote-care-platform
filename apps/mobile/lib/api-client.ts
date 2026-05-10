@@ -68,6 +68,35 @@ class ApiClient {
   delete<T>(path: string) {
     return this.request<T>(path, { method: 'DELETE' });
   }
+
+  /**
+   * Multipart POST for file uploads (G12). Used by provider photo upload + future
+   * file upload flows (e.g. Phase 2 medical document attachments).
+   *
+   * IMPORTANT: do NOT set Content-Type header — fetch auto-generates the multipart
+   * boundary string. Setting it manually breaks the request.
+   */
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    const token = await this.getToken();
+    const response = await fetch(`${API_URL}/api/v1${path}`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // No Content-Type — fetch sets multipart/form-data with boundary automatically.
+      },
+      body: formData,
+    });
+
+    const json: unknown = await response.json();
+    const body = json as Record<string, unknown>;
+
+    if (body['success'] === false) {
+      const errorObj = body['error'] as { code: string; message: string; details: unknown[] };
+      throw new ApiError(errorObj.code, errorObj.message, errorObj.details);
+    }
+
+    return body['data'] as T;
+  }
 }
 
 export const api = new ApiClient();
