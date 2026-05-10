@@ -9,6 +9,9 @@ interface Provider {
   name: string;
   phone: string | null;
   email: string | null;
+  // G12: photo_url renders next to provider name on review page. Backend returns full
+  // Provider object (no select), so this just needs the type.
+  photo_url: string | null;
   level: string;
   specialties: string[];
   certifications: string[];
@@ -147,13 +150,31 @@ export default function AdminProviderDetailPage() {
       </Link>
 
       <div className="mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">{provider.name}</h1>
-          <span
-            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo.color}`}
-          >
-            {statusInfo.label}
-          </span>
+        <div className="flex items-center gap-4">
+          {/* G12: photo_url renders next to name on review page so admin can verify
+              the submitted photo matches PDF's "正面、露出耳朵" requirement. */}
+          {provider.photo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={provider.photo_url}
+              alt={`${provider.name} 個人照片`}
+              className="h-16 w-16 rounded-lg object-cover"
+            />
+          ) : (
+            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-100 text-2xl font-semibold text-gray-400">
+              {provider.name.charAt(0) || '?'}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">{provider.name}</h1>
+              <span
+                className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo.color}`}
+              >
+                {statusInfo.label}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

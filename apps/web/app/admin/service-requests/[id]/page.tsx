@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ADMIN_STATUS_TRANSITIONS } from '@remote-care/shared';
+import { ADMIN_STATUS_TRANSITIONS, formatMetadataEntries } from '@remote-care/shared';
 import type { ServiceRequestStatus } from '@remote-care/shared';
 
 interface ServiceRequestDetail {
@@ -25,12 +25,17 @@ interface ServiceRequestDetail {
   assigned_provider: ProviderOptionFull | null;
   candidate_provider: ProviderOptionFull | null;
   provider_report: Record<string, unknown> | null;
+  // Category-specific structured fields. See packages/shared/src/constants/service-metadata-labels.ts.
+  metadata: Record<string, unknown> | null;
 }
 
 interface ProviderOptionFull {
   id: string;
   name: string;
   phone: string | null;
+  // G12: photo_url surfaces in candidate cards. Backend select must include it
+  // (already wired in /api/v1/service-requests/[id]/route.ts).
+  photo_url: string | null;
   level: string;
   specialties: string[];
   certifications: string[];
@@ -44,6 +49,7 @@ interface ProviderOption {
   name: string;
   level: string;
   phone: string | null;
+  photo_url: string | null;
   specialties: string[];
   certifications: string[];
   experience_years: number | null;
@@ -300,39 +306,61 @@ export default function AdminServiceRequestDetailPage() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">基本資訊</h2>
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-gray-500">服務類別</dt>
-              <dd className="font-medium text-gray-900">{request.category.name}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">被照護者</dt>
-              <dd className="font-medium text-gray-900">{request.recipient.name}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">期望日期</dt>
-              <dd className="text-gray-900">
-                {new Date(request.preferred_date).toLocaleDateString('zh-TW')}
-                {request.preferred_time_slot && ` ${TIME_SLOT_LABELS[request.preferred_time_slot] ?? request.preferred_time_slot}`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">服務地點</dt>
-              <dd className="text-gray-900">{request.location}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">需求描述</dt>
-              <dd className="whitespace-pre-wrap text-gray-900">{request.description}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">建立時間</dt>
-              <dd className="text-gray-900">
-                {new Date(request.created_at).toLocaleString('zh-TW')}
-              </dd>
-            </div>
-          </dl>
+        {/* Left column: 基本資訊 + 詳細資訊 (metadata) — wrap so they stack within the column */}
+        <div className="space-y-6">
+          <div className="rounded-lg border border-gray-200 bg-white p-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">基本資訊</h2>
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-gray-500">服務類別</dt>
+                <dd className="font-medium text-gray-900">{request.category.name}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">被照護者</dt>
+                <dd className="font-medium text-gray-900">{request.recipient.name}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">期望日期</dt>
+                <dd className="text-gray-900">
+                  {new Date(request.preferred_date).toLocaleDateString('zh-TW')}
+                  {request.preferred_time_slot && ` ${TIME_SLOT_LABELS[request.preferred_time_slot] ?? request.preferred_time_slot}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">服務地點</dt>
+                <dd className="text-gray-900">{request.location}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">需求描述</dt>
+                <dd className="whitespace-pre-wrap text-gray-900">{request.description}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">建立時間</dt>
+                <dd className="text-gray-900">
+                  {new Date(request.created_at).toLocaleString('zh-TW')}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          {/* Detail Info — category-specific metadata (department/session/needs_pickup/...). */}
+          {(() => {
+            const entries = formatMetadataEntries(request.metadata);
+            if (entries.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-gray-200 bg-white p-6">
+                <h2 className="mb-4 text-lg font-semibold text-gray-900">詳細資訊</h2>
+                <dl className="space-y-3 text-sm">
+                  {entries.map((e) => (
+                    <div key={e.key}>
+                      <dt className="text-gray-500">{e.label}</dt>
+                      <dd className="text-gray-900">{e.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="space-y-6">
@@ -415,9 +443,10 @@ export default function AdminServiceRequestDetailPage() {
                       專業：{(selectedProviderEligibility.provider.specialties).join('、')}
                     </p>
                   )}
-                  {(selectedProviderEligibility.provider.certifications ?? []).length > 0 && (
+                  {/* Filter ';' — provider onboarding may insert it as 相關/其他 separator. */}
+                  {(selectedProviderEligibility.provider.certifications ?? []).filter((c) => c !== ';').length > 0 && (
                     <p className="text-gray-600">
-                      證照：{(selectedProviderEligibility.provider.certifications).join('、')}
+                      證照：{(selectedProviderEligibility.provider.certifications).filter((c) => c !== ';').join('、')}
                     </p>
                   )}
                   {!selectedProviderEligibility.result.eligible && (
@@ -499,6 +528,26 @@ const LEVEL_LABELS: Record<string, string> = { L1: '初級', L2: '中級', L3: '
 function ProviderDetailCard({ provider }: { provider: ProviderOptionFull }) {
   return (
     <dl className="space-y-2 text-sm">
+      {/* G12: photo_url renders at top of card; falls back to first-letter avatar.
+          Plain <img> (not next/image) — Supabase URLs are external + cache-busted with ?t=. */}
+      <div className="flex items-center gap-3 pb-2">
+        {provider.photo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={provider.photo_url}
+            alt={`${provider.name} 個人照片`}
+            className="h-16 w-16 rounded-lg object-cover"
+          />
+        ) : (
+          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-100 text-2xl font-semibold text-gray-400">
+            {provider.name.charAt(0) || '?'}
+          </div>
+        )}
+        <div>
+          <div className="font-medium text-gray-900">{provider.name}</div>
+          <div className="text-xs text-gray-500">{provider.level}（{LEVEL_LABELS[provider.level] ?? provider.level}）</div>
+        </div>
+      </div>
       <div><dt className="text-gray-500">姓名</dt><dd className="font-medium text-gray-900">{provider.name}</dd></div>
       <div><dt className="text-gray-500">等級</dt><dd className="text-gray-900">{provider.level}（{LEVEL_LABELS[provider.level] ?? provider.level}）</dd></div>
       {provider.phone && <div><dt className="text-gray-500">電話</dt><dd className="text-gray-900">{provider.phone}</dd></div>}
@@ -506,8 +555,8 @@ function ProviderDetailCard({ provider }: { provider: ProviderOptionFull }) {
       {(provider.specialties ?? []).length > 0 && (
         <div><dt className="text-gray-500">專業</dt><dd className="text-gray-900">{(provider.specialties as string[]).join('、')}</dd></div>
       )}
-      {(provider.certifications ?? []).length > 0 && (
-        <div><dt className="text-gray-500">證照</dt><dd className="text-gray-900">{(provider.certifications as string[]).join('、')}</dd></div>
+      {(provider.certifications ?? []).filter((c) => c !== ';').length > 0 && (
+        <div><dt className="text-gray-500">證照</dt><dd className="text-gray-900">{(provider.certifications as string[]).filter((c) => c !== ';').join('、')}</dd></div>
       )}
       {(provider.service_areas ?? []).length > 0 && (
         <div><dt className="text-gray-500">服務區域</dt><dd className="text-gray-900">{(provider.service_areas as string[]).join('、')}</dd></div>

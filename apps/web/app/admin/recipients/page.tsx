@@ -90,7 +90,8 @@ export default function AdminRecipientsPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">生日</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">疾病標籤</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">連結帳號</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">緊急聯絡人</th>
+                  {/* G11: column stored as emergency_contact_*; UI label changed to 主要聯絡人 per PDF. */}
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">主要聯絡人</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">建立時間</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">操作</th>
                 </tr>

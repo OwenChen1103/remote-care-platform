@@ -19,6 +19,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
+interface LifestyleHabits {
+  water_intake?: string;
+  exercise_frequency?: string;
+  exercise_intensity?: string;
+  starch_intake?: string;
+  protein_intake?: string;
+  manager_fill?: boolean;
+}
+
 interface Recipient {
   id: string;
   caregiver_id: string;
@@ -30,6 +39,8 @@ interface Recipient {
   gender: 'male' | 'female' | 'other' | null;
   relationship: string | null;
   medical_tags: string[];
+  // Always returned by formatRecipient (default `{}` when not set).
+  lifestyle_habits: LifestyleHabits;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   address: string | null;
@@ -231,7 +242,8 @@ export default function AdminRecipientDetailPage() {
               recipient.relationship ? (RELATIONSHIP_LABELS[recipient.relationship] ?? recipient.relationship) : null
             } />
             <Row label="地址" value={recipient.address} />
-            <Row label="緊急聯絡人" value={
+            {/* G11: schema column kept as emergency_contact_*; UI label changed to 主要聯絡人 per PDF. */}
+            <Row label="主要聯絡人" value={
               recipient.emergency_contact_name && recipient.emergency_contact_phone
                 ? `${recipient.emergency_contact_name}（${recipient.emergency_contact_phone}）`
                 : (recipient.emergency_contact_name ?? recipient.emergency_contact_phone ?? null)
@@ -247,6 +259,21 @@ export default function AdminRecipientDetailPage() {
               </dd>
             </div>
             <Row label="備註" value={recipient.notes} />
+            {/* Lifestyle habits — show summary when any field set or manager_fill flagged. */}
+            {(() => {
+              const lh = recipient.lifestyle_habits ?? {};
+              if (lh.manager_fill === true) {
+                return <Row label="生活習慣" value="由健康管家代填中" />;
+              }
+              const parts: string[] = [];
+              if (lh.water_intake) parts.push(`喝水量：${lh.water_intake}`);
+              if (lh.exercise_frequency) parts.push(`運動頻次：${lh.exercise_frequency}`);
+              if (lh.exercise_intensity) parts.push(`運動強度：${lh.exercise_intensity}`);
+              if (lh.starch_intake) parts.push(`澱粉：${lh.starch_intake}`);
+              if (lh.protein_intake) parts.push(`蛋白質：${lh.protein_intake}`);
+              if (parts.length === 0) return null;
+              return <Row label="生活習慣" value={parts.join('；')} />;
+            })()}
             <Row label="建立時間" value={new Date(recipient.created_at).toLocaleString('zh-TW')} />
           </dl>
         </div>
