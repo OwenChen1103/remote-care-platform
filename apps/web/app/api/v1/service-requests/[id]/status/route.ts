@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import {
   ADMIN_STATUS_TRANSITIONS,
+  SERVICE_REQUEST_STATUS_DISPLAY,
   ServiceRequestStatusUpdateSchema,
 } from '@remote-care/shared';
 import type { ServiceRequestStatus } from '@remote-care/shared';
@@ -12,6 +13,7 @@ import {
   notifyServiceRequestUpdate,
   resolveProviderUserId,
 } from '@/lib/service-notifications';
+import { logAdminAction } from '@/lib/admin-audit';
 
 /**
  * Admin manually changes a service request status (Section 2.7.3).
@@ -88,6 +90,21 @@ export async function PUT(
       include: {
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
+      },
+    });
+
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'service_request.status_change',
+      targetType: 'service_request',
+      targetId: id,
+      summary: `將「${updated.category.name}」需求（${updated.recipient.name}）從「${SERVICE_REQUEST_STATUS_DISPLAY[currentStatus]?.label ?? currentStatus}」改為「${SERVICE_REQUEST_STATUS_DISPLAY[targetStatus]?.label ?? targetStatus}」`,
+      metadata: {
+        from_status: currentStatus,
+        to_status: targetStatus,
+        admin_note: parsed.data.admin_note ?? null,
+        recipient_id: updated.recipient.id,
+        category_id: updated.category.id,
       },
     });
 

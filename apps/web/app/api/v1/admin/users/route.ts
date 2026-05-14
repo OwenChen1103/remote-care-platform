@@ -17,6 +17,11 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { errorResponse, paginatedResponse } from '@/lib/api-response';
+import { parseSortParam } from '@/lib/parse-sort';
+
+// Fields the caller may sort by. Anything else falls back to the default.
+const USERS_SORTABLE = ['name', 'email', 'created_at'] as const;
+const USERS_DEFAULT_ORDER = { created_at: 'desc' as const };
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +40,11 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
     const skip = (page - 1) * limit;
+    const orderBy = parseSortParam(
+      url.searchParams.get('sort'),
+      USERS_SORTABLE,
+      USERS_DEFAULT_ORDER,
+    );
 
     const where: Prisma.UserWhereInput = {};
     if (role && ['caregiver', 'patient', 'provider', 'admin'].includes(role)) {
@@ -57,7 +67,7 @@ export async function GET(request: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: { created_at: 'desc' },
+        orderBy,
         select: {
           id: true,
           email: true,

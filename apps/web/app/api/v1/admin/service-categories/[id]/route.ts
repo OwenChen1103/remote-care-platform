@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { logAdminAction } from '@/lib/admin-audit';
 
 export async function PUT(
   request: NextRequest,
@@ -42,6 +43,29 @@ export async function PUT(
     const updated = await prisma.serviceCategory.update({
       where: { id },
       data: parsed.data,
+    });
+
+    // Most edits to a service category are the is_active toggle (from the
+    // services page button) — emit a meaningful summary so the audit log
+    // reads cleanly without dumping the full diff every time.
+    const toggled =
+      typeof parsed.data.is_active === 'boolean' &&
+      parsed.data.is_active !== existing.is_active;
+    const summary = toggled
+      ? `${parsed.data.is_active ? '啟用' : '停用'}服務類別「${existing.name}」`
+      : `更新服務類別「${existing.name}」`;
+
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'service_category.toggle',
+      targetType: 'service_category',
+      targetId: id,
+      summary,
+      metadata: {
+        changed_fields: Object.keys(parsed.data),
+        before: { is_active: existing.is_active },
+        after: { is_active: updated.is_active },
+      },
     });
 
     return successResponse(updated);

@@ -15,6 +15,10 @@ const { mockPrisma } = vi.hoisted(() => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    adminActionLog: {
+      // Admin toggle route writes an audit log row.
+      create: vi.fn().mockResolvedValue({}),
+    },
   };
   return { mockPrisma };
 });

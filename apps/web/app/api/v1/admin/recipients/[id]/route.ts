@@ -17,6 +17,7 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
 import { formatRecipient } from '@/lib/format-recipient';
 import { resolvePatientBinding, isAlreadyBoundConflict } from '@/lib/resolve-patient-binding';
+import { logAdminAction } from '@/lib/admin-audit';
 
 export async function PUT(
   request: NextRequest,
@@ -72,6 +73,29 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: { patient_user: { select: { email: true, name: true } } },
+    });
+
+    // Capture concise changed-field list for the audit log. Diffing all 13
+    // recipient fields is overkill; a list of touched keys is enough for a
+    // "who changed what" timeline.
+    const changedFields = Object.keys(updateData);
+    const isBindingChange = 'patient_user_id' in updateData;
+    const bindingSummary = isBindingChange
+      ? (updateData.patient_user_id === null
+          ? `解除被照護者「${updated.name}」帳號連結`
+          : `更新被照護者「${updated.name}」帳號連結（${patient_user_email}）`)
+      : `更新被照護者「${updated.name}」資料（${changedFields.join('、') || '無變更'}）`;
+
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'recipient.update',
+      targetType: 'recipient',
+      targetId: id,
+      summary: bindingSummary,
+      metadata: {
+        changed_fields: changedFields,
+        new_patient_user_email: isBindingChange ? (patient_user_email ?? null) : undefined,
+      },
     });
 
     return successResponse(formatRecipient(updated));

@@ -20,6 +20,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { logAdminAction } from '@/lib/admin-audit';
 
 export async function PUT(
   request: NextRequest,
@@ -64,6 +65,27 @@ export async function PUT(
         // Update admin_note when caller provides one; preserve existing otherwise.
         admin_note: parsed.data.admin_note ?? existing.admin_note,
         reviewed_at: new Date(),
+      },
+    });
+
+    // Audit log — captured before notification side-effects so the trail
+    // still exists even if the notification fan-out fails downstream.
+    const reviewActionLabel: Record<string, string> = {
+      approved: '核准',
+      rejected: '拒絕並退回',
+      suspended: '停權',
+      pending: '改回待審核',
+    };
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'provider.review',
+      targetType: 'provider',
+      targetId: id,
+      summary: `${reviewActionLabel[next] ?? next}服務人員「${existing.name}」`,
+      metadata: {
+        from_status: existing.review_status,
+        to_status: next,
+        admin_note: parsed.data.admin_note ?? null,
       },
     });
 

@@ -24,6 +24,11 @@ const { mockPrisma } = vi.hoisted(() => {
       // notifyServiceRequestUpdate calls createMany; allow it to no-op.
       createMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
+    adminActionLog: {
+      // Admin mutation routes write to the audit log; never causes test failures
+      // but mock keeps the swallowed-error stderr quiet.
+      create: vi.fn().mockResolvedValue({}),
+    },
   };
   return { mockPrisma };
 });

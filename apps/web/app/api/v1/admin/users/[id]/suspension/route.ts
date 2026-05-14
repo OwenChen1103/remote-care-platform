@@ -15,6 +15,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { logAdminAction } from '@/lib/admin-audit';
 
 const SuspensionSchema = z.object({
   suspended: z.boolean(),
@@ -51,12 +52,14 @@ export async function PUT(
       );
     }
 
-    // Ensure target exists; otherwise prisma.update would throw P2025
-    const target = await prisma.user.findUnique({
+    // Snapshot the target's identifying fields BEFORE the update so the audit
+    // log preserves the user's name/email even if subsequent admin actions
+    // rename them. Also serves as the existence check (avoids prisma P2025).
+    const before = await prisma.user.findUnique({
       where: { id },
-      select: { id: true },
+      select: { name: true, email: true, role: true, suspended_at: true },
     });
-    if (!target) {
+    if (!before) {
       return errorResponse('RESOURCE_NOT_FOUND', '找不到此使用者');
     }
 
@@ -71,6 +74,20 @@ export async function PUT(
         name: true,
         role: true,
         suspended_at: true,
+      },
+    });
+
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: parsed.data.suspended ? 'user.suspend' : 'user.unsuspend',
+      targetType: 'user',
+      targetId: id,
+      summary: parsed.data.suspended
+        ? `停權使用者「${before.name}」（${before.email}）`
+        : `恢復使用者「${before.name}」（${before.email}）`,
+      metadata: {
+        target_role: before.role,
+        was_suspended_at: before.suspended_at?.toISOString() ?? null,
       },
     });
 

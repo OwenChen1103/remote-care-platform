@@ -8,6 +8,7 @@ import {
   notifyServiceRequestUpdate,
   resolveProviderUserId,
 } from '@/lib/service-notifications';
+import { logAdminAction } from '@/lib/admin-audit';
 
 export async function PUT(
   request: NextRequest,
@@ -71,6 +72,20 @@ export async function PUT(
         category: { select: { id: true, code: true, name: true } },
         recipient: { select: { id: true, name: true } },
         candidate_provider: { select: { id: true, name: true } },
+      },
+    });
+
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'service_request.propose_candidate',
+      targetType: 'service_request',
+      targetId: id,
+      summary: `為「${updated.category.name}」需求（${updated.recipient.name}）推薦候選人「${updated.candidate_provider?.name ?? provider.name}」`,
+      metadata: {
+        candidate_provider_id: parsed.data.provider_id,
+        admin_note: parsed.data.admin_note ?? null,
+        recipient_id: updated.recipient.id,
+        category_id: updated.category.id,
       },
     });
 

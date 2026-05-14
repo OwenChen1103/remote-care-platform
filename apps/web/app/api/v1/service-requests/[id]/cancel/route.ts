@@ -8,6 +8,7 @@ import {
   notifyServiceRequestUpdate,
   resolveProviderUserId,
 } from '@/lib/service-notifications';
+import { logAdminAction } from '@/lib/admin-audit';
 
 // Non-completed, non-cancelled statuses can be cancelled
 const CANCELLABLE_STATUSES = [
@@ -90,6 +91,25 @@ export async function PUT(
     const providerUserId = await resolveProviderUserId(
       serviceRequest.assigned_provider_id ?? serviceRequest.candidate_provider_id,
     );
+    // Admin-driven cancellations are logged for the audit trail. Caregiver-driven
+    // cancellations are not — those would belong in a future user-facing activity
+    // log, not the admin audit log.
+    if (auth.role === 'admin') {
+      await logAdminAction(request, {
+        adminUserId: auth.userId,
+        action: 'service_request.cancel',
+        targetType: 'service_request',
+        targetId: id,
+        summary: `取消「${updated.category.name}」需求（${updated.recipient.name}）`,
+        metadata: {
+          from_status: fromStatus,
+          reason: parsed.data.reason ?? null,
+          recipient_id: updated.recipient.id,
+          category_id: updated.category.id,
+        },
+      });
+    }
+
     if (auth.role === 'caregiver') {
       await notifyServiceRequestUpdate({
         serviceRequestId: id,

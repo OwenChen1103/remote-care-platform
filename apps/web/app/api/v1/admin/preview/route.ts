@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse } from '@/lib/api-response';
+import { logAdminAction } from '@/lib/admin-audit';
 
 export async function GET(request: NextRequest) {
   try {
@@ -111,6 +112,21 @@ export async function GET(request: NextRequest) {
     } else if (user.role === 'admin') {
       return errorResponse('VALIDATION_ERROR', '不支援預覽管理員帳號');
     }
+
+    // Audit: every successful preview access leaves a trail so users can later
+    // see "who looked at my data." We intentionally log AFTER the data fetch
+    // (so failed lookups don't appear) and BEFORE the response (so a serialisation
+    // bug still preserves the audit trail).
+    await logAdminAction(request, {
+      adminUserId: auth.userId,
+      action: 'preview.access',
+      targetType: 'user',
+      targetId: user.id,
+      summary: `預覽${user.role === 'caregiver' ? '委託人' : user.role === 'patient' ? '被照護者' : '服務人員'}「${user.name}」（${user.email}）的資料`,
+      metadata: {
+        target_role: user.role,
+      },
+    });
 
     return successResponse(preview);
   } catch {

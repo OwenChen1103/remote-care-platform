@@ -20,6 +20,11 @@ const mockPrisma = vi.hoisted(() => ({
   notification: {
     create: vi.fn().mockResolvedValue({ id: 'notif-1' }),
   },
+  // Admin review route writes an audit log row; mock so the swallowed-error
+  // stderr in tests stays quiet without changing helper semantics.
+  adminActionLog: {
+    create: vi.fn().mockResolvedValue({}),
+  },
 }));
 
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));

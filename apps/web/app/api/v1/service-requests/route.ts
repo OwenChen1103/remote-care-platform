@@ -9,6 +9,10 @@ import { verifyAuth } from '@/lib/auth';
 import { successResponse, errorResponse, paginatedResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
 import { notifyServiceRequestUpdate } from '@/lib/service-notifications';
+import { parseSortParam } from '@/lib/parse-sort';
+
+const SERVICE_REQUESTS_SORTABLE = ['created_at', 'preferred_date', 'status'] as const;
+const SERVICE_REQUESTS_DEFAULT_ORDER = { created_at: 'desc' as const };
 
 export async function POST(request: NextRequest) {
   try {
@@ -124,6 +128,13 @@ export async function GET(request: NextRequest) {
 
     const { status, category_id, page, limit } = parsed.data;
     const skip = (page - 1) * limit;
+    // Sort is read outside the shared Zod schema so we don't have to touch
+    // the @remote-care/shared package (which is also consumed by mobile).
+    const orderBy = parseSortParam(
+      url.searchParams.get('sort'),
+      SERVICE_REQUESTS_SORTABLE,
+      SERVICE_REQUESTS_DEFAULT_ORDER,
+    );
 
     // Build where clause based on role
     const where: Record<string, unknown> = {};
@@ -173,7 +184,7 @@ export async function GET(request: NextRequest) {
     const [requests, total] = await Promise.all([
       prisma.serviceRequest.findMany({
         where,
-        orderBy: { created_at: 'desc' },
+        orderBy,
         skip,
         take: limit,
         include: {

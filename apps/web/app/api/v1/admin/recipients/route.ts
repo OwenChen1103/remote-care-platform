@@ -3,6 +3,10 @@ import { prisma } from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 import { errorResponse, paginatedResponse } from '@/lib/api-response';
 import { formatRecipient } from '@/lib/format-recipient';
+import { parseSortParam } from '@/lib/parse-sort';
+
+const RECIPIENTS_SORTABLE = ['name', 'created_at', 'date_of_birth'] as const;
+const RECIPIENTS_DEFAULT_ORDER = { created_at: 'desc' as const };
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +23,11 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '20')));
     const search = url.searchParams.get('search')?.trim() ?? '';
     const skip = (page - 1) * limit;
+    const orderBy = parseSortParam(
+      url.searchParams.get('sort'),
+      RECIPIENTS_SORTABLE,
+      RECIPIENTS_DEFAULT_ORDER,
+    );
 
     const where: { deleted_at: null; name?: { contains: string; mode: 'insensitive' } } = {
       deleted_at: null,
@@ -31,7 +40,7 @@ export async function GET(request: NextRequest) {
     const [recipients, total] = await Promise.all([
       prisma.recipient.findMany({
         where,
-        orderBy: { created_at: 'desc' },
+        orderBy,
         skip,
         take: limit,
         include: {

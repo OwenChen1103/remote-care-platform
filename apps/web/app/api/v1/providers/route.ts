@@ -4,6 +4,10 @@ import { verifyAuth } from '@/lib/auth';
 import { ProviderCreateSchema } from '@remote-care/shared';
 import { errorResponse, paginatedResponse, successResponse } from '@/lib/api-response';
 import { checkOrigin } from '@/lib/csrf';
+import { parseSortParam } from '@/lib/parse-sort';
+
+const PROVIDERS_SORTABLE = ['name', 'created_at', 'experience_years', 'level'] as const;
+const PROVIDERS_DEFAULT_ORDER = { created_at: 'desc' as const };
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +25,11 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
     const skip = (page - 1) * limit;
+    const orderBy = parseSortParam(
+      url.searchParams.get('sort'),
+      PROVIDERS_SORTABLE,
+      PROVIDERS_DEFAULT_ORDER,
+    );
 
     const where: Record<string, unknown> = { deleted_at: null };
     if (review_status) where.review_status = review_status;
@@ -29,7 +38,7 @@ export async function GET(request: NextRequest) {
     const [providers, total] = await Promise.all([
       prisma.provider.findMany({
         where,
-        orderBy: { created_at: 'desc' },
+        orderBy,
         skip,
         take: limit,
         // Section 3.6 candidate filter: dropdown needs availability + areas + experience
