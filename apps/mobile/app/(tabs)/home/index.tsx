@@ -55,6 +55,9 @@ interface LatestReport {
 
 interface MeasurementStats {
   count: number;
+  // All-time count (period-independent) — used by calculateHealthScore to
+  // distinguish "brand new recipient" from "has historical data but none recent".
+  total_count: number;
   abnormal_count: number;
   systolic?: { avg: number };
   diastolic?: { avg: number };
@@ -216,8 +219,10 @@ export default function HomeScreen() {
   const activeBp = bpStats[activeId];
   const activeBg = bgStats[activeId];
 
+  // calculateHealthScore returns null when there's no measurement data — that's
+  // the source of truth, no need to also short-circuit on a truthy stats object
+  // (the stats API returns count=0 objects, not null, so that pre-check was wrong).
   const healthResult = useMemo(() => {
-    if (!activeBp && !activeBg && !activeReport) return null;
     return calculateHealthScore({
       bpStats: activeBp ?? null,
       bgStats: activeBg ?? null,
@@ -571,13 +576,21 @@ export default function HomeScreen() {
               </>
             ) : (
               <>
-                {/* 無資料版本 — 業主需求 */}
-                <View style={styles.heroInner}>
-                  <Text style={styles.emptyHeroText}>還沒有健康資料{'\n'}從第一個服務開始守護家人</Text>
+                {/* 無資料版本 — 業主需求：title + subtitle 分層，兩個 CTA 並列 */}
+                <View style={styles.emptyTextWrap}>
+                  <Text style={styles.emptyTitle}>尚未記錄健康資料</Text>
+                  <Text style={styles.emptySubtitle}>
+                    立即新增第一筆量測，或安排專業服務開始守護家人
+                  </Text>
                 </View>
+                {/* 量測為主要 CTA — 健康數據是平台核心；服務為次要 CTA */}
                 <TouchableOpacity
                   style={styles.ctaPrimaryFull}
-                  onPress={() => router.push('/(tabs)/services/new-request')}
+                  onPress={() =>
+                    activeId
+                      ? router.push(`/(tabs)/health/add-measurement?recipientId=${activeId}&type=blood_pressure`)
+                      : router.push('/(tabs)/health')
+                  }
                   activeOpacity={0.85}
                 >
                   <LinearGradient
@@ -586,8 +599,15 @@ export default function HomeScreen() {
                     end={{ x: 1, y: 0 }}
                     style={styles.ctaPrimary}
                   >
-                    <Text style={styles.ctaPrimaryText}>開始安排第一個服務</Text>
+                    <Text style={styles.ctaPrimaryText}>新增第一筆量測</Text>
                   </LinearGradient>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ctaSecondaryEmpty}
+                  onPress={() => router.push('/(tabs)/services/new-request')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.ctaSecondaryEmptyText}>安排第一個服務</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1074,6 +1094,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+  // Empty-state hero text — title + subtitle hierarchy (replaces the old single
+  // `\n`-joined paragraph). Vertical spacing pulls the two CTAs visually together.
+  emptyTextWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  emptyTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs + 2,
+  },
+  emptySubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   ctaPrimaryFull: {
     width: '100%',
     borderRadius: radius.full,
@@ -1083,6 +1123,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 4,
+  },
+  // Secondary CTA on empty-state — outline / light fill, pairs below the gradient
+  // primary 量測 button. Tap routes to service request flow.
+  ctaSecondaryEmpty: {
+    width: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    paddingVertical: spacing.md - 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm + 2,
+  },
+  ctaSecondaryEmptyText: {
+    color: colors.primaryText,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 
   // ─── Media Placeholders ────────────────────────────────────

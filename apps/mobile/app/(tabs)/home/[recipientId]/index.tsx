@@ -74,6 +74,9 @@ interface LatestReport {
 
 interface MeasurementStats {
   count: number;
+  // All-time count (period-independent) — drives the "brand new recipient" vs
+  // "has historical data" distinction in calculateHealthScore.
+  total_count: number;
   abnormal_count: number;
   systolic?: { avg: number };
   diastolic?: { avg: number };
@@ -381,12 +384,17 @@ export default function RecipientDetailScreen() {
         </View>
       </View>
 
-      {/* ═══ 2. Health Overview Card + Score Ring ═════════════════ */}
+      {/* ═══ 2. Health Overview Card + Score Ring ═════════════════
+          calculateHealthScore returns null when no measurement data exists
+          (count=0 for both bpStats + bgStats). In that case skip rendering the
+          card entirely — the parent ScrollView still shows recipient profile
+          info above and AI report / appointments below. */}
       {(latestReport || bpStats || bgStats) && (() => {
         const healthResult = calculateHealthScore({
           bpStats, bgStats,
           aiStatusLabel: latestReport?.status_label ?? null,
         });
+        if (!healthResult) return null;
         const SCORE_COLORS: Record<string, string> = {
           excellent: colors.success, good: colors.primary,
           fair: colors.warning, poor: colors.danger,

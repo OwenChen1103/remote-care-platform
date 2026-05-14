@@ -76,6 +76,15 @@ export async function GET(request: NextRequest) {
     fromDate.setDate(fromDate.getDate() - days);
     fromDate.setHours(0, 0, 0, 0);
 
+    // total_count: separate, period-independent count used by callers to detect
+    // "has this recipient EVER recorded any measurements of this type". The
+    // home-page empty-hero check needs this — `count` (period-filtered) returns
+    // 0 for someone with old data, but they shouldn't be treated like a brand-new
+    // recipient with nothing recorded.
+    const totalCount = await prisma.measurement.count({
+      where: { recipient_id, type },
+    });
+
     // Fetch measurements in range with safety limit
     const measurements: StatRow[] = await prisma.measurement.findMany({
       where: {
@@ -168,6 +177,7 @@ export async function GET(request: NextRequest) {
         period,
         type,
         count,
+        total_count: totalCount,
         systolic: aggregateNumbers(systolics),
         diastolic: aggregateNumbers(diastolics),
         heart_rate: aggregateNumbers(heartRates),
@@ -185,6 +195,7 @@ export async function GET(request: NextRequest) {
       period,
       type,
       count,
+      total_count: totalCount,
       glucose_value: aggregateNumbers(glucoseValues),
       abnormal_count: abnormalCount,
       daily_data: dailyData,

@@ -89,9 +89,30 @@ describe('GET /api/v1/provider/tasks', () => {
     );
   });
 
-  it('should default to OR-merged ownership scope (caregiver_confirmed candidate + assigned others)', async () => {
-    // Section 2.7.2: default fetches caregiver_confirmed (candidate) OR assigned-status tasks.
-    // Replaces the old single-clause `status: { in: [...] }` shape.
+  it('should scope candidate_proposed filter by candidate_provider_id (admin proposed, caregiver pending)', async () => {
+    // Provider is admin's candidate before caregiver confirms. Read-only preview state.
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findMany.mockResolvedValue([]);
+    mockPrisma.serviceRequest.count.mockResolvedValue(0);
+
+    const { GET } = await import('../app/api/v1/provider/tasks/route');
+    await GET(createTaskRequest('GET', '/api/v1/provider/tasks?status=candidate_proposed'));
+    expect(mockPrisma.serviceRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'candidate_proposed',
+          candidate_provider_id: 'prov-1',
+        }),
+      }),
+    );
+  });
+
+  it('should default to OR-merged ownership scope (candidate statuses + assigned statuses)', async () => {
+    // Section 2.7.2: default fetches candidate statuses (candidate_proposed +
+    // caregiver_confirmed) OR assigned-status tasks. candidate_proposed lets provider
+    // preview tasks where admin proposed them but caregiver hasn't confirmed yet
+    // (read-only — no action buttons render at this status).
     mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
     mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
     mockPrisma.serviceRequest.findMany.mockResolvedValue([]);
@@ -102,7 +123,10 @@ describe('GET /api/v1/provider/tasks', () => {
     const call = mockPrisma.serviceRequest.findMany.mock.calls[0]?.[0] as { where: { OR: unknown[] } };
     expect(call.where.OR).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ status: 'caregiver_confirmed', candidate_provider_id: 'prov-1' }),
+        expect.objectContaining({
+          status: { in: ['candidate_proposed', 'caregiver_confirmed'] },
+          candidate_provider_id: 'prov-1',
+        }),
         expect.objectContaining({
           status: { in: ['provider_confirmed', 'arranged', 'in_service', 'completed'] },
           assigned_provider_id: 'prov-1',
@@ -139,6 +163,51 @@ describe('GET /api/v1/provider/tasks/[id]', () => {
     const json = await response.json();
     expect(response.status).toBe(200);
     expect(json.data.id).toBe('sr-1');
+  });
+
+  it('should return task detail for candidate provider at candidate_proposed (read-only preview)', async () => {
+    // Admin proposed this provider but caregiver hasn't confirmed yet. Provider gets
+    // a notification at this state — the detail endpoint must allow read so the
+    // notification deep-link doesn't 403.
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1',
+      status: 'candidate_proposed',
+      candidate_provider_id: 'prov-1',
+      assigned_provider_id: null,
+      category: { id: 'c1', code: 'escort_visit', name: '陪同就醫' },
+      recipient: { id: 'r1', name: '李奶奶' },
+    });
+
+    const { GET } = await import('../app/api/v1/provider/tasks/[id]/route');
+    const response = await GET(
+      createTaskRequest('GET', '/api/v1/provider/tasks/sr-1'),
+      { params: Promise.resolve({ id: 'sr-1' }) },
+    );
+    const json = await response.json();
+    expect(response.status).toBe(200);
+    expect(json.data.status).toBe('candidate_proposed');
+  });
+
+  it('should return task detail for candidate provider at caregiver_confirmed', async () => {
+    mockVerifyAuth.mockResolvedValue({ userId: 'user-prov-1', role: 'provider' });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: 'prov-1' });
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      id: 'sr-1',
+      status: 'caregiver_confirmed',
+      candidate_provider_id: 'prov-1',
+      assigned_provider_id: null,
+      category: { id: 'c1', code: 'escort_visit', name: '陪同就醫' },
+      recipient: { id: 'r1', name: '李奶奶' },
+    });
+
+    const { GET } = await import('../app/api/v1/provider/tasks/[id]/route');
+    const response = await GET(
+      createTaskRequest('GET', '/api/v1/provider/tasks/sr-1'),
+      { params: Promise.resolve({ id: 'sr-1' }) },
+    );
+    expect(response.status).toBe(200);
   });
 
   it('should reject if not the assigned provider', async () => {

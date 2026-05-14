@@ -66,6 +66,20 @@ export async function POST(request: NextRequest) {
       take: 50,
     });
 
+    // Block report generation when there's no measurement data:
+    //   1. The LLM happily hallucinates `status_label: 'attention'` for empty
+    //      data (we used to persist whatever it returned), which then leaks
+    //      into `calculateHealthScore` and corrupts the home-page score.
+    //   2. The report content for zero-measurement input is just "no data" —
+    //      not actionable, wastes LLM tokens.
+    // Force user to record at least one measurement first.
+    if (measurements.length === 0) {
+      return errorResponse(
+        'VALIDATION_ERROR',
+        '請先為被照護者記錄至少一筆量測資料，才能生成安心報',
+      );
+    }
+
     // Build context and generate
     const ctx = buildPromptContext(recipient, measurements);
     const result = await generateReport(report_type, ctx);

@@ -8,6 +8,9 @@ import { errorResponse, paginatedResponse } from '@/lib/api-response';
  * Provider task list (Section 2.7.2 + Section 3.5.3).
  *
  * Statuses included:
+ *   - 'candidate_proposed'   : admin proposed this provider; read-only preview while
+ *                              caregiver decides. Mobile shows 「待確認」 label and no
+ *                              action buttons render at this state.
  *   - 'caregiver_confirmed'  : provider is the candidate; needs to accept (provider-confirm screen)
  *   - 'arranged'             : provider committed; main work pipeline
  *   - 'in_service'           : provider in progress
@@ -16,12 +19,15 @@ import { errorResponse, paginatedResponse } from '@/lib/api-response';
  *   - 'cancelled'            : opt-in via ?include_cancelled=true (history view)
  *
  * Ownership scoping:
- *   - For 'caregiver_confirmed', match `candidate_provider_id` (provider hasn't accepted yet)
- *   - For all others, match `assigned_provider_id` (provider already committed)
+ *   - For 'candidate_proposed' + 'caregiver_confirmed', match `candidate_provider_id`
+ *     (provider hasn't accepted yet — both states have admin's candidate id, not
+ *     a committed assignment).
+ *   - For all others, match `assigned_provider_id` (provider already committed).
  *
  * Recipient select extended (Section 3.5.3): list shows age + gender + medical tags
  * to give providers enough context on the card. Detail endpoint exposes more.
  */
+const CANDIDATE_STATUSES = ['candidate_proposed', 'caregiver_confirmed'] as const;
 const ASSIGNED_STATUSES = ['provider_confirmed', 'arranged', 'in_service', 'completed'] as const;
 
 export async function GET(request: NextRequest) {
@@ -45,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     // Compose ownership-aware OR'd predicate.
     const orClauses: Prisma.ServiceRequestWhereInput[] = [
-      { status: 'caregiver_confirmed', candidate_provider_id: provider.id },
+      { status: { in: [...CANDIDATE_STATUSES] }, candidate_provider_id: provider.id },
       { status: { in: [...ASSIGNED_STATUSES] }, assigned_provider_id: provider.id },
     ];
     if (includeCancelled) {
@@ -56,12 +62,14 @@ export async function GET(request: NextRequest) {
     // If a specific status filter is passed, intersect with the OR clauses above.
     // We do this by replacing with a more specific where: provider AND status match the requested.
     if (statusFilter) {
-      const allowedStatuses = ['caregiver_confirmed', ...ASSIGNED_STATUSES, ...(includeCancelled ? ['cancelled'] : [])];
+      const allowedStatuses = [...CANDIDATE_STATUSES, ...ASSIGNED_STATUSES, ...(includeCancelled ? ['cancelled'] : [])];
       if (!allowedStatuses.includes(statusFilter)) {
         // Unknown filter → empty result instead of erroring.
         return paginatedResponse([], { page, limit, total: 0 });
       }
-      const ownership = statusFilter === 'caregiver_confirmed'
+      // candidate_proposed + caregiver_confirmed both match the candidate field;
+      // everything else matches assigned (including the cancelled archive view).
+      const ownership = (CANDIDATE_STATUSES as readonly string[]).includes(statusFilter)
         ? { candidate_provider_id: provider.id }
         : { assigned_provider_id: provider.id };
       Object.assign(where, { status: statusFilter, ...ownership });

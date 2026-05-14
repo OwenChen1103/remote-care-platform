@@ -234,21 +234,28 @@ export default function NotificationsScreen() {
         </View>
       )}
 
-      {/* List */}
-      {notifications.length === 0 ? (
-        <View style={s.emptyWrap}>
-          <EmptyState
-            title="尚無通知"
-            description="當有新的量測提醒、異常通知或服務更新時，會在這裡顯示。"
-          />
-        </View>
-      ) : (
-        <FlatList
+      {/* List — always renders so pull-to-refresh works even when empty.
+          - style={flex:1} on the FlatList itself: forces it to fill the parent
+            (the container View). Without this, when data + ListHeader are
+            both absent, FlatList shrinks to content height and the pull
+            gesture has no scroll surface to recognise.
+          - flexGrow:1 on contentContainerStyle: pushes the empty component
+            to vertical center while still letting the scroll view scroll. */}
+      <FlatList
           data={sections}
           keyExtractor={(item) => item.key}
-          contentContainerStyle={s.list}
+          style={s.flatList}
+          contentContainerStyle={[s.list, sections.length === 0 && s.listEmpty]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={colors.primary} />
+          }
+          ListEmptyComponent={
+            <View style={s.emptyWrap}>
+              <EmptyState
+                title="尚無通知"
+                description="當有新的量測提醒、異常通知或服務更新時，會在這裡顯示。"
+              />
+            </View>
           }
           renderItem={({ item }) => {
             if (item.type === 'header') {
@@ -288,7 +295,6 @@ export default function NotificationsScreen() {
             );
           }}
         />
-      )}
     </View>
   );
 }
@@ -332,7 +338,14 @@ const s = StyleSheet.create({
   },
 
   // List
+  // flex:1 makes FlatList fill the parent View even when content (data +
+  // ListHeader) is empty. Required for RefreshControl on empty state.
+  flatList: { flex: 1 },
   list: { paddingHorizontal: spacing.lg, paddingBottom: spacing['3xl'] },
+  // When sections is empty, flexGrow:1 lets the scroll view fill the viewport so
+  // RefreshControl's pull gesture is recognisable. Without this, FlatList shrinks
+  // to ListEmptyComponent's height and pull-to-refresh doesn't trigger.
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
 
   // Section header (今天 / 昨天 / 本週 / 更早)
   sectionHeader: {

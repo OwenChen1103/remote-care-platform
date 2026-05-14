@@ -5,13 +5,18 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
-import { colors, typography, spacing, radius, shadows } from '@/lib/theme';
+import { colors, typography, spacing, radius } from '@/lib/theme';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 
 interface Appointment {
   id: string;
@@ -25,13 +30,25 @@ interface Appointment {
   note: string | null;
 }
 
-function formatDate(dateStr: string): string {
+// ─── Date helpers ─────────────────────────────────────────────
+
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function formatMonthDay(dateStr: string): string {
   const d = new Date(dateStr);
   const month = d.getMonth() + 1;
   const day = d.getDate();
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-  const weekDay = weekDays[d.getDay()];
-  return `${month}/${day}（${weekDay}）`;
+  return `${month}/${day}`;
+}
+
+function formatWeekday(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `週${WEEKDAYS[d.getDay()]}`;
+}
+
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function daysUntil(dateStr: string): number {
@@ -41,6 +58,51 @@ function daysUntil(dateStr: string): number {
   now.setHours(0, 0, 0, 0);
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+// ─── Icons ────────────────────────────────────────────────────
+
+function IconCalendar({ color = colors.primary, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="16" rx="2" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 9h18M8 3v4M16 3v4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconHospital({ color = colors.textTertiary, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 21V8l9-5 9 5v13" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M12 9v6M9 12h6" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M9 21v-4h6v4" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconDoctor({ color = colors.textTertiary, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth={1.8} />
+      <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconClock({ color = colors.textTertiary, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={1.8} />
+      <Path d="M12 7v5l3 2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function IconPlus({ color = colors.white, size = 20 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 5v14M5 12h14" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────
 
 export default function AppointmentsScreen() {
   const { recipientId } = useLocalSearchParams<{ recipientId: string }>();
@@ -66,30 +128,13 @@ export default function AppointmentsScreen() {
   }, [recipientId]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchData();
+    void fetchData();
   }, [fetchData]);
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>載入中...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
 
   // Section 4.2.2: tap card → action sheet (編輯 / 刪除 / 取消).
   const openActions = (item: Appointment) => {
@@ -130,103 +175,323 @@ export default function AppointmentsScreen() {
     );
   };
 
-  const renderItem = ({ item }: { item: Appointment }) => {
+  if (loading) return <LoadingScreen />;
+
+  if (error) {
+    return (
+      <View style={s.errorWrap}>
+        <ErrorState message={error} onRetry={() => void fetchData()} />
+      </View>
+    );
+  }
+
+  const renderCard = ({ item }: { item: Appointment }) => {
     const days = daysUntil(item.appointment_date);
     const isPast = days < 0;
     const isToday = days === 0;
     const daysLabel = isToday ? '今天' : isPast ? `${Math.abs(days)} 天前` : `${days} 天後`;
-    const daysColor = isPast ? colors.textDisabled : isToday ? colors.danger : days <= 3 ? colors.warning : colors.success;
+    // Color the date-block by urgency: today = primary, soon (≤3) = warning, future = success, past = disabled.
+    const accentColor = isPast
+      ? colors.textDisabled
+      : isToday
+      ? colors.primary
+      : days <= 3
+      ? colors.warning
+      : colors.success;
+    const accentBg = isPast
+      ? colors.bgSurfaceAlt
+      : isToday
+      ? colors.primaryLight
+      : days <= 3
+      ? colors.warningLight
+      : colors.successLight;
 
     return (
       <TouchableOpacity
-        style={[styles.card, isPast && styles.cardPast]}
+        style={[s.card, isPast && s.cardPast]}
         onPress={() => openActions(item)}
         activeOpacity={0.7}
         accessibilityLabel={`行程 ${item.title}，點擊以編輯或刪除`}
       >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <Text style={[styles.daysLabel, { color: daysColor }]}>{daysLabel}</Text>
-        </View>
-        <Text style={styles.cardDate}>{formatDate(item.appointment_date)}</Text>
-        {item.hospital_name && (
-          <Text style={styles.cardDetail}>
-            {item.hospital_name}
-            {item.department ? ` — ${item.department}` : ''}
+        {/* Date block — left side */}
+        <View style={[s.dateBlock, { backgroundColor: accentBg }]}>
+          <Text style={[s.dateMonth, { color: accentColor }]}>
+            {formatMonthDay(item.appointment_date)}
           </Text>
-        )}
-        {item.doctor_name && (
-          <Text style={styles.cardDetail}>醫師：{item.doctor_name}</Text>
-        )}
-        {item.note && <Text style={styles.cardNote}>{item.note}</Text>}
+          <Text style={[s.dateWeek, { color: accentColor }]}>
+            {formatWeekday(item.appointment_date)}
+          </Text>
+        </View>
+
+        {/* Right content */}
+        <View style={s.cardBody}>
+          <View style={s.cardTopRow}>
+            <Text style={s.cardTitle} numberOfLines={1}>{item.title}</Text>
+            <View style={[s.daysPill, { backgroundColor: accentBg }]}>
+              <Text style={[s.daysPillText, { color: accentColor }]}>{daysLabel}</Text>
+            </View>
+          </View>
+
+          <View style={s.detailRow}>
+            <IconClock />
+            <Text style={s.detailText}>{formatTime(item.appointment_date)}</Text>
+          </View>
+
+          {item.hospital_name && (
+            <View style={s.detailRow}>
+              <IconHospital />
+              <Text style={s.detailText} numberOfLines={1}>
+                {item.hospital_name}
+                {item.department ? ` · ${item.department}` : ''}
+              </Text>
+            </View>
+          )}
+
+          {item.doctor_name && (
+            <View style={s.detailRow}>
+              <IconDoctor />
+              <Text style={s.detailText} numberOfLines={1}>{item.doctor_name}</Text>
+            </View>
+          )}
+
+          {item.note ? (
+            <Text style={s.cardNote} numberOfLines={2}>{item.note}</Text>
+          ) : null}
+        </View>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={s.container}>
       <FlatList
         data={appointments}
         keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={appointments.length === 0 ? styles.center : styles.list}
-        ListEmptyComponent={<Text style={styles.emptyText}>尚無行程</Text>}
+        style={s.flatList}
+        contentContainerStyle={[s.list, appointments.length === 0 && s.listEmpty]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        renderItem={renderCard}
+        ListHeaderComponent={
+          <View style={s.hero}>
+            <LinearGradient
+              colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
+              locations={[0, 0.55, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={s.heroHaloTopRight} />
+            <View style={s.heroHaloBottomLeft} />
+            <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+
+            <View style={s.heroContent}>
+              <View style={s.heroIconWrap}>
+                <IconCalendar size={24} color={colors.primaryText} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.heroTitle}>行程管理</Text>
+                <Text style={s.heroSubtitle}>
+                  {appointments.length > 0
+                    ? `共 ${appointments.length} 筆就醫安排`
+                    : '掌握所有就醫安排'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={s.emptyWrap}>
+            <EmptyState
+              title="尚無行程"
+              description="點擊下方按鈕新增第一筆就醫安排。"
+            />
+          </View>
+        }
       />
 
-      {/* Add button */}
+      {/* Floating add button — gradient + shadow */}
       <TouchableOpacity
-        style={styles.addButton}
+        style={s.fab}
         onPress={() =>
           router.push(`/(tabs)/home/add-appointment?recipientId=${recipientId ?? ''}`)
         }
+        activeOpacity={0.85}
+        accessibilityLabel="新增行程"
       >
-        <Text style={styles.addButtonText}>+ 新增行程</Text>
+        <LinearGradient
+          colors={[colors.primary, colors.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={s.fabGradient}
+        >
+          <IconPlus size={18} />
+          <Text style={s.fabText}>新增行程</Text>
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bgScreen },
-  list: { padding: spacing.lg, paddingBottom: 80 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
-  loadingText: { marginTop: spacing.sm, color: colors.textSecondary, ...typography.bodyMd },
-  errorText: { color: colors.danger, ...typography.bodyLg },
-  emptyText: { color: colors.textDisabled, ...typography.bodyLg },
+// ─── Styles ───────────────────────────────────────────────────
 
-  card: {
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bgScreen },
+  flatList: { flex: 1 },
+  list: { padding: spacing.lg, paddingBottom: spacing['3xl'] + spacing.xl, gap: spacing.md },
+  // When empty, push content to fill viewport so RefreshControl pull gesture works.
+  listEmpty: { flexGrow: 1 },
+  errorWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl, backgroundColor: colors.bgScreen },
+
+  // Hero (ListHeader)
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(46,141,201,0.12)',
+    marginBottom: spacing.sm,
+  },
+  heroHaloTopRight: {
+    position: 'absolute',
+    top: -40, right: -50,
+    width: 160, height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroHaloBottomLeft: {
+    position: 'absolute',
+    bottom: -50, left: -30,
+    width: 140, height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  heroContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  heroIconWrap: {
+    width: 48, height: 48,
+    borderRadius: 24,
     backgroundColor: colors.bgSurface,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    marginBottom: spacing.sm + 2,
+    borderWidth: 1, borderColor: 'rgba(46,141,201,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroTitle: {
+    fontSize: typography.headingMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  heroSubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+
+  // Empty
+  emptyWrap: { flex: 1, justifyContent: 'center', paddingTop: spacing['2xl'] },
+
+  // Card
+  card: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgSurface,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.borderDefault,
-    ...shadows.low,
+    overflow: 'hidden',
+    minHeight: 96,
   },
-  cardPast: { opacity: 0.6 },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  cardTitle: { ...typography.bodyLg, fontWeight: '600', color: colors.textPrimary, flex: 1 },
-  daysLabel: { ...typography.bodySm, fontWeight: '600' },
-  cardDate: { ...typography.bodyMd, color: colors.primary, marginBottom: spacing.sm - 2 },
-  cardDetail: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.xxs },
-  cardNote: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.sm - 2, fontStyle: 'italic' },
+  cardPast: { opacity: 0.55 },
 
-  addButton: {
+  dateBlock: {
+    width: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  dateMonth: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  dateWeek: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  cardBody: {
+    flex: 1,
+    padding: spacing.md,
+    gap: 4,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  daysPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  daysPillText: {
+    fontSize: typography.captionSm.fontSize,
+    fontWeight: '700',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailText: {
+    flex: 1,
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+  },
+  cardNote: {
+    fontSize: typography.captionSm.fontSize,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+
+  // FAB — gradient + shadow
+  fab: {
     position: 'absolute',
     bottom: spacing['2xl'],
-    left: spacing.lg,
     right: spacing.lg,
-    backgroundColor: colors.primary,
     borderRadius: radius.full,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
-    ...shadows.high,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  addButtonText: { color: colors.white, ...typography.bodyLg, fontWeight: '600' },
+  fabGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md - 2,
+  },
+  fabText: {
+    color: colors.white,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
 });

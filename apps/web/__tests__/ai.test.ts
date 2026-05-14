@@ -136,9 +136,28 @@ beforeEach(() => {
 // ─── POST /ai/health-report ────────────────────────────────────
 
 describe('POST /ai/health-report', () => {
+  // Reusable non-empty measurements stub. The route now rejects empty arrays
+  // (LLM hallucinated misleading `status_label: 'attention'` for no-data input,
+  // which then corrupted the home-page score). Tests that exercise the happy
+  // path must provide at least one measurement.
+  const mockMeasurements = [
+    {
+      id: 'm-1',
+      recipient_id: mockRecipient.id,
+      type: 'blood_pressure',
+      systolic: 120,
+      diastolic: 80,
+      heart_rate: 72,
+      glucose_value: null,
+      glucose_timing: null,
+      is_abnormal: false,
+      measured_at: new Date('2026-03-08T08:00:00Z'),
+    },
+  ];
+
   it('should generate report successfully', async () => {
     mockPrisma.recipient.findFirst.mockResolvedValue(mockRecipient);
-    mockPrisma.measurement.findMany.mockResolvedValue([]);
+    mockPrisma.measurement.findMany.mockResolvedValue(mockMeasurements);
     mockGenerateReport.mockResolvedValue(mockReportResult);
     mockPrisma.aiReport.create.mockResolvedValue(mockSavedReport);
 
@@ -201,6 +220,31 @@ describe('POST /ai/health-report', () => {
     expect(res.status).toBe(400);
   });
 
+  it('should reject when recipient has no measurements (avoid LLM hallucinating status_label)', async () => {
+    // Pre-flight check: empty measurements → LLM used to fabricate
+    // `status_label: 'attention'` for no-data input, which then leaked into
+    // calculateHealthScore and corrupted the home-page health score.
+    // Now the route returns VALIDATION_ERROR before invoking the LLM.
+    mockPrisma.recipient.findFirst.mockResolvedValue(mockRecipient);
+    mockPrisma.measurement.findMany.mockResolvedValue([]);
+
+    const req = createRequest(
+      'POST',
+      { recipient_id: mockRecipient.id, report_type: 'health_summary' },
+      { Authorization: `Bearer ${caregiverToken()}` },
+    );
+
+    const res = await healthReportHandler(req);
+    const json = (await res.json()) as Record<string, unknown>;
+
+    expect(res.status).toBe(400);
+    expect((json.error as Record<string, unknown>).code).toBe('VALIDATION_ERROR');
+    expect((json.error as Record<string, unknown>).message).toContain('量測');
+    // Critically: LLM was NOT called → no token waste, no hallucination.
+    expect(mockGenerateReport).not.toHaveBeenCalled();
+    expect(mockPrisma.aiReport.create).not.toHaveBeenCalled();
+  });
+
   it('should enforce rate limit', async () => {
     mockPrisma.recipient.findFirst.mockResolvedValue(mockRecipient);
     mockCheckReportRateLimit.mockResolvedValue({ allowed: false, remaining: 0, reset: 3600 });
@@ -231,7 +275,8 @@ describe('POST /ai/health-report', () => {
     };
 
     mockPrisma.recipient.findFirst.mockResolvedValue(mockRecipient);
-    mockPrisma.measurement.findMany.mockResolvedValue([]);
+    // Non-empty measurements required — route rejects empty arrays before calling LLM.
+    mockPrisma.measurement.findMany.mockResolvedValue(mockMeasurements);
     mockGenerateReport.mockResolvedValue(fallbackResult);
     mockPrisma.aiReport.create.mockResolvedValue({
       ...mockSavedReport,

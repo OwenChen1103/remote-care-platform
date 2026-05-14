@@ -6,8 +6,16 @@ import { successResponse, errorResponse } from '@/lib/api-response';
 /**
  * Provider task detail (Section 2.7.2 + Section 3.5.4).
  *
- * Ownership: provider must be EITHER candidate_provider (for caregiver_confirmed status)
- * OR assigned_provider (any other status). Mirrors the list endpoint's filter.
+ * Ownership: provider must be EITHER candidate_provider (for candidate_proposed +
+ * caregiver_confirmed statuses) OR assigned_provider (any other status). Mirrors the
+ * list endpoint's filter.
+ *
+ * candidate_proposed is read-only for provider — admin proposed them, caregiver hasn't
+ * confirmed yet. Provider gets a notification at this state ("您有新的候選邀請") and
+ * the mobile deep-link routes here so they can preview the task while waiting.
+ * (provider-task-detail.tsx has no action buttons for this status — confirm buttons
+ *  only render at arranged/in_service/completed; provider-confirm.tsx is the accept
+ *  screen, reached at caregiver_confirmed.)
  *
  * Recipient select extended (Section 3.5.4): exposes more clinical info than the list
  * — emergency contact, address, medical notes — needed for actual on-site service.
@@ -51,10 +59,14 @@ export async function GET(
     if (!task) return errorResponse('RESOURCE_NOT_FOUND', '找不到此服務需求');
 
     // Two ownership paths:
-    //   - candidate (waiting for provider's confirm): caregiver_confirmed
-    //   - assigned (already accepted): all other in-flight + completed/cancelled
+    //   - candidate: candidate_proposed (read-only — admin proposed, caregiver hasn't
+    //     confirmed yet) or caregiver_confirmed (provider's turn to confirm).
+    //     Both states match `candidate_provider_id` since the provider hasn't yet been
+    //     promoted to assigned.
+    //   - assigned (already accepted): all other in-flight + completed/cancelled.
     const isCandidate =
-      task.status === 'caregiver_confirmed' && task.candidate_provider_id === provider.id;
+      (task.status === 'candidate_proposed' || task.status === 'caregiver_confirmed') &&
+      task.candidate_provider_id === provider.id;
     const isAssigned = task.assigned_provider_id === provider.id;
     if (!isCandidate && !isAssigned) {
       return errorResponse('RESOURCE_OWNERSHIP_DENIED', '您不是此需求的指派或候選服務人員');

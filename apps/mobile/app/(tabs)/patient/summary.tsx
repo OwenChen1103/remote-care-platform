@@ -47,6 +47,9 @@ interface Measurement {
 
 interface MeasurementStats {
   count: number;
+  // All-time count (period-independent) — drives the "brand new" vs "has data"
+  // distinction in calculateHealthScore.
+  total_count: number;
   abnormal_count: number;
   systolic?: { avg: number };
   diastolic?: { avg: number };
@@ -359,7 +362,12 @@ export default function PatientSummaryScreen() {
   const latestBP = measurements.find((m) => m.type === 'blood_pressure');
   const latestBG = measurements.find((m) => m.type === 'blood_glucose');
 
-  const { score, level } = calculateHealthScore({ bpStats, bgStats });
+  // calculateHealthScore returns null when no measurements exist — bound patient
+  // can land here right after caregiver invites them, before any data recorded.
+  // Use `null` as the sentinel and branch hero rendering below.
+  const healthResult = calculateHealthScore({ bpStats, bgStats });
+  const score = healthResult?.score ?? 0;
+  const level = healthResult?.level ?? 'good';
 
   // ── Loading ───────────────────────────────────────────────
   if (loading) {
@@ -397,6 +405,16 @@ export default function PatientSummaryScreen() {
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/(tabs)/patient/profile')} activeOpacity={0.7}>
           <Text style={s.emptySecondaryLink}>編輯個人資料</Text>
+        </TouchableOpacity>
+        {/* Section 1.7.3: unbound patient gets no header menu, so we need an inline
+            sign-out path — otherwise users with wrong account / typo'd email are stuck. */}
+        <TouchableOpacity
+          onPress={() => { void logout().then(() => router.replace('/(auth)')); }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="登出"
+        >
+          <Text style={s.emptyLogoutLink}>登出</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -469,25 +487,34 @@ export default function PatientSummaryScreen() {
             <Text style={s.heroTagline}>HEALTH STATUS</Text>
             <Text style={s.heroSubtitle}>今日健康狀態</Text>
 
-            <View style={s.heroBody}>
-              <View style={s.ringWrap}>
-                <HealthScoreRing score={score} level={level} />
-                <View style={s.ringCenter}>
-                  <Text style={[s.ringScore, { color: ringColor }]}>{score}</Text>
-                  <Text style={s.ringScoreUnit}>分</Text>
+            {healthResult ? (
+              <View style={s.heroBody}>
+                <View style={s.ringWrap}>
+                  <HealthScoreRing score={score} level={level} />
+                  <View style={s.ringCenter}>
+                    <Text style={[s.ringScore, { color: ringColor }]}>{score}</Text>
+                    <Text style={s.ringScoreUnit}>分</Text>
+                  </View>
+                </View>
+                <View style={s.heroText}>
+                  <View style={[s.levelBadge, { backgroundColor: ringColor + '22', borderColor: ringColor + '55' }]}>
+                    <View style={[s.levelDot, { backgroundColor: ringColor }]} />
+                    <Text style={[s.levelLabel, { color: ringColor }]}>
+                      {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
+                    </Text>
+                  </View>
+                  <Text style={s.heroSummary}>{getScoreSummary(level)}</Text>
+                  <Text style={s.heroCaption}>近 7 天量測數據</Text>
                 </View>
               </View>
-              <View style={s.heroText}>
-                <View style={[s.levelBadge, { backgroundColor: ringColor + '22', borderColor: ringColor + '55' }]}>
-                  <View style={[s.levelDot, { backgroundColor: ringColor }]} />
-                  <Text style={[s.levelLabel, { color: ringColor }]}>
-                    {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
-                  </Text>
-                </View>
-                <Text style={s.heroSummary}>{getScoreSummary(level)}</Text>
-                <Text style={s.heroCaption}>近 7 天量測數據</Text>
+            ) : (
+              // Empty state — bound patient before any measurement is recorded.
+              // calculateHealthScore returns null when both bpStats + bgStats counts are 0.
+              <View style={s.heroEmptyBody}>
+                <Text style={s.heroEmptyTitle}>尚無量測資料</Text>
+                <Text style={s.heroEmptySubtitle}>請家屬協助記錄第一筆量測，就能看到健康狀態分數。</Text>
               </View>
-            </View>
+            )}
           </View>
         </View>
 
@@ -777,11 +804,14 @@ const s = StyleSheet.create({
   emptyText: { ...typography.bodyLg, color: colors.textDisabled, textAlign: 'center' },
 
   // Section 1.7.5: AI 安心報 surfaced card.
+  // marginHorizontal mirrors listCard / emptyCard so the card aligns with the rest
+  // of the page (ScrollView has no global horizontal padding — each section sets its own).
   reportCard: {
     backgroundColor: colors.bgSurface,
     borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.borderDefault,
     padding: spacing.lg,
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
   reportCardHeader: {
@@ -876,6 +906,14 @@ const s = StyleSheet.create({
     fontSize: typography.bodySm.fontSize,
     textDecorationLine: 'underline',
   },
+  // Sign-out link on the empty state — danger color to differentiate from the
+  // primary 編輯個人資料 link above. No underline so it reads as a heavier action.
+  emptyLogoutLink: {
+    marginTop: spacing.lg,
+    color: colors.danger,
+    fontSize: typography.bodySm.fontSize,
+    fontWeight: '600',
+  },
 
   // ── Top Bar ───────────────────────────────────────────────
   topBar: {
@@ -962,6 +1000,26 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.lg,
     marginTop: spacing.md,
+  },
+  // Empty-data hero variant — shown when calculateHealthScore returns null
+  // (no measurements yet). Centred text only, no ring.
+  heroEmptyBody: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+  },
+  heroEmptyTitle: {
+    fontSize: typography.headingSm.fontSize,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs + 2,
+  },
+  heroEmptySubtitle: {
+    fontSize: typography.bodySm.fontSize,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: spacing.lg,
   },
   ringWrap: {
     width: 96, height: 96,

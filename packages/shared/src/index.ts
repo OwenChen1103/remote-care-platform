@@ -11,6 +11,7 @@ export * from './schemas/appointment';
 
 // Utils
 export * from './utils/health-score';
+export * from './utils/certifications';
 
 // Constants
 export * from './constants/error-codes';

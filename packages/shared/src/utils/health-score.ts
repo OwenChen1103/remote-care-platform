@@ -5,13 +5,17 @@
 
 export interface HealthScoreInput {
   bpStats?: {
+    /** Period-filtered count (e.g. last 7 days). Used for scoring penalties. */
     count: number;
+    /** All-time count, independent of period. Used to detect "truly no data ever". */
+    total_count?: number;
     abnormal_count: number;
     systolic?: { avg: number };
     diastolic?: { avg: number };
   } | null;
   bgStats?: {
     count: number;
+    total_count?: number;
     abnormal_count: number;
     glucose_value?: { avg: number };
   } | null;
@@ -25,7 +29,21 @@ export interface HealthScoreResult {
   level: HealthLevel;
 }
 
-export function calculateHealthScore(input: HealthScoreInput): HealthScoreResult {
+export function calculateHealthScore(input: HealthScoreInput): HealthScoreResult | null {
+  // Detect "truly no data ever" — use total_count (all-time, period-independent)
+  // not count (period-filtered). A recipient who recorded measurements 30+ days
+  // ago has count=0 in the 7-day window but total_count > 0; they should NOT be
+  // shown the empty hero (it would mistake them for a brand-new recipient).
+  // If total_count is not provided (legacy caller), fall back to count for the
+  // safer "behave like brand-new" default.
+  const bpHasEverData =
+    (input.bpStats?.total_count ?? input.bpStats?.count ?? 0) > 0;
+  const bgHasEverData =
+    (input.bgStats?.total_count ?? input.bgStats?.count ?? 0) > 0;
+  if (!bpHasEverData && !bgHasEverData) {
+    return null;
+  }
+
   let score = 100;
 
   // Blood pressure average penalty
