@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { Check, ChevronRight, Search } from 'lucide-react';
+import { AdminTable, Avatar, PageHeader } from '@/components/admin';
+import type { AdminTableColumn, SortState } from '@/components/admin';
 
 interface Recipient {
   id: string;
   caregiver_id: string;
   patient_user_id: string | null;
-  // Surfaced from /api/v1/admin/recipients GET include patient_user (Section 1.8.1).
   patient_user_email: string | null;
   patient_user_name: string | null;
   name: string;
@@ -26,19 +28,31 @@ interface PaginatedResponse {
   meta: { page: number; limit: number; total: number };
 }
 
+const GENDER_LABEL: Record<string, string> = { male: '男', female: '女', other: '其他' };
+
 export default function AdminRecipientsPage() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortState>(null);
   const limit = 20;
 
-  const fetchRecipients = useCallback(async (p: number) => {
+  const fetchRecipients = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/v1/admin/recipients?page=${p}&limit=${limit}`);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      });
+      if (search) params.set('search', search);
+      if (sort) params.set('sort', `${sort.key}:${sort.order}`);
+
+      const res = await fetch(`/api/v1/admin/recipients?${params.toString()}`);
       const json = (await res.json()) as PaginatedResponse;
       if (json.success) {
         setRecipients(json.data);
@@ -51,131 +65,129 @@ export default function AdminRecipientsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search, sort]);
 
   useEffect(() => {
-    void fetchRecipients(page);
-  }, [page, fetchRecipients]);
+    void fetchRecipients();
+  }, [fetchRecipients]);
 
-  const totalPages = Math.ceil(total / limit);
+  function applySearch(e: React.FormEvent) {
+    e.preventDefault();
+    setPage(1);
+    setSearch(searchInput.trim());
+  }
+
+  const columns: AdminTableColumn<Recipient>[] = [
+    {
+      key: 'name',
+      header: '姓名',
+      sortKey: 'name',
+      cell: (r) => (
+        <div className="flex items-center gap-3">
+          <Avatar name={r.name} size="md" />
+          <div className="min-w-0">
+            <p className="font-medium text-ink-900">{r.name}</p>
+            <p className="text-xs text-ink-500">
+              {r.gender ? GENDER_LABEL[r.gender] ?? r.gender : '—'}
+              {r.date_of_birth && ` ・ ${r.date_of_birth}`}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'medical_tags',
+      header: '疾病標籤',
+      whitespaceNowrap: false,
+      cell: (r) => (
+        <div className="flex flex-wrap gap-1">
+          {r.medical_tags.length > 0
+            ? r.medical_tags.map((tag) => (
+                <span key={tag} className="inline-block rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                  {tag}
+                </span>
+              ))
+            : <span className="text-xs text-ink-300">無</span>}
+        </div>
+      ),
+    },
+    {
+      key: 'binding',
+      header: '連結帳號',
+      cell: (r) =>
+        r.patient_user_email ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-positive-soft px-2.5 py-0.5 text-xs font-medium text-positive">
+            <Check className="h-3 w-3" aria-hidden="true" />
+            {r.patient_user_email}
+          </span>
+        ) : (
+          <span className="text-xs text-ink-300">未連結</span>
+        ),
+    },
+    {
+      key: 'emergency_contact',
+      header: '主要聯絡人',
+      cell: (r) => r.emergency_contact_name ?? <span className="text-ink-300">—</span>,
+    },
+    {
+      key: 'created_at',
+      header: '建立時間',
+      sortKey: 'created_at',
+      cell: (r) => <span className="text-ink-500">{new Date(r.created_at).toLocaleDateString('zh-TW')}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (r) => (
+        <Link
+          href={`/admin/recipients/${r.id}`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 hover:underline"
+        >
+          編輯
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">被照護者總覽</h1>
+    <div>
+      <PageHeader
+        title="被照護者總覽"
+        description="平台所有被照護者資料；可由此覆蓋家屬綁定"
+      />
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-          <button
-            className="ml-2 text-red-900 underline"
-            onClick={() => void fetchRecipients(page)}
-          >
-            重試
-          </button>
-        </div>
-      )}
+      {/* Search — uses the existing `search` param on /api/v1/admin/recipients */}
+      <form onSubmit={applySearch} className="relative mb-6 max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" aria-hidden="true" />
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="搜尋被照護者姓名…"
+          className="block w-full rounded-xl border border-outline bg-white py-2 pl-10 pr-3 text-sm shadow-brand-low transition-colors placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+        />
+      </form>
 
-      {loading ? (
-        <div className="text-gray-500">載入中...</div>
-      ) : recipients.length === 0 ? (
-        <div className="text-gray-500">目前沒有被照護者資料</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">姓名</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">性別</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">生日</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">疾病標籤</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">連結帳號</th>
-                  {/* G11: column stored as emergency_contact_*; UI label changed to 主要聯絡人 per PDF. */}
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">主要聯絡人</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">建立時間</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {recipients.map((r) => (
-                  <tr key={r.id}>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
-                      {r.name}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                      {r.gender === 'male' ? '男' : r.gender === 'female' ? '女' : r.gender === 'other' ? '其他' : '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                      {r.date_of_birth ?? '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      <div className="flex flex-wrap gap-1">
-                        {r.medical_tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm">
-                      {r.patient_user_email ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
-                          <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414L8.414 15l-4.121-4.121a1 1 0 111.414-1.415L8.414 12.17l7.293-7.293a1 1 0 011 0z" clipRule="evenodd" /></svg>
-                          {r.patient_user_email}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">未連結</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                      {r.emergency_contact_name ?? '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                      {new Date(r.created_at).toLocaleDateString('zh-TW')}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm">
-                      <Link
-                        href={`/admin/recipients/${r.id}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        編輯
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-              <span>共 {total} 筆</span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  上一頁
-                </button>
-                <span className="px-2 py-1">
-                  {page} / {totalPages}
-                </span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      <AdminTable
+        data={recipients}
+        columns={columns}
+        rowKey={(r) => r.id}
+        loading={loading}
+        error={error || null}
+        onRetry={() => void fetchRecipients()}
+        emptyTitle={search ? '沒有符合搜尋的被照護者' : '目前沒有被照護者資料'}
+        emptyDescription={search ? undefined : '平台啟用後，委託人新增的被照護者會出現在這裡'}
+        sort={sort}
+        onSortChange={(s) => { setSort(s); setPage(1); }}
+        pagination={{
+          page,
+          total,
+          limit,
+          onPageChange: setPage,
+        }}
+      />
     </div>
   );
 }

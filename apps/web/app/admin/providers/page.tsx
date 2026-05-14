@@ -1,7 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { ChevronRight } from 'lucide-react';
+import { PROVIDER_LEVEL_DISPLAY } from '@remote-care/shared';
+import {
+  AdminTable,
+  Avatar,
+  FilterChips,
+  LoadingState,
+  PageHeader,
+  ProviderAvailabilityBadge,
+  ProviderReviewStatusBadge,
+} from '@/components/admin';
+import type { AdminTableColumn, SortState } from '@/components/admin';
 
 interface Provider {
   id: string;
@@ -11,6 +24,7 @@ interface Provider {
   specialties: string[];
   availability_status: string;
   review_status: string;
+  photo_url?: string | null;
 }
 
 interface PaginatedResponse {
@@ -19,184 +33,174 @@ interface PaginatedResponse {
   meta: { page: number; limit: number; total: number };
 }
 
-const REVIEW_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending: { label: '待審核', color: 'bg-yellow-100 text-yellow-800' },
-  approved: { label: '已核准', color: 'bg-green-100 text-green-800' },
-  suspended: { label: '已停權', color: 'bg-red-100 text-red-800' },
-};
+const REVIEW_STATUS_OPTIONS = [
+  { value: '',          label: '全部' },
+  { value: 'pending',   label: '待審核' },
+  { value: 'approved',  label: '已核准' },
+  { value: 'rejected',  label: '未通過' },
+  { value: 'suspended', label: '已停權' },
+];
 
-const LEVEL_LABELS: Record<string, string> = {
-  L1: '初級',
-  L2: '中級',
-  L3: '資深',
-};
-
-const AVAILABILITY_LABELS: Record<string, string> = {
-  available: '可接案',
-  busy: '忙碌中',
-  offline: '離線',
-};
+const AVAILABILITY_OPTIONS = [
+  { value: '',          label: '全部' },
+  { value: 'available', label: '可接案' },
+  { value: 'busy',      label: '忙碌中' },
+  { value: 'offline',   label: '離線' },
+];
 
 export default function AdminProvidersPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <ProvidersPageInner />
+    </Suspense>
+  );
+}
+
+function ProvidersPageInner() {
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams?.get('status') ?? '';
+
   const [providers, setProviders] = useState<Provider[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [availabilityFilter, setAvailabilityFilter] = useState('');
+  const [sort, setSort] = useState<SortState>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const limit = 20;
 
-  const fetchProviders = useCallback(
-    async (p: number, reviewStatus: string) => {
-      setLoading(true);
-      setError('');
-      try {
-        const params = new URLSearchParams({ page: String(p), limit: String(limit) });
-        if (reviewStatus) params.set('review_status', reviewStatus);
-        const res = await fetch(`/api/v1/providers?${params}`);
-        const json = (await res.json()) as PaginatedResponse;
-        if (json.success) {
-          setProviders(json.data);
-          setTotal(json.meta.total);
-        } else {
-          setError('載入失敗');
-        }
-      } catch {
-        setError('網路錯誤');
-      } finally {
-        setLoading(false);
+  const fetchProviders = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (statusFilter) params.set('review_status', statusFilter);
+      if (availabilityFilter) params.set('availability_status', availabilityFilter);
+      if (sort) params.set('sort', `${sort.key}:${sort.order}`);
+      const res = await fetch(`/api/v1/providers?${params}`);
+      const json = (await res.json()) as PaginatedResponse;
+      if (json.success) {
+        setProviders(json.data);
+        setTotal(json.meta.total);
+      } else {
+        setError('載入失敗');
       }
-    },
-    [],
-  );
+    } catch {
+      setError('網路錯誤');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, statusFilter, availabilityFilter, sort]);
 
   useEffect(() => {
-    void fetchProviders(page, statusFilter);
-  }, [page, statusFilter, fetchProviders]);
+    void fetchProviders();
+  }, [fetchProviders]);
 
-  const totalPages = Math.ceil(total / limit);
+  const columns: AdminTableColumn<Provider>[] = [
+    {
+      key: 'name',
+      header: '服務人員',
+      sortKey: 'name',
+      cell: (p) => (
+        <div className="flex items-center gap-3">
+          <Avatar src={p.photo_url} name={p.name} size="md" />
+          <div className="min-w-0">
+            <p className="font-medium text-ink-900">{p.name}</p>
+            <p className="text-xs text-ink-500">
+              {PROVIDER_LEVEL_DISPLAY[p.level]?.label ?? p.level}
+              {p.phone && ` ・ ${p.phone}`}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'specialties',
+      header: '專長',
+      whitespaceNowrap: false,
+      cell: (p) =>
+        p.specialties && p.specialties.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {p.specialties.slice(0, 3).map((s) => (
+              <span key={s} className="inline-block rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {s}
+              </span>
+            ))}
+            {p.specialties.length > 3 && (
+              <span className="text-xs text-ink-500">+{p.specialties.length - 3}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-ink-300">—</span>
+        ),
+    },
+    {
+      key: 'review_status',
+      header: '審核狀態',
+      cell: (p) => <ProviderReviewStatusBadge status={p.review_status} />,
+    },
+    {
+      key: 'availability_status',
+      header: '可用性',
+      cell: (p) => <ProviderAvailabilityBadge status={p.availability_status} />,
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (p) => (
+        <Link
+          href={`/admin/providers/${p.id}`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 hover:underline"
+        >
+          查看
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">服務人員管理</h1>
+    <div>
+      <PageHeader
+        title="服務人員管理"
+        description="審核新申請、停權違規帳號；停權後不可再被指派任務"
+      />
 
-      <div className="mb-4">
-        <select
+      <div className="mb-3 space-y-3">
+        <FilterChips
+          label="審核狀態"
           value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(1);
-          }}
-          className="rounded border border-gray-300 px-3 py-2 text-sm"
-        >
-          <option value="">全部狀態</option>
-          <option value="pending">待審核</option>
-          <option value="approved">已核准</option>
-          <option value="suspended">已停權</option>
-        </select>
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
+          options={REVIEW_STATUS_OPTIONS}
+        />
+        <FilterChips
+          label="可用性"
+          value={availabilityFilter}
+          onChange={(v) => { setAvailabilityFilter(v); setPage(1); }}
+          options={AVAILABILITY_OPTIONS}
+        />
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-          <button
-            className="ml-2 text-red-900 underline"
-            onClick={() => void fetchProviders(page, statusFilter)}
-          >
-            重試
-          </button>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="text-gray-500">載入中...</div>
-      ) : providers.length === 0 ? (
-        <div className="text-gray-500">目前沒有服務人員</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">姓名</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">電話</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">等級</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                    審核狀態
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">可用性</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {providers.map((provider) => {
-                  const statusInfo = REVIEW_STATUS_LABELS[provider.review_status] ?? {
-                    label: provider.review_status,
-                    color: 'bg-gray-100 text-gray-600',
-                  };
-                  return (
-                    <tr key={provider.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                        {provider.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {provider.phone ?? '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {LEVEL_LABELS[provider.level] ?? provider.level}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo.color}`}
-                        >
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {AVAILABILITY_LABELS[provider.availability_status] ??
-                          provider.availability_status}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm">
-                        <Link
-                          href={`/admin/providers/${provider.id}`}
-                          className="text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          查看
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-              <span>共 {total} 筆</span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  上一頁
-                </button>
-                <span className="px-2 py-1">
-                  {page} / {totalPages}
-                </span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      <AdminTable
+        data={providers}
+        columns={columns}
+        rowKey={(p) => p.id}
+        loading={loading}
+        error={error || null}
+        onRetry={() => void fetchProviders()}
+        emptyTitle="目前沒有符合條件的服務人員"
+        emptyDescription="服務人員透過 App 註冊送審後會出現在這裡"
+        sort={sort}
+        onSortChange={(s) => { setSort(s); setPage(1); }}
+        pagination={{
+          page,
+          total,
+          limit,
+          onPageChange: setPage,
+        }}
+      />
     </div>
   );
 }

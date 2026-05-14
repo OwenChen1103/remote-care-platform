@@ -5,14 +5,21 @@
  *
  * Self-suspension guard: the current admin's row has its action button disabled (server also rejects
  * suspending self with 400, but UI prevents the click).
- *
- * Status pill semantics:
- *   - suspended_at IS NULL → green "使用中"
- *   - suspended_at non-null → red "已停權（YYYY-MM-DD）"
  */
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { Search } from 'lucide-react';
+import {
+  AdminTable,
+  Avatar,
+  ConfirmModal,
+  FilterChips,
+  PageHeader,
+  SuspensionBadge,
+  useToast,
+} from '@/components/admin';
+import type { AdminTableColumn, SortState } from '@/components/admin';
 
 interface AdminUser {
   id: string;
@@ -41,16 +48,17 @@ const ROLE_LABELS: Record<string, string> = {
   admin: '管理員',
 };
 
-const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: '全部角色' },
+/** Role chip filter — segmented control style. */
+const ROLE_CHIPS: { value: string; label: string }[] = [
+  { value: '', label: '全部' },
   { value: 'caregiver', label: '委託人' },
   { value: 'patient', label: '被照護者' },
   { value: 'provider', label: '服務人員' },
   { value: 'admin', label: '管理員' },
 ];
 
-const SUSPENDED_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: '全部狀態' },
+const SUSPENDED_CHIPS: { value: string; label: string }[] = [
+  { value: '', label: '全部' },
   { value: 'false', label: '使用中' },
   { value: 'true', label: '已停權' },
 ];
@@ -61,16 +69,19 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionError, setActionError] = useState('');
+
+  const { showToast } = useToast();
 
   // Filters
   const [roleFilter, setRoleFilter] = useState('');
   const [suspendedFilter, setSuspendedFilter] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortState>(null);
 
   // Track which row's action is in flight (prevents double-clicks across rows).
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<AdminUser | null>(null);
 
   // Current admin identity — for the "can't suspend self" guard.
   const [currentAdminId, setCurrentAdminId] = useState<string | null>(null);
@@ -101,6 +112,7 @@ export default function AdminUsersPage() {
       if (roleFilter) params.set('role', roleFilter);
       if (suspendedFilter) params.set('suspended', suspendedFilter);
       if (search) params.set('search', search);
+      if (sort) params.set('sort', `${sort.key}:${sort.order}`);
 
       const res = await fetch(`/api/v1/admin/users?${params.toString()}`);
       const json = (await res.json()) as PaginatedResponse;
@@ -115,7 +127,7 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, roleFilter, suspendedFilter, search]);
+  }, [page, roleFilter, suspendedFilter, search, sort]);
 
   useEffect(() => {
     void fetchUsers();
@@ -127,14 +139,12 @@ export default function AdminUsersPage() {
     setSearch(searchInput.trim());
   }
 
-  async function toggleSuspension(user: AdminUser) {
+  async function performSuspension(user: AdminUser) {
     if (user.id === currentAdminId) return; // shouldn't happen — button disabled
     const willSuspend = user.suspended_at === null;
     const verb = willSuspend ? '停權' : '恢復';
-    if (!confirm(`確定要${verb}使用者「${user.name}」（${user.email}）？`)) return;
 
     setSubmittingId(user.id);
-    setActionError('');
     try {
       const res = await fetch(`/api/v1/admin/users/${user.id}/suspension`, {
         method: 'PUT',
@@ -143,173 +153,159 @@ export default function AdminUsersPage() {
       });
       const json = (await res.json()) as { success: boolean; data?: { suspended_at: string | null }; error?: { message: string } };
       if (json.success) {
-        // Update list locally without refetching to avoid filter reset.
         setUsers((prev) =>
           prev.map((u) =>
             u.id === user.id ? { ...u, suspended_at: json.data?.suspended_at ?? null } : u,
           ),
         );
+        showToast({ tone: 'success', message: `已${verb}「${user.name}」` });
       } else {
-        setActionError(json.error?.message ?? `${verb}失敗`);
+        showToast({ tone: 'error', message: json.error?.message ?? `${verb}失敗` });
       }
     } catch {
-      setActionError('網路錯誤');
+      showToast({ tone: 'error', message: '網路錯誤' });
     } finally {
       setSubmittingId(null);
+      setConfirmTarget(null);
     }
   }
 
-  const totalPages = Math.ceil(total / limit);
+  const columns: AdminTableColumn<AdminUser>[] = [
+    {
+      key: 'name',
+      header: '姓名',
+      sortKey: 'name',
+      cell: (u) => {
+        const isSelf = currentAdminId !== null && u.id === currentAdminId;
+        return (
+          <div className="flex items-center gap-3">
+            <Avatar name={u.name} size="md" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-ink-900">{u.name}</span>
+                {isSelf && (
+                  <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">
+                    您自己
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-500">{u.email}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    { key: 'role', header: '角色', cell: (u) => <span className="text-ink-700">{ROLE_LABELS[u.role] ?? u.role}</span> },
+    {
+      key: 'status',
+      header: '狀態',
+      cell: (u) => <SuspensionBadge suspendedAt={u.suspended_at} />,
+    },
+    {
+      key: 'created_at',
+      header: '建立時間',
+      sortKey: 'created_at',
+      cell: (u) => <span className="text-ink-500">{new Date(u.created_at).toLocaleDateString('zh-TW')}</span>,
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      cell: (u) => {
+        const isSuspended = u.suspended_at !== null;
+        const isSelf = currentAdminId !== null && u.id === currentAdminId;
+        return (
+          <button
+            disabled={isSelf || submittingId === u.id}
+            onClick={() => setConfirmTarget(u)}
+            title={isSelf ? '不可停權自己' : ''}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white shadow-brand-low transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${
+              isSuspended
+                ? 'bg-positive hover:bg-accent-600'
+                : 'bg-danger hover:bg-rose-600'
+            }`}
+          >
+            {submittingId === u.id ? '處理中...' : isSuspended ? '恢復' : '停權'}
+          </button>
+        );
+      },
+    },
+  ];
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">使用者管理</h1>
+    <div>
+      <PageHeader
+        title="使用者管理"
+        description="停權後使用者無法登入或呼叫 API；可隨時恢復"
+      />
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-          <button className="ml-2 text-red-900 underline" onClick={() => void fetchUsers()}>
-            重試
-          </button>
-        </div>
-      )}
-      {actionError && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionError}</div>
-      )}
-
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs text-gray-500">角色</label>
-          <select
-            value={roleFilter}
-            onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-          >
-            {ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-gray-500">狀態</label>
-          <select
-            value={suspendedFilter}
-            onChange={(e) => { setSuspendedFilter(e.target.value); setPage(1); }}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-          >
-            {SUSPENDED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        <form onSubmit={applySearch} className="flex items-end gap-2">
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">搜尋（姓名或 Email）</label>
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="..."
-              className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            搜尋
-          </button>
+      {/* Filters — chip groups + search */}
+      <div className="mb-6 space-y-4">
+        <FilterChips
+          label="角色"
+          value={roleFilter}
+          onChange={(v) => { setRoleFilter(v); setPage(1); }}
+          options={ROLE_CHIPS}
+        />
+        <FilterChips
+          label="狀態"
+          value={suspendedFilter}
+          onChange={(v) => { setSuspendedFilter(v); setPage(1); }}
+          options={SUSPENDED_CHIPS}
+        />
+        <form onSubmit={applySearch} className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" aria-hidden="true" />
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="搜尋姓名或 Email…"
+            className="block w-full rounded-xl border border-outline bg-white py-2 pl-10 pr-3 text-sm shadow-brand-low transition-colors placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          />
         </form>
       </div>
 
-      {loading ? (
-        <div className="text-gray-500">載入中...</div>
-      ) : users.length === 0 ? (
-        <div className="text-gray-500">沒有符合條件的使用者</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">姓名</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">角色</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">狀態</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">建立時間</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {users.map((u) => {
-                  const isSuspended = u.suspended_at !== null;
-                  const isSelf = currentAdminId !== null && u.id === currentAdminId;
-                  return (
-                    <tr key={u.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
-                        {u.name}
-                        {isSelf && <span className="ml-2 text-xs text-blue-600">（您自己）</span>}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{u.email}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {ROLE_LABELS[u.role] ?? u.role}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm">
-                        {isSuspended ? (
-                          <span className="inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
-                            已停權（{new Date(u.suspended_at as string).toLocaleDateString('zh-TW')}）
-                          </span>
-                        ) : (
-                          <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">
-                            使用中
-                          </span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {new Date(u.created_at).toLocaleDateString('zh-TW')}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right text-sm">
-                        <button
-                          disabled={isSelf || submittingId === u.id}
-                          onClick={() => void toggleSuspension(u)}
-                          title={isSelf ? '不可停權自己' : ''}
-                          className={`rounded px-3 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${
-                            isSuspended
-                              ? 'bg-green-600 hover:bg-green-700'
-                              : 'bg-red-600 hover:bg-red-700'
-                          }`}
-                        >
-                          {submittingId === u.id ? '處理中...' : (isSuspended ? '恢復' : '停權')}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <AdminTable
+        data={users}
+        columns={columns}
+        rowKey={(u) => u.id}
+        loading={loading}
+        error={error || null}
+        onRetry={() => void fetchUsers()}
+        emptyTitle="沒有符合條件的使用者"
+        sort={sort}
+        onSortChange={(s) => { setSort(s); setPage(1); }}
+        pagination={{
+          page,
+          total,
+          limit,
+          onPageChange: setPage,
+        }}
+      />
 
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-              <span>共 {total} 筆</span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  上一頁
-                </button>
-                <span className="px-2 py-1">{page} / {totalPages}</span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      <ConfirmModal
+        open={confirmTarget !== null}
+        title={
+          confirmTarget
+            ? `${confirmTarget.suspended_at === null ? '停權' : '恢復'}使用者「${confirmTarget.name}」`
+            : ''
+        }
+        description={
+          confirmTarget
+            ? confirmTarget.suspended_at === null
+              ? `停權後 ${confirmTarget.email} 將無法登入或呼叫 API。可隨時恢復。`
+              : `恢復後 ${confirmTarget.email} 將可重新登入並使用平台。`
+            : undefined
+        }
+        confirmLabel={confirmTarget?.suspended_at === null ? '停權' : '恢復'}
+        tone={confirmTarget?.suspended_at === null ? 'danger' : 'primary'}
+        submitting={submittingId === confirmTarget?.id}
+        onClose={() => setConfirmTarget(null)}
+        onConfirm={async () => {
+          if (confirmTarget) await performSuspension(confirmTarget);
+        }}
+      />
     </div>
   );
 }
+

@@ -1,7 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { Calendar, ChevronRight, MapPin } from 'lucide-react';
+import { SERVICE_REQUEST_STATUS_DISPLAY } from '@remote-care/shared';
+import {
+  AdminTable,
+  LoadingState,
+  PageHeader,
+  ServiceRequestStatusBadge,
+} from '@/components/admin';
+import type { AdminTableColumn, SortState } from '@/components/admin';
 
 interface ServiceRequest {
   id: string;
@@ -21,189 +31,202 @@ interface PaginatedResponse {
   meta: { page: number; limit: number; total: number };
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  submitted: { label: '已送出', color: 'bg-blue-100 text-blue-800' },
-  screening: { label: '審核中', color: 'bg-yellow-100 text-yellow-800' },
-  candidate_proposed: { label: '已推薦', color: 'bg-purple-100 text-purple-800' },
-  caregiver_confirmed: { label: '家屬確認', color: 'bg-indigo-100 text-indigo-800' },
-  provider_confirmed: { label: '服務者確認', color: 'bg-teal-100 text-teal-800' },
-  arranged: { label: '已安排', color: 'bg-cyan-100 text-cyan-800' },
-  in_service: { label: '服務中', color: 'bg-orange-100 text-orange-800' },
-  completed: { label: '已完成', color: 'bg-green-100 text-green-800' },
-  cancelled: { label: '已取消', color: 'bg-gray-100 text-gray-500' },
-};
+interface CategoryOption {
+  id: string;
+  name: string;
+}
 
 export default function AdminServiceRequestsPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <ServiceRequestsPageInner />
+    </Suspense>
+  );
+}
+
+function ServiceRequestsPageInner() {
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams?.get('status') ?? '';
+
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [sort, setSort] = useState<SortState>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const limit = 20;
 
-  const fetchRequests = useCallback(
-    async (p: number, status: string) => {
-      setLoading(true);
-      setError('');
+  // Load service-category options once for the filter dropdown.
+  useEffect(() => {
+    void (async () => {
       try {
-        const params = new URLSearchParams({ page: String(p), limit: String(limit) });
-        if (status) params.set('status', status);
-        const res = await fetch(`/api/v1/service-requests?${params}`);
-        const json = (await res.json()) as PaginatedResponse;
-        if (json.success) {
-          setRequests(json.data);
-          setTotal(json.meta.total);
-        } else {
-          setError('載入失敗');
-        }
-      } catch {
-        setError('網路錯誤');
-      } finally {
-        setLoading(false);
+        const res = await fetch('/api/v1/admin/service-categories?limit=100');
+        const json = (await res.json()) as { success: boolean; data: CategoryOption[] };
+        if (json.success) setCategories(json.data ?? []);
+      } catch { /* non-fatal */ }
+    })();
+  }, []);
+
+  const fetchRequests = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (statusFilter) params.set('status', statusFilter);
+      if (categoryFilter) params.set('category_id', categoryFilter);
+      if (sort) params.set('sort', `${sort.key}:${sort.order}`);
+      const res = await fetch(`/api/v1/service-requests?${params}`);
+      const json = (await res.json()) as PaginatedResponse;
+      if (json.success) {
+        setRequests(json.data);
+        setTotal(json.meta.total);
+      } else {
+        setError('載入失敗');
       }
-    },
-    [],
-  );
+    } catch {
+      setError('網路錯誤');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, statusFilter, categoryFilter, sort]);
 
   useEffect(() => {
-    void fetchRequests(page, statusFilter);
-  }, [page, statusFilter, fetchRequests]);
+    void fetchRequests();
+  }, [fetchRequests]);
 
-  const totalPages = Math.ceil(total / limit);
+  const columns: AdminTableColumn<ServiceRequest>[] = [
+    {
+      key: 'status',
+      header: '狀態',
+      sortKey: 'status',
+      cell: (r) => <ServiceRequestStatusBadge status={r.status} />,
+    },
+    {
+      key: 'category',
+      header: '服務類別',
+      cell: (r) => (
+        <div>
+          <p className="font-medium text-ink-900">{r.category.name}</p>
+          <p className="text-xs text-ink-500">{r.recipient.name}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'preferred_date',
+      header: '期望日期',
+      sortKey: 'preferred_date',
+      cell: (r) => (
+        <div className="flex items-center gap-1.5 text-ink-700">
+          <Calendar className="h-3.5 w-3.5 text-ink-500" aria-hidden="true" />
+          {new Date(r.preferred_date).toLocaleDateString('zh-TW')}
+        </div>
+      ),
+    },
+    {
+      key: 'location',
+      header: '地點',
+      whitespaceNowrap: false,
+      cellClassName: 'max-w-xs',
+      cell: (r) => (
+        <div className="flex items-start gap-1.5">
+          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-500" aria-hidden="true" />
+          <span className="truncate text-ink-700">{r.location}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'created_at',
+      header: '建立時間',
+      sortKey: 'created_at',
+      cell: (r) => <span className="text-ink-500">{new Date(r.created_at).toLocaleDateString('zh-TW')}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      cell: (r) => (
+        <Link
+          href={`/admin/service-requests/${r.id}`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 hover:underline"
+        >
+          查看
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      ),
+    },
+  ];
+
+  const statusOptions = [
+    { value: '', label: '全部狀態' },
+    ...Object.entries(SERVICE_REQUEST_STATUS_DISPLAY).map(([key, { label }]) => ({
+      value: key,
+      label,
+    })),
+  ];
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">服務需求管理</h1>
+    <div>
+      <PageHeader
+        title="服務需求管理"
+        description="審核需求、推薦候選人、追蹤狀態，必要時可強制取消"
+      />
 
-      <div className="mb-4">
-        <select
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(1);
-          }}
-          className="rounded border border-gray-300 px-3 py-2 text-sm"
-        >
-          <option value="">全部狀態</option>
-          {Object.entries(STATUS_LABELS).map(([key, { label }]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
+      {/* Filters — status + category side by side */}
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-500">狀態</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-outline bg-white px-3 py-1.5 text-sm shadow-brand-low focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          >
+            {statusOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-500">服務類別</label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-outline bg-white px-3 py-1.5 text-sm shadow-brand-low focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          >
+            <option value="">全部類別</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-          <button
-            className="ml-2 text-red-900 underline"
-            onClick={() => void fetchRequests(page, statusFilter)}
-          >
-            重試
-          </button>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="text-gray-500">載入中...</div>
-      ) : requests.length === 0 ? (
-        <div className="text-gray-500">目前沒有服務需求</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">狀態</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                    服務類別
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                    被照護者
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                    期望日期
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">地點</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
-                    建立時間
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {requests.map((req) => {
-                  const statusInfo = STATUS_LABELS[req.status] ?? {
-                    label: req.status,
-                    color: 'bg-gray-100 text-gray-600',
-                  };
-                  return (
-                    <tr key={req.id}>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo.color}`}
-                        >
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                        {req.category.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {req.recipient.name}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {new Date(req.preferred_date).toLocaleDateString('zh-TW')}
-                      </td>
-                      <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-600">
-                        {req.location}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                        {new Date(req.created_at).toLocaleDateString('zh-TW')}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-sm">
-                        <Link
-                          href={`/admin/service-requests/${req.id}`}
-                          className="text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          查看
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-              <span>共 {total} 筆</span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  上一頁
-                </button>
-                <span className="px-2 py-1">
-                  {page} / {totalPages}
-                </span>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded border px-3 py-1 disabled:opacity-50"
-                >
-                  下一頁
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      <AdminTable
+        data={requests}
+        columns={columns}
+        rowKey={(r) => r.id}
+        loading={loading}
+        error={error || null}
+        onRetry={() => void fetchRequests()}
+        emptyTitle="目前沒有符合條件的服務需求"
+        emptyDescription={!statusFilter && !categoryFilter ? '委託人從 App 建立需求單後會出現在這裡' : undefined}
+        sort={sort}
+        onSortChange={(s) => { setSort(s); setPage(1); }}
+        pagination={{
+          page,
+          total,
+          limit,
+          onPageChange: setPage,
+        }}
+      />
     </div>
   );
 }

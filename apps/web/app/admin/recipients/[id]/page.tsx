@@ -4,20 +4,34 @@
  * Two purposes:
  *   1. View full recipient state (mirrors mobile edit screen content)
  *   2. Override patient binding — fix mistakes caregivers can't (e.g. wrong patient bound)
- *
- * Patient binding flow:
- *   - Read-only "current binding" pill (email + patient name) when bound
- *   - Search box invokes typeahead (debounced) against /api/v1/admin/users?role=patient&search=
- *   - Selecting a result fills the email field; Submit → PUT /admin/recipients/[id]
- *   - "解除連結" button → submit `patient_user_email: null`
- *
- * Edits to other recipient fields use the same PUT endpoint with partial body.
  */
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Calendar,
+  Check,
+  Heart,
+  Link2,
+  Link2Off,
+  MapPin,
+  Phone,
+  Search,
+  StickyNote,
+  UserCircle,
+} from 'lucide-react';
+import {
+  Avatar,
+  ConfirmModal,
+  ErrorBanner,
+  Field,
+  LoadingState,
+  SectionCard,
+  useToast,
+} from '@/components/admin';
 
 interface LifestyleHabits {
   water_intake?: string;
@@ -39,7 +53,6 @@ interface Recipient {
   gender: 'male' | 'female' | 'other' | null;
   relationship: string | null;
   medical_tags: string[];
-  // Always returned by formatRecipient (default `{}` when not set).
   lifestyle_habits: LifestyleHabits;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
@@ -78,22 +91,27 @@ const RELATIONSHIP_LABELS: Record<string, string> = {
   other: '其他',
 };
 
+const GENDER_LABELS: Record<string, string> = {
+  male: '男',
+  female: '女',
+  other: '其他',
+};
+
 export default function AdminRecipientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { showToast } = useToast();
 
   const [recipient, setRecipient] = useState<RecipientWithCaregiver | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [actionError, setActionError] = useState('');
-  const [actionSuccess, setActionSuccess] = useState('');
 
-  // Patient binding state — separate from main edit form so binding has its own submit cycle.
   const [bindEmail, setBindEmail] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PatientUser[]>([]);
   const [searching, setSearching] = useState(false);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -101,8 +119,6 @@ export default function AdminRecipientDetailPage() {
     setLoading(true);
     setError('');
     try {
-      // Read via /api/v1/recipients/[id] (admin role passes through; this endpoint already
-      // returns include patient_user). Avoid /admin/recipients (list-only) for individual fetch.
       const res = await fetch(`/api/v1/recipients/${id}`);
       const json = (await res.json()) as { success: boolean; data: RecipientWithCaregiver; error?: { message: string } };
       if (json.success) {
@@ -121,7 +137,6 @@ export default function AdminRecipientDetailPage() {
     void fetchRecipient();
   }, [fetchRecipient]);
 
-  // Debounced typeahead search against admin/users.
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
@@ -150,17 +165,13 @@ export default function AdminRecipientDetailPage() {
         limit: '10',
         suspended: 'false',
       });
-      const res = await fetch(`/api/v1/admin/users?${params.toString()}`, {
-        signal: controller.signal,
-      });
+      const res = await fetch(`/api/v1/admin/users?${params.toString()}`, { signal: controller.signal });
       const json = (await res.json()) as { success: boolean; data: PatientUser[] };
       if (json.success) {
         setSearchResults(json.data ?? []);
       }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        setSearchResults([]);
-      }
+      if ((err as Error).name !== 'AbortError') setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -169,8 +180,6 @@ export default function AdminRecipientDetailPage() {
   async function submitBinding(emailOrNull: string | null) {
     if (!recipient) return;
     setSubmitting(true);
-    setActionError('');
-    setActionSuccess('');
     try {
       const res = await fetch(`/api/v1/admin/recipients/${id}`, {
         method: 'PUT',
@@ -183,180 +192,205 @@ export default function AdminRecipientDetailPage() {
         setBindEmail('');
         setSearchQuery('');
         setSearchResults([]);
-        setActionSuccess(emailOrNull ? '已連結被照護者帳號' : '已解除連結');
+        showToast({
+          tone: 'success',
+          message: emailOrNull ? '已連結被照護者帳號' : '已解除連結',
+        });
       } else {
-        setActionError(json.error?.message ?? '操作失敗');
+        showToast({ tone: 'error', message: json.error?.message ?? '操作失敗' });
       }
     } catch {
-      setActionError('網路錯誤');
+      showToast({ tone: 'error', message: '網路錯誤' });
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (loading) {
-    return <div className="p-6 text-gray-500">載入中...</div>;
-  }
+  if (loading) return <LoadingState />;
 
   if (error || !recipient) {
     return (
-      <div className="p-6">
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error || '找不到此被照護者'}
-        </div>
-        <button onClick={() => router.back()} className="mt-4 text-blue-600 hover:underline">
+      <div>
+        <ErrorBanner message={error || '找不到此被照護者'} />
+        <button
+          onClick={() => router.back()}
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" />
           返回列表
         </button>
       </div>
     );
   }
 
+  const lh = recipient.lifestyle_habits ?? {};
+  const habitParts: string[] = [];
+  if (lh.water_intake) habitParts.push(`喝水量：${lh.water_intake}`);
+  if (lh.exercise_frequency) habitParts.push(`運動頻次：${lh.exercise_frequency}`);
+  if (lh.exercise_intensity) habitParts.push(`運動強度：${lh.exercise_intensity}`);
+  if (lh.starch_intake) habitParts.push(`澱粉：${lh.starch_intake}`);
+  if (lh.protein_intake) habitParts.push(`蛋白質：${lh.protein_intake}`);
+  const habitSummary = lh.manager_fill ? '由健康管家代填中' : (habitParts.length > 0 ? habitParts.join('；') : null);
+
   return (
-    <div className="p-6">
-      <Link href="/admin/recipients" className="mb-4 inline-block text-sm text-blue-600 hover:underline">
-        &larr; 返回列表
+    <div>
+      <Link href="/admin/recipients" className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-ink-500 transition-colors hover:text-brand-600">
+        <ArrowLeft className="h-4 w-4" />
+        返回列表
       </Link>
 
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">{recipient.name}</h1>
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-2xl border border-outline bg-hero-gradient p-8 shadow-brand-low">
+        <div className="flex flex-wrap items-center gap-6">
+          <Avatar name={recipient.name} size="lg" ring />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-3xl font-bold text-ink-900">{recipient.name}</h1>
+            <p className="mt-1 text-sm text-ink-700">
+              {recipient.gender ? GENDER_LABELS[recipient.gender] : '—'}
+              {recipient.date_of_birth && ` ・ ${recipient.date_of_birth}`}
+              {recipient.relationship && ` ・ ${RELATIONSHIP_LABELS[recipient.relationship] ?? recipient.relationship}`}
+            </p>
+            {recipient.medical_tags.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {recipient.medical_tags.map((tag) => (
+                  <span key={tag} className="inline-block rounded-md bg-white/70 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-brand-100">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          {recipient.patient_user_email ? (
+            <div className="rounded-xl bg-positive-soft px-3 py-2 text-sm text-positive">
+              <p className="text-[10px] font-semibold uppercase tracking-wider">已連結帳號</p>
+              <p className="mt-0.5 font-medium">{recipient.patient_user_email}</p>
+            </div>
+          ) : (
+            <span className="rounded-xl bg-warning-soft px-3 py-2 text-sm text-warning">尚未連結帳號</span>
+          )}
+        </div>
+      </section>
 
-      {actionError && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{actionError}</div>
-      )}
-      {actionSuccess && (
-        <div className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-700">{actionSuccess}</div>
-      )}
-
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Basic information (read-only summary) */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">基本資料</h2>
-          <dl className="space-y-3 text-sm">
-            <Row label="姓名" value={recipient.name} />
-            <Row label="性別" value={
-              recipient.gender === 'male' ? '男' :
-                recipient.gender === 'female' ? '女' :
-                  recipient.gender === 'other' ? '其他' : null
-            } />
-            <Row label="生日" value={recipient.date_of_birth} />
-            <Row label="與委託人關係" value={
-              recipient.relationship ? (RELATIONSHIP_LABELS[recipient.relationship] ?? recipient.relationship) : null
-            } />
-            <Row label="地址" value={recipient.address} />
-            {/* G11: schema column kept as emergency_contact_*; UI label changed to 主要聯絡人 per PDF. */}
-            <Row label="主要聯絡人" value={
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/* Basic info */}
+        <SectionCard icon={UserCircle} title="基本資料">
+          <dl className="space-y-4 text-sm">
+            <Field icon={MapPin}  label="地址"          value={recipient.address} />
+            <Field icon={Phone}   label="主要聯絡人"    value={
               recipient.emergency_contact_name && recipient.emergency_contact_phone
                 ? `${recipient.emergency_contact_name}（${recipient.emergency_contact_phone}）`
                 : (recipient.emergency_contact_name ?? recipient.emergency_contact_phone ?? null)
             } />
-            <div>
-              <dt className="text-gray-500">疾病標籤</dt>
-              <dd className="mt-1 flex flex-wrap gap-1">
-                {recipient.medical_tags.length > 0 ? (
-                  recipient.medical_tags.map((tag) => (
-                    <span key={tag} className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">{tag}</span>
-                  ))
-                ) : <span className="text-gray-400">-</span>}
-              </dd>
-            </div>
-            <Row label="備註" value={recipient.notes} />
-            {/* Lifestyle habits — show summary when any field set or manager_fill flagged. */}
-            {(() => {
-              const lh = recipient.lifestyle_habits ?? {};
-              if (lh.manager_fill === true) {
-                return <Row label="生活習慣" value="由健康管家代填中" />;
-              }
-              const parts: string[] = [];
-              if (lh.water_intake) parts.push(`喝水量：${lh.water_intake}`);
-              if (lh.exercise_frequency) parts.push(`運動頻次：${lh.exercise_frequency}`);
-              if (lh.exercise_intensity) parts.push(`運動強度：${lh.exercise_intensity}`);
-              if (lh.starch_intake) parts.push(`澱粉：${lh.starch_intake}`);
-              if (lh.protein_intake) parts.push(`蛋白質：${lh.protein_intake}`);
-              if (parts.length === 0) return null;
-              return <Row label="生活習慣" value={parts.join('；')} />;
-            })()}
-            <Row label="建立時間" value={new Date(recipient.created_at).toLocaleString('zh-TW')} />
+            <Field icon={Heart}   label="生活習慣"      value={habitSummary} />
+            <Field icon={StickyNote} label="備註"        value={recipient.notes} />
+            <Field icon={Calendar} label="建立時間"     value={new Date(recipient.created_at).toLocaleString('zh-TW')} />
           </dl>
-        </div>
+        </SectionCard>
 
-        {/* Patient binding override (admin tool) */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">連結被照護者帳號</h2>
-
+        {/* Patient binding */}
+        <SectionCard icon={Link2} title="連結被照護者帳號">
           {recipient.patient_user_email ? (
-            <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-green-700">已連結</div>
-              <div className="mt-1 font-medium text-green-900">
-                {recipient.patient_user_name ?? '(無名稱)'}（{recipient.patient_user_email}）
+            <div className="mb-4 rounded-xl border border-positive/30 bg-positive-soft p-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-positive text-white">
+                  <Check className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-accent-700">已連結帳號</p>
+                  <p className="mt-0.5 text-sm font-medium text-ink-900">
+                    {recipient.patient_user_name ?? '(無名稱)'}
+                  </p>
+                  <p className="text-xs text-ink-700">{recipient.patient_user_email}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setUnlinkOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-danger ring-1 ring-danger/20 transition-colors hover:bg-danger-soft disabled:opacity-50"
+                >
+                  <Link2Off className="h-3.5 w-3.5" />
+                  解除連結
+                </button>
               </div>
-              <button
-                disabled={submitting}
-                onClick={() => void submitBinding(null)}
-                className="mt-3 rounded bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50"
-              >
-                {submitting ? '處理中...' : '解除連結'}
-              </button>
             </div>
           ) : (
-            <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-500">
+            <div className="mb-4 rounded-xl border border-dashed border-outline-strong bg-surface-subtle p-4 text-sm text-ink-500">
               此被照護者尚未連結任何帳號
             </div>
           )}
 
-          <label className="mb-1 block text-sm text-gray-600">
-            搜尋被照護者帳號（依姓名或 Email）
-          </label>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="輸入至少 2 個字元..."
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-          />
-          {searching && <div className="mt-2 text-xs text-gray-400">搜尋中...</div>}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜尋帳號姓名或 Email…（至少 2 字元）"
+              className="block w-full rounded-xl border border-outline bg-white py-2.5 pl-10 pr-3 text-sm shadow-brand-low transition-colors placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            />
+          </div>
+
+          {searching && (
+            <p className="mt-2 text-xs text-ink-500">搜尋中…</p>
+          )}
           {!searching && searchResults.length > 0 && (
-            <ul className="mt-2 max-h-48 overflow-y-auto rounded border border-gray-200">
+            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-outline bg-white p-1">
               {searchResults.map((u) => (
                 <li
                   key={u.id}
-                  className={`cursor-pointer px-3 py-2 text-sm hover:bg-blue-50 ${
-                    bindEmail === u.email ? 'bg-blue-50' : ''
+                  className={`cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors ${
+                    bindEmail === u.email ? 'bg-brand-50' : 'hover:bg-surface-alt'
                   }`}
                   onClick={() => setBindEmail(u.email)}
                 >
-                  <div className="font-medium text-gray-900">{u.name}</div>
-                  <div className="text-xs text-gray-500">{u.email}</div>
+                  <div className="font-medium text-ink-900">{u.name}</div>
+                  <div className="text-xs text-ink-500">{u.email}</div>
                 </li>
               ))}
             </ul>
           )}
           {!searching && searchQuery.length >= 2 && searchResults.length === 0 && (
-            <div className="mt-2 text-xs text-gray-400">查無符合的被照護者帳號</div>
+            <p className="mt-2 text-xs text-ink-500">查無符合的被照護者帳號</p>
           )}
 
           {bindEmail && (
-            <div className="mt-3 rounded border border-blue-200 bg-blue-50 p-2 text-sm">
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">
+              <Check className="h-3.5 w-3.5" />
               已選：<span className="font-medium">{bindEmail}</span>
             </div>
           )}
 
           <button
+            type="button"
             disabled={submitting || !bindEmail || bindEmail === recipient.patient_user_email}
             onClick={() => void submitBinding(bindEmail)}
-            className="mt-3 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-brand-md transition-all duration-150 hover:bg-brand-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <Link2 className="h-4 w-4" />
             {submitting ? '套用中...' : '套用連結'}
           </button>
-        </div>
+        </SectionCard>
       </div>
+
+      <ConfirmModal
+        open={unlinkOpen}
+        title={`解除「${recipient.name}」的帳號連結`}
+        description={
+          recipient.patient_user_email
+            ? `解除後 ${recipient.patient_user_email}（${recipient.patient_user_name ?? '此被照護者'}）將無法再從 App 看到自己的健康資料。可隨時重新連結。`
+            : undefined
+        }
+        confirmLabel="解除連結"
+        tone="danger"
+        submitting={submitting}
+        onClose={() => setUnlinkOpen(false)}
+        onConfirm={async () => {
+          await submitBinding(null);
+          setUnlinkOpen(false);
+        }}
+      />
+
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div>
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="text-gray-900">{value || <span className="text-gray-400">-</span>}</dd>
-    </div>
-  );
-}

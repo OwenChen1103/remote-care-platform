@@ -1,6 +1,30 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import {
+  Activity,
+  AlertCircle,
+  Calendar,
+  ClipboardList,
+  Eye,
+  Heart,
+  Info,
+  Mail,
+  Phone,
+  Stethoscope,
+  User,
+  UserCircle,
+} from 'lucide-react';
+import { PROVIDER_LEVEL_DISPLAY } from '@remote-care/shared';
+import {
+  Avatar,
+  LoadingState,
+  PageHeader,
+  ProviderAvailabilityBadge,
+  ProviderReviewStatusBadge,
+  SectionCard,
+  ServiceRequestStatusBadge,
+} from '@/components/admin';
 
 interface UserOption {
   id: string;
@@ -11,13 +35,10 @@ interface UserOption {
 
 interface PreviewData {
   user: { id: string; name: string; email: string; role: string; phone: string | null };
-  // Caregiver
   recipients?: { id: string; name: string; date_of_birth: string | null; medical_tags: string[] }[];
   recent_requests?: { id: string; status: string; category_name: string; recipient_name: string; created_at: string }[];
-  // Patient
   recipient?: { id: string; name: string; date_of_birth: string | null; medical_tags: string[] } | null;
   recent_measurements?: { id: string; type: string; systolic: number | null; diastolic: number | null; glucose_value: number | null; is_abnormal: boolean; measured_at: string }[];
-  // Provider
   provider?: { id: string; name: string; level: string; review_status: string; specialties: string[]; certifications: string[]; availability_status: string } | null;
   recent_tasks?: { id: string; status: string; category_name: string; recipient_name: string; created_at: string }[];
 }
@@ -28,10 +49,15 @@ const ROLE_LABELS: Record<string, string> = {
   provider: '服務人員',
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  submitted: '已送出', screening: '審核中', candidate_proposed: '已推薦',
-  caregiver_confirmed: '家屬確認', provider_confirmed: '服務者確認',
-  arranged: '已安排', in_service: '服務中', completed: '已完成', cancelled: '已取消',
+// Typed Record over the known role keys so noUncheckedIndexedAccess doesn't
+// require optional-chaining at every lookup site.
+const ROLE_CONFIG: Record<
+  'caregiver' | 'patient' | 'provider',
+  { Icon: React.ComponentType<{ className?: string }>; gradient: string }
+> = {
+  caregiver: { Icon: User,        gradient: 'from-brand-500 to-brand-400' },
+  patient:   { Icon: Heart,       gradient: 'from-accent-500 to-accent-400' },
+  provider:  { Icon: Stethoscope, gradient: 'from-brand-600 to-accent-500' },
 };
 
 export default function AdminPreviewPage() {
@@ -66,6 +92,12 @@ export default function AdminPreviewPage() {
     ? users.filter((u) => u.role === selectedRole)
     : users;
 
+  // Count users per role for the role-picker cards.
+  const counts = users.reduce<Record<string, number>>((acc, u) => {
+    acc[u.role] = (acc[u.role] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const handleUserSelect = (userId: string) => {
     setSelectedUserId(userId);
     if (userId) void fetchPreview(userId);
@@ -74,193 +106,309 @@ export default function AdminPreviewPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">角色資料預覽</h1>
-      <p className="mb-6 text-sm text-gray-500">以管理員身份查看各角色帳號的核心資料（唯讀）。</p>
+      <PageHeader
+        title="角色資料預覽"
+        description="以管理員身份查看各角色帳號的核心資料（唯讀）"
+      />
 
-      {/* Selector */}
-      <div className="mb-6 flex flex-wrap gap-4">
-        <div>
-          <label className="mb-1 block text-sm text-gray-600">角色篩選</label>
-          <select
-            value={selectedRole}
-            onChange={(e) => { setSelectedRole(e.target.value); setSelectedUserId(''); setPreview(null); }}
-            className="rounded border border-gray-300 px-3 py-2 text-sm"
-          >
-            <option value="">全部角色</option>
-            {Object.entries(ROLE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+      {/* Slim privacy notice */}
+      <div className="mb-6 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning">
+        <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span>提醒：每次預覽會記錄至審核日誌</span>
+      </div>
+
+      {/* Role picker — 3 prominent cards */}
+      <section className="mb-6">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-500">選擇角色</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {(['caregiver', 'patient', 'provider'] as const).map((role) => {
+            const config = ROLE_CONFIG[role];
+            const Icon = config.Icon;
+            const active = selectedRole === role;
+            return (
+              <button
+                key={role}
+                type="button"
+                onClick={() => {
+                  setSelectedRole(active ? '' : role);
+                  setSelectedUserId('');
+                  setPreview(null);
+                }}
+                className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-200 ${
+                  active
+                    ? `border-transparent bg-gradient-to-br ${config.gradient} text-white shadow-brand-md`
+                    : 'border-outline bg-white hover:border-brand-200 hover:shadow-brand-low'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-sm font-medium ${active ? 'text-white/90' : 'text-ink-500'}`}>
+                      {ROLE_LABELS[role]}
+                    </p>
+                    <p className={`mt-1 text-2xl font-bold ${active ? 'text-white' : 'text-ink-900'}`}>
+                      {counts[role] ?? 0}
+                      <span className={`ml-1 text-xs font-normal ${active ? 'text-white/80' : 'text-ink-500'}`}>位帳號</span>
+                    </p>
+                  </div>
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                      active ? 'bg-white/20' : 'bg-brand-50 group-hover:bg-brand-100'
+                    }`}
+                  >
+                    <Icon className={`h-6 w-6 ${active ? 'text-white' : 'text-brand-600'}`} />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
-        <div>
-          <label className="mb-1 block text-sm text-gray-600">選擇帳號</label>
+      </section>
+
+      {/* Account picker — appears after role is chosen */}
+      {selectedRole && (
+        <section className="mb-6">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-ink-500">
+            選擇帳號
+          </label>
           <select
             value={selectedUserId}
             onChange={(e) => handleUserSelect(e.target.value)}
-            className="rounded border border-gray-300 px-3 py-2 text-sm"
+            className="block w-full max-w-md rounded-xl border border-outline bg-white px-3 py-2.5 text-sm shadow-brand-low focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
           >
-            <option value="">— 選擇帳號 —</option>
+            <option value="">— 選擇 {ROLE_LABELS[selectedRole]} 帳號 —</option>
             {filteredUsers.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.name}（{ROLE_LABELS[u.role] ?? u.role}）{u.email}
+                {u.name}（{u.email}）
               </option>
             ))}
           </select>
-        </div>
-      </div>
+        </section>
+      )}
 
-      {/* Loading */}
-      {loading && <div className="text-sm text-gray-400">載入中...</div>}
+      {loading && <LoadingState />}
 
-      {/* Preview Content */}
       {preview && (
-        <div className="space-y-6">
-          {/* User Info */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="mb-3 text-lg font-semibold text-gray-900">帳號資訊</h2>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-              <div><dt className="text-gray-500">姓名</dt><dd className="font-medium text-gray-900">{preview.user.name}</dd></div>
-              <div><dt className="text-gray-500">Email</dt><dd className="text-gray-900">{preview.user.email}</dd></div>
-              <div><dt className="text-gray-500">角色</dt><dd className="text-gray-900">{ROLE_LABELS[preview.user.role] ?? preview.user.role}</dd></div>
-              <div><dt className="text-gray-500">電話</dt><dd className="text-gray-900">{preview.user.phone ?? '-'}</dd></div>
-            </dl>
+        <>
+          {/* Currently-previewing banner */}
+          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50 p-4">
+            <Avatar name={preview.user.name} size="md" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-brand-700">正在預覽</p>
+              <p className="text-base font-bold text-ink-900">
+                {ROLE_LABELS[preview.user.role] ?? preview.user.role}：{preview.user.name}
+              </p>
+              <p className="text-sm text-ink-700">{preview.user.email}</p>
+            </div>
+            <Eye className="h-5 w-5 text-brand-500" aria-hidden="true" />
           </div>
 
-          {/* Caregiver Preview */}
-          {preview.recipients && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">
-                被照護者（{preview.recipients.length} 位）
-              </h2>
-              {preview.recipients.length === 0 ? (
-                <p className="text-sm text-gray-400">尚無被照護者</p>
-              ) : (
-                <div className="space-y-3">
-                  {preview.recipients.map((r) => (
-                    <div key={r.id} className="flex items-center gap-3 rounded bg-gray-50 px-4 py-3">
-                      <span className="font-medium text-gray-900">{r.name}</span>
-                      {r.date_of_birth && <span className="text-xs text-gray-500">{r.date_of_birth}</span>}
-                      {((r.medical_tags ?? []) as string[]).map((t) => (
-                        <span key={t} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{t}</span>
+          <div className="space-y-6">
+            {/* Account meta */}
+            <SectionCard icon={UserCircle} title="帳號資訊">
+              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <MetaField icon={User}  label="姓名" value={preview.user.name} />
+                <MetaField icon={Mail}  label="Email" value={preview.user.email} />
+                <MetaField icon={User}  label="角色" value={ROLE_LABELS[preview.user.role] ?? preview.user.role} />
+                <MetaField icon={Phone} label="電話" value={preview.user.phone} />
+              </dl>
+            </SectionCard>
+
+            {/* Caregiver */}
+            {preview.recipients && (
+              <SectionCard
+                icon={Heart}
+                title={`被照護者（${preview.recipients.length} 位）`}
+              >
+                {preview.recipients.length === 0 ? (
+                  <p className="text-sm text-ink-500">尚無被照護者</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {preview.recipients.map((r) => (
+                      <li key={r.id} className="flex items-center gap-3 rounded-xl bg-surface-alt px-4 py-3">
+                        <Avatar name={r.name} size="md" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-ink-900">{r.name}</p>
+                          <p className="text-xs text-ink-500">
+                            {r.date_of_birth ?? '生日未提供'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {(r.medical_tags ?? []).slice(0, 3).map((t) => (
+                            <span key={t} className="inline-block rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
+            )}
+
+            {preview.recent_requests && (
+              <SectionCard icon={ClipboardList} title="近期服務需求">
+                {preview.recent_requests.length === 0 ? (
+                  <p className="text-sm text-ink-500">尚無需求單</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {preview.recent_requests.map((r) => (
+                      <li key={r.id} className="flex items-center gap-3 rounded-xl bg-surface-alt px-4 py-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                          <ClipboardList className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-ink-900">{r.category_name}</p>
+                          <p className="text-xs text-ink-500">{r.recipient_name}</p>
+                        </div>
+                        <div className="text-right">
+                          <ServiceRequestStatusBadge status={r.status} />
+                          <p className="mt-1 text-xs text-ink-500">{new Date(r.created_at).toLocaleDateString('zh-TW')}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
+            )}
+
+            {/* Patient */}
+            {preview.user.role === 'patient' && (
+              <SectionCard icon={Heart} title="綁定的被照護者">
+                {preview.recipient ? (
+                  <div className="flex items-center gap-3 rounded-xl bg-surface-alt px-4 py-3">
+                    <Avatar name={preview.recipient.name} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-ink-900">{preview.recipient.name}</p>
+                      <p className="text-xs text-ink-500">{preview.recipient.date_of_birth ?? '生日未提供'}</p>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {(preview.recipient.medical_tags ?? []).map((t) => (
+                        <span key={t} className="inline-block rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t}</span>
                       ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink-500">尚未綁定</p>
+                )}
+              </SectionCard>
+            )}
 
-          {preview.recent_requests && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">近期服務需求</h2>
-              {preview.recent_requests.length === 0 ? (
-                <p className="text-sm text-gray-400">尚無需求單</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b text-left text-gray-500">
-                    <th className="pb-2">類別</th><th className="pb-2">被照護者</th>
-                    <th className="pb-2">狀態</th><th className="pb-2">建立時間</th>
-                  </tr></thead>
-                  <tbody>
-                    {preview.recent_requests.map((r) => (
-                      <tr key={r.id} className="border-b border-gray-100">
-                        <td className="py-2 font-medium text-gray-900">{r.category_name}</td>
-                        <td className="py-2 text-gray-600">{r.recipient_name}</td>
-                        <td className="py-2">{STATUS_LABELS[r.status] ?? r.status}</td>
-                        <td className="py-2 text-gray-400">{new Date(r.created_at).toLocaleDateString('zh-TW')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* Patient Preview */}
-          {preview.user.role === 'patient' && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">綁定的被照護者</h2>
-              {preview.recipient ? (
-                <div className="flex items-center gap-3 rounded bg-gray-50 px-4 py-3">
-                  <span className="font-medium text-gray-900">{preview.recipient.name}</span>
-                  {preview.recipient.date_of_birth && <span className="text-xs text-gray-500">{preview.recipient.date_of_birth}</span>}
-                  {((preview.recipient.medical_tags ?? []) as string[]).map((t) => (
-                    <span key={t} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{t}</span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">尚未綁定</p>
-              )}
-            </div>
-          )}
-
-          {preview.recent_measurements && preview.recent_measurements.length > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">近期量測</h2>
-              <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-gray-500">
-                  <th className="pb-2">類型</th><th className="pb-2">數值</th>
-                  <th className="pb-2">異常</th><th className="pb-2">時間</th>
-                </tr></thead>
-                <tbody>
+            {preview.recent_measurements && preview.recent_measurements.length > 0 && (
+              <SectionCard icon={Activity} title="近期量測">
+                <ul className="space-y-2">
                   {preview.recent_measurements.map((m) => (
-                    <tr key={m.id} className="border-b border-gray-100">
-                      <td className="py-2">{m.type === 'blood_pressure' ? '血壓' : '血糖'}</td>
-                      <td className="py-2 font-medium">
-                        {m.type === 'blood_pressure' ? `${m.systolic}/${m.diastolic} mmHg` : `${m.glucose_value} mg/dL`}
-                      </td>
-                      <td className="py-2">{m.is_abnormal ? <span className="text-red-600">異常</span> : '正常'}</td>
-                      <td className="py-2 text-gray-400">{new Date(m.measured_at).toLocaleDateString('zh-TW')}</td>
-                    </tr>
+                    <li
+                      key={m.id}
+                      className={`flex items-center gap-3 rounded-xl px-4 py-3 ${
+                        m.is_abnormal ? 'bg-danger-soft' : 'bg-surface-alt'
+                      }`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          m.is_abnormal ? 'bg-danger text-white' : 'bg-brand-100 text-brand-700'
+                        }`}
+                      >
+                        {m.is_abnormal ? <AlertCircle className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-ink-900">
+                          {m.type === 'blood_pressure' ? '血壓' : '血糖'}
+                          <span className="ml-2 text-sm font-normal text-ink-700">
+                            {m.type === 'blood_pressure'
+                              ? `${m.systolic}/${m.diastolic} mmHg`
+                              : `${m.glucose_value} mg/dL`}
+                          </span>
+                        </p>
+                        <p className="text-xs text-ink-500 inline-flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(m.measured_at).toLocaleDateString('zh-TW')}
+                        </p>
+                      </div>
+                      {m.is_abnormal && (
+                        <span className="rounded-md bg-danger px-2 py-0.5 text-xs font-medium text-white">異常</span>
+                      )}
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </ul>
+              </SectionCard>
+            )}
 
-          {/* Provider Preview */}
-          {preview.provider && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">服務人員資料</h2>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-                <div><dt className="text-gray-500">等級</dt><dd className="text-gray-900">{preview.provider.level}</dd></div>
-                <div><dt className="text-gray-500">審核狀態</dt><dd className="text-gray-900">{preview.provider.review_status}</dd></div>
-                <div><dt className="text-gray-500">接案狀態</dt><dd className="text-gray-900">{preview.provider.availability_status}</dd></div>
-              </dl>
-              {((preview.provider.specialties ?? []) as string[]).length > 0 && (
-                <div className="mt-3">
-                  <span className="text-sm text-gray-500">專業：</span>
-                  {((preview.provider.specialties ?? []) as string[]).map((s) => (
-                    <span key={s} className="ml-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{s}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+            {/* Provider */}
+            {preview.provider && (
+              <SectionCard icon={Stethoscope} title="服務人員資料">
+                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <MetaField
+                    icon={Stethoscope}
+                    label="等級"
+                    value={PROVIDER_LEVEL_DISPLAY[preview.provider.level]?.label ?? preview.provider.level}
+                  />
+                  <div>
+                    <p className="text-xs font-medium text-ink-500">審核狀態</p>
+                    <div className="mt-1"><ProviderReviewStatusBadge status={preview.provider.review_status} /></div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-ink-500">接案狀態</p>
+                    <div className="mt-1"><ProviderAvailabilityBadge status={preview.provider.availability_status} /></div>
+                  </div>
+                </dl>
+                {((preview.provider.specialties ?? []) as string[]).length > 0 && (
+                  <div className="mt-4">
+                    <p className="mb-2 text-xs font-medium text-ink-500">專業</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(preview.provider.specialties as string[]).map((s) => (
+                        <span key={s} className="inline-block rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </SectionCard>
+            )}
 
-          {preview.recent_tasks && preview.recent_tasks.length > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-lg font-semibold text-gray-900">近期任務</h2>
-              <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-gray-500">
-                  <th className="pb-2">類別</th><th className="pb-2">被照護者</th>
-                  <th className="pb-2">狀態</th><th className="pb-2">建立時間</th>
-                </tr></thead>
-                <tbody>
+            {preview.recent_tasks && preview.recent_tasks.length > 0 && (
+              <SectionCard icon={ClipboardList} title="近期任務">
+                <ul className="space-y-2">
                   {preview.recent_tasks.map((t) => (
-                    <tr key={t.id} className="border-b border-gray-100">
-                      <td className="py-2 font-medium text-gray-900">{t.category_name}</td>
-                      <td className="py-2 text-gray-600">{t.recipient_name}</td>
-                      <td className="py-2">{STATUS_LABELS[t.status] ?? t.status}</td>
-                      <td className="py-2 text-gray-400">{new Date(t.created_at).toLocaleDateString('zh-TW')}</td>
-                    </tr>
+                    <li key={t.id} className="flex items-center gap-3 rounded-xl bg-surface-alt px-4 py-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+                        <ClipboardList className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-ink-900">{t.category_name}</p>
+                        <p className="text-xs text-ink-500">{t.recipient_name}</p>
+                      </div>
+                      <div className="text-right">
+                        <ServiceRequestStatusBadge status={t.status} />
+                        <p className="mt-1 text-xs text-ink-500">{new Date(t.created_at).toLocaleDateString('zh-TW')}</p>
+                      </div>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                </ul>
+              </SectionCard>
+            )}
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function MetaField({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="inline-flex items-center gap-1 text-xs font-medium text-ink-500">
+        <Icon className="h-3 w-3" aria-hidden="true" />
+        {label}
+      </p>
+      <p className="mt-1 text-sm text-ink-900">{value || <span className="text-ink-300">—</span>}</p>
     </div>
   );
 }
