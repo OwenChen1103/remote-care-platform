@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -200,9 +200,14 @@ export default function HealthScreen() {
     finally { setStatsLoading(false); }
   }, [selectedRecipientId, trendType, trendPeriod]);
 
+  // All three fetches run on focus so the page reflects any newly-added
+  // measurement when the user comes back from add-measurement / trends /
+  // export. selectedRecipientId / trendType / trendPeriod live inside the
+  // useCallback closures of fetchMeasurements/fetchStats, so they re-trigger
+  // when those change as well.
   useFocusEffect(useCallback(() => { void fetchRecipients(); }, [fetchRecipients]));
-  useEffect(() => { void fetchMeasurements(); }, [fetchMeasurements]);
-  useEffect(() => { void fetchStats(); }, [fetchStats]);
+  useFocusEffect(useCallback(() => { void fetchMeasurements(); }, [fetchMeasurements]));
+  useFocusEffect(useCallback(() => { void fetchStats(); }, [fetchStats]));
 
   const latestBP = measurements.find((m) => m.type === 'blood_pressure');
   const latestBG = measurements.find((m) => m.type === 'blood_glucose');

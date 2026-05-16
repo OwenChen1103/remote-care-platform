@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -230,9 +230,15 @@ export default function RecipientDetailScreen() {
     }
   }, [recipientId]);
 
-  useEffect(() => {
-    void fetchRecipient();
-  }, [fetchRecipient]);
+  // useFocusEffect (not useEffect) so the screen re-fetches every time it
+  // regains focus — e.g. after navigating to health/add-measurement and back,
+  // the new measurement's stats / health score / AI report appear without
+  // requiring the user to pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      void fetchRecipient();
+    }, [fetchRecipient]),
+  );
 
   // ─── Loading ───────────────────────────────────────────────────
 
