@@ -72,9 +72,13 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      {/* Default headerShown: false covers the bare `index` route (auth-gate
+          spinner) and any future top-level route — without it, a Stack-default
+          header showing the segment name (e.g. "index") flashes during auth
+          loading. */}
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
       </Stack>
     </AuthProvider>
   );

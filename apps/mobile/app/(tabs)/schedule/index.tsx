@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -167,6 +168,7 @@ function NotificationIcon({ type }: { type: string }) {
 
 export default function PatientScheduleScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [serviceRecords, setServiceRecords] = useState<CompletedService[]>([]);
@@ -219,7 +221,7 @@ export default function PatientScheduleScreen() {
 
   if (error) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top }]}>
         <View style={[s.notifIconWrap, { backgroundColor: colors.dangerLight, marginBottom: spacing.md }]}>
           <IconWarning color={colors.danger} />
         </View>
@@ -236,7 +238,7 @@ export default function PatientScheduleScreen() {
   })();
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}

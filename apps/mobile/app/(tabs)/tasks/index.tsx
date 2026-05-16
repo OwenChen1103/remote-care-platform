@@ -14,6 +14,7 @@ import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { colors, typography, spacing, radius } from '@/lib/theme';
@@ -247,6 +248,7 @@ function IconHeadphones({ color = colors.warning }: { color?: string }) {
 export default function ProviderTasksScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const insets = useSafeAreaInsets();
   const [tasks, setTasks] = useState<ProviderTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -388,11 +390,11 @@ export default function ProviderTasksScreen() {
         style={s.taskCard}
         onPress={() => {
           // Section 2.9.1: caregiver_confirmed = candidate task awaiting provider's accept/reject;
-          // route to provider-confirm. Other statuses go to the regular task detail view.
+          // route to tasks/confirm. Other statuses go to the regular task detail view.
           if (item.status === 'caregiver_confirmed') {
-            router.push(`/(tabs)/services/provider-confirm?requestId=${item.id}`);
+            router.push(`/(tabs)/tasks/confirm?requestId=${item.id}`);
           } else {
-            router.push(`/(tabs)/services/provider-task-detail?taskId=${item.id}`);
+            router.push(`/(tabs)/tasks/detail?taskId=${item.id}`);
           }
         }}
         activeOpacity={0.7}
@@ -433,7 +435,7 @@ export default function ProviderTasksScreen() {
   const initial = user?.name?.charAt(0) ?? '';
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <FlatList
         data={loading ? [] : activeTasks}
         keyExtractor={(item) => item.id}
@@ -456,7 +458,7 @@ export default function ProviderTasksScreen() {
                 </View>
               </View>
               <View style={s.topRight}>
-                <TouchableOpacity style={s.iconBtn} onPress={() => router.push('/(tabs)/home/notifications')} accessibilityLabel="通知">
+                <TouchableOpacity style={s.iconBtn} onPress={() => router.push('/(tabs)/notifications')} accessibilityLabel="通知">
                   <IconBell />
                   {unreadCount > 0 && <View style={s.badge}><Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}
                 </TouchableOpacity>
@@ -604,7 +606,7 @@ export default function ProviderTasksScreen() {
                         bg: colors.primaryLight,
                         title: '完整個人資料',
                         desc: '提供完整資訊以提高媒合機率',
-                        onPress: () => router.push('/(tabs)/services/provider-profile'),
+                        onPress: () => router.push('/(tabs)/provider-profile'),
                       },
                       {
                         key: 'status',
@@ -612,7 +614,7 @@ export default function ProviderTasksScreen() {
                         bg: colors.accentLight,
                         title: '設定接案狀態',
                         desc: '切換為「可接案」以接收新案件',
-                        onPress: () => router.push('/(tabs)/services/provider-profile'),
+                        onPress: () => router.push('/(tabs)/provider-profile'),
                       },
                       {
                         key: 'support',
@@ -674,8 +676,8 @@ export default function ProviderTasksScreen() {
             <Text style={s.menuGroupLabel}>我的</Text>
             <View style={s.menuGroup}>
               {[
-                { key: 'profile', label: '個人資料', icon: <IconUserMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/services/provider-profile') },
-                { key: 'notif',   label: '通知中心', icon: <IconBellMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/home/notifications') },
+                { key: 'profile', label: '個人資料', icon: <IconUserMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/provider-profile') },
+                { key: 'notif',   label: '通知中心', icon: <IconBellMenu />, bg: colors.primaryLight, onPress: () => router.push('/(tabs)/notifications') },
                 {
                   key: 'history',
                   label: '任務歷史',

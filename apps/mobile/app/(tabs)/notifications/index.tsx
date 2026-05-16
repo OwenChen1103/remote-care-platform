@@ -8,6 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
@@ -159,6 +160,7 @@ function buildSections(notifications: Notification[]): ListSection[] {
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -208,7 +210,7 @@ export default function NotificationsScreen() {
 
   if (error) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top }]}>
         <ErrorState message={error} onRetry={() => void loadInitial()} />
       </View>
     );
@@ -217,7 +219,7 @@ export default function NotificationsScreen() {
   const sections = buildSections(notifications);
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       {/* Top action bar — only show when there are unread items */}
       {unreadCount > 0 && (
         <View style={s.topBar}>

@@ -15,6 +15,7 @@ import {
   UIManager,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 // Enable LayoutAnimation on Android
@@ -190,6 +191,10 @@ const SERVICE_ICONS: Record<string, (props: { size: number; color: string }) => 
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  // Top inset — the per-tab Stack's `index` screen runs headerless (its own
+  // in-content header), so we pad the container manually to avoid sliding
+  // under the status bar.
+  const insets = useSafeAreaInsets();
 
   // ── Data state ──
   const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -377,9 +382,9 @@ export default function HomeScreen() {
   // ─── Role redirect — Provider/Patient should not see this page ──
   useEffect(() => {
     if (user?.role === 'provider') {
-      router.replace('/(tabs)/services/provider-tasks');
+      router.replace('/(tabs)/tasks');
     } else if (user?.role === 'patient') {
-      router.replace('/(tabs)/patient/summary');
+      router.replace('/(tabs)/patient');
     }
   }, [user?.role, router]);
 
@@ -395,7 +400,7 @@ export default function HomeScreen() {
 
   if (error) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
         <ErrorState message={error} onRetry={() => void fetchRecipients()} />
         <TouchableOpacity
           style={styles.logoutBtn}
@@ -409,7 +414,7 @@ export default function HomeScreen() {
 
   if (recipients.length === 0) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <EmptyState
           title="尚無被照護者"
           description="新增您的家人或照護對象，即可開始記錄健康數據與追蹤狀況。"
@@ -439,7 +444,7 @@ export default function HomeScreen() {
   // ─── Main Render ──────────────────────────────────────────────
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -465,7 +470,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/home/notifications')} accessibilityLabel="通知">
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/notifications')} accessibilityLabel="通知">
               <IconBell />
               {unreadCount > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}
             </TouchableOpacity>
@@ -779,7 +784,7 @@ export default function HomeScreen() {
             <Text style={styles.menuGroupLabel}>我的</Text>
             {[
               { label: '個人資料', icon: 'user', onPress: () => router.push('/(tabs)/home/profile') },
-              { label: '通知中心', icon: 'bell', onPress: () => router.push('/(tabs)/home/notifications') },
+              { label: '通知中心', icon: 'bell', onPress: () => router.push('/(tabs)/notifications') },
               // PDF p1 「漢堡頁：個人資料管理、首頁、訂單紀錄、設定等項目」— MVP 階段唯一有意義的
               // 設定項是被照護者量測提醒。直接連到對應 recipient 詳情頁的提醒區段，避免重做設定頁。
               { label: '量測提醒', icon: 'alarm', onPress: () => {

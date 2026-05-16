@@ -11,6 +11,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -141,6 +142,7 @@ function IconCalendarSm({ color = colors.textTertiary }: { color?: string }) {
 
 export default function ProviderProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -344,7 +346,7 @@ export default function ProviderProfileScreen() {
       : '';
 
     return (
-      <ScrollView style={s.container} contentContainerStyle={s.content}>
+      <ScrollView style={[s.container, { paddingTop: insets.top }]} contentContainerStyle={s.content}>
         {/* ── Welcome Hero ──────────────────────── */}
         <View style={s.welcomeHero}>
           <LinearGradient
@@ -577,7 +579,7 @@ export default function ProviderProfileScreen() {
   const levelLabel = LEVEL_LABELS[profile.level] ?? profile.level;
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}>
+    <ScrollView style={[s.container, { paddingTop: insets.top }]} contentContainerStyle={s.content}>
       {/* ── Profile Hero ─────────────────────────────────── */}
       <View style={s.profileHero}>
         <LinearGradient
@@ -662,7 +664,7 @@ export default function ProviderProfileScreen() {
       {profile.review_status === 'approved' && (
         <TouchableOpacity
           style={s.editEntryBtn}
-          onPress={() => router.push('/(tabs)/services/provider-edit')}
+          onPress={() => router.push('/(tabs)/provider-profile/edit')}
           activeOpacity={0.7}
         >
           <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">

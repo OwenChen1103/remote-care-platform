@@ -33,16 +33,16 @@ export function notificationDeepLink(
         return { pathname: '/(tabs)/services/[requestId]', params: { requestId: sid } };
       }
       if (role === 'patient') {
-        return { pathname: '/(tabs)/patient/schedule' };
+        return { pathname: '/(tabs)/schedule' };
       }
       if (role === 'provider') {
         // Decision B (auto-arrange) means provider sees `caregiver_confirmed` notification
-        // and goes to `provider-confirm` (the accept/reject screen). All later statuses
-        // route to provider-task-detail (their normal task view).
+        // and goes to `tasks/confirm` (the accept/reject screen). All later statuses
+        // route to tasks/detail (their normal task view).
         if (targetStatus === 'caregiver_confirmed') {
-          return { pathname: '/(tabs)/services/provider-confirm', params: { requestId: sid } };
+          return { pathname: '/(tabs)/tasks/confirm', params: { requestId: sid } };
         }
-        return { pathname: '/(tabs)/services/provider-task-detail', params: { taskId: sid } };
+        return { pathname: '/(tabs)/tasks/detail', params: { taskId: sid } };
       }
       // admin uses web — no mobile target
       return null;
@@ -62,7 +62,7 @@ export function notificationDeepLink(
     case 'appointment_reminder':
       // Caregiver → home appointments list; patient → their schedule (read-only mirror).
       if (role === 'caregiver') return { pathname: '/(tabs)/home/appointments' };
-      if (role === 'patient') return { pathname: '/(tabs)/patient/schedule' };
+      if (role === 'patient') return { pathname: '/(tabs)/schedule' };
       return null;
 
     case 'ai_report_ready':
@@ -74,7 +74,7 @@ export function notificationDeepLink(
     case 'provider_review_result':
       // Notification sent by /providers/[id]/review — provider only.
       if (role !== 'provider') return null;
-      return { pathname: '/(tabs)/services/provider-profile' };
+      return { pathname: '/(tabs)/provider-profile' };
 
     default:
       return null;

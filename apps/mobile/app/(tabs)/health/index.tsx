@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -148,6 +149,7 @@ function IconChevron({ size = 14, color = colors.textTertiary }: { size?: number
 
 export default function HealthScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
@@ -219,7 +221,7 @@ export default function HealthScreen() {
 
   if (error && recipients.length === 0) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top }]}>
         <ErrorState message={error} onRetry={() => void fetchRecipients()} />
       </View>
     );
@@ -230,7 +232,7 @@ export default function HealthScreen() {
   // ─── Main Render ──────────────────────────────────────────
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <FlatList
         data={loading && measurements.length === 0 ? [] : measurements}
         keyExtractor={(item) => item.id}

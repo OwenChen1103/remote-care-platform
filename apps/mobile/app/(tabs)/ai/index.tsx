@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -133,6 +134,7 @@ function nextMsgId(): string { return `msg-${++msgIdCounter}-${Date.now()}`; }
 
 export default function AiAssistantScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -344,7 +346,7 @@ export default function AiAssistantScreen() {
   // ─── Render ─────────────────────────────────────────────────
 
   return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
       {/* ── Hero (matches services hero) ─────────────── */}
       <View style={s.heroWrap}>
         <View style={s.hero}>

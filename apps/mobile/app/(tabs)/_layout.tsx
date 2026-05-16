@@ -97,6 +97,21 @@ function TabIconCalendar({ color, size = 22 }: { color: string; size?: number })
 }
 
 // ─── Tab Layout ───────────────────────────────────────────────
+//
+// Each Tabs.Screen here points at a *folder* (e.g. `home`), not at a specific
+// file (e.g. `home/index`). The folder owns its own Stack via `_layout.tsx`,
+// so sub-screens (profile, appointments, [recipientId], etc.) push onto that
+// stack rather than living as hidden top-level tabs.
+//
+// Why the rewrite: the previous layout registered every sub-screen as a
+// `Tabs.Screen` with `href: null` to hide it. That pattern accumulates state
+// inside React Navigation's tab navigator and intermittently freezes the tab
+// bar after deep navigation. The folder-Stack pattern is the documented Expo
+// Router approach and avoids that class of bug entirely.
+//
+// `href: null` is still used here, but only for *role-based tab hiding* on
+// top-level tabs (e.g. caregivers don't see the provider task tab) — which
+// is the supported use of the flag.
 
 export default function TabLayout() {
   const { user } = useAuth();
@@ -110,6 +125,11 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        // Header is hidden because each per-tab `_layout.tsx` wraps its Stack
+        // in `<SafeAreaView edges={['top']}>` to push content below the status
+        // bar. If you ever remove that wrapper, set this back to default
+        // (`true`) or screens will slide under the status bar.
+        headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textDisabled,
         tabBarStyle: {
@@ -128,7 +148,7 @@ export default function TabLayout() {
     >
       {/* ─── Caregiver tabs ─── */}
       <Tabs.Screen
-        name="home/index"
+        name="home"
         options={{
           title: '首頁',
           tabBarLabel: '首頁',
@@ -137,7 +157,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="health/index"
+        name="health"
         options={{
           title: '健康',
           tabBarLabel: '健康',
@@ -146,7 +166,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="ai/index"
+        name="ai"
         options={{
           title: 'AI 助理',
           tabBarLabel: 'AI 助理',
@@ -155,7 +175,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="services/index"
+        name="services"
         options={{
           title: '服務',
           tabBarLabel: '服務',
@@ -166,7 +186,7 @@ export default function TabLayout() {
 
       {/* ─── Provider tabs ─── */}
       <Tabs.Screen
-        name="services/provider-tasks"
+        name="tasks"
         options={{
           title: '我的任務',
           tabBarLabel: '任務',
@@ -175,16 +195,18 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="home/notifications"
+        name="notifications"
         options={{
           title: '通知',
           tabBarLabel: '通知',
           tabBarIcon: ({ color }) => <TabIconBell color={color} />,
+          // Caregivers + patients reach `notifications` via the bell-icon
+          // push from inside their own tab; only providers need it in the tab bar.
           ...visibleFor('provider'),
         }}
       />
       <Tabs.Screen
-        name="services/provider-profile"
+        name="provider-profile"
         options={{
           title: '個人資料',
           tabBarLabel: '我的',
@@ -195,7 +217,7 @@ export default function TabLayout() {
 
       {/* ─── Patient tabs ─── */}
       <Tabs.Screen
-        name="patient/summary"
+        name="patient"
         options={{
           title: '我的健康',
           tabBarLabel: '健康',
@@ -204,7 +226,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="patient/schedule"
+        name="schedule"
         options={{
           title: '提醒行程',
           tabBarLabel: '行程',
@@ -212,26 +234,6 @@ export default function TabLayout() {
           ...visibleFor('patient'),
         }}
       />
-
-      {/* ─── Hidden sub-screens (all roles) ─── */}
-      <Tabs.Screen name="services/new-request" options={{ href: null, title: '新增服務需求' }} />
-      <Tabs.Screen name="services/[requestId]" options={{ href: null, title: '需求詳情' }} />
-      <Tabs.Screen name="services/provider-confirm" options={{ href: null, title: '確認接案' }} />
-      <Tabs.Screen name="services/provider-task-detail" options={{ href: null, title: '任務詳情' }} />
-      <Tabs.Screen name="services/provider-edit" options={{ href: null, title: '編輯個人資料' }} />
-      <Tabs.Screen name="home/add-recipient" options={{ href: null, title: '新增被照護者' }} />
-      <Tabs.Screen name="home/[recipientId]/index" options={{ href: null, title: '被照護者詳情' }} />
-      <Tabs.Screen name="home/[recipientId]/edit" options={{ href: null, title: '編輯被照護者' }} />
-      <Tabs.Screen name="health/add-measurement" options={{ href: null, title: '新增量測' }} />
-      <Tabs.Screen name="health/trends" options={{ href: null, title: '趨勢分析' }} />
-      <Tabs.Screen name="health/export" options={{ href: null, title: '匯出紀錄' }} />
-      <Tabs.Screen name="health/ai-report" options={{ href: null, title: '安心報' }} />
-      <Tabs.Screen name="home/profile" options={{ href: null, title: '個人資料管理' }} />
-      <Tabs.Screen name="home/appointments" options={{ href: null, title: '行程管理' }} />
-      <Tabs.Screen name="home/add-appointment" options={{ href: null, title: '新增行程' }} />
-      <Tabs.Screen name="home/edit-appointment" options={{ href: null, title: '編輯行程' }} />
-      {/* Patient profile — pushable from patient menu, never in tab bar (Section 1.7.7) */}
-      <Tabs.Screen name="patient/profile" options={{ href: null, title: '個人資料' }} />
     </Tabs>
   );
 }

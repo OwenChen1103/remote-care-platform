@@ -24,25 +24,25 @@ export async function routeAfterAuth(
     try {
       const me = await api.get<ProviderMeProbe>('/provider/me');
       if (me.review_status === 'approved') {
-        router.replace('/(tabs)/services/provider-tasks');
+        router.replace('/(tabs)/tasks');
       } else {
         // pending / rejected / suspended → land on profile so provider sees status banner
-        router.replace('/(tabs)/services/provider-profile');
+        router.replace('/(tabs)/provider-profile');
       }
     } catch (e) {
       // Network/auth failure during probe → fall back to profile screen.
       // Provider will see the same screen they'd see if onboarding incomplete.
       void e; // intentional: silently fall back
       if (e instanceof ApiError) {
-        router.replace('/(tabs)/services/provider-profile');
+        router.replace('/(tabs)/provider-profile');
       } else {
-        router.replace('/(tabs)/services/provider-profile');
+        router.replace('/(tabs)/provider-profile');
       }
     }
     return;
   }
   if (user.role === 'patient') {
-    router.replace('/(tabs)/patient/summary');
+    router.replace('/(tabs)/patient');
     return;
   }
   // caregiver (default) and admin (admin uses web; mobile fallback)

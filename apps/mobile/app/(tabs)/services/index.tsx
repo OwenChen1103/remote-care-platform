@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
@@ -128,6 +129,7 @@ function IconClock() {
 
 export default function ServicesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +172,7 @@ export default function ServicesScreen() {
 
   if (error && requests.length === 0 && categories.length === 0) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top }]}>
         <ErrorState message={error} onRetry={() => { void fetchRequests(); void fetchCategories(); }} />
       </View>
     );
@@ -185,7 +187,7 @@ export default function ServicesScreen() {
   // ─── Main Render ──────────────────────────────────────────
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[s.container, { paddingTop: insets.top }]} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
 
       {/* ═══ Hero Card ════════════════════════════════════════ */}
       <View style={s.heroWrap}>
