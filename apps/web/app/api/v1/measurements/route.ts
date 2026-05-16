@@ -23,8 +23,12 @@ export async function POST(request: NextRequest) {
       return errorResponse('AUTH_REQUIRED', '請先登入');
     }
 
-    if (auth.role !== 'caregiver') {
-      return errorResponse('AUTH_FORBIDDEN', '僅照護者可新增量測資料');
+    // Both caregivers and patients can record measurements. Patients self-report
+    // for the recipient they are bound to (Section 1.7 patient-bound flow), in
+    // which case the data still belongs to the same recipient row — caregivers
+    // and patients share one source of truth.
+    if (auth.role !== 'caregiver' && auth.role !== 'patient') {
+      return errorResponse('AUTH_FORBIDDEN', '無權新增量測資料');
     }
 
     const body: unknown = await request.json();
@@ -40,7 +44,8 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
-    // Ownership check
+    // Ownership check — caregiver must own the recipient; patient must be the
+    // bound patient_user_id. Anything else is forbidden.
     const recipient = await prisma.recipient.findFirst({
       where: { id: data.recipient_id, deleted_at: null },
     });
@@ -49,7 +54,11 @@ export async function POST(request: NextRequest) {
       return errorResponse('RESOURCE_NOT_FOUND', '找不到此被照護者');
     }
 
-    if (recipient.caregiver_id !== auth.userId) {
+    const isCaregiverOwner =
+      auth.role === 'caregiver' && recipient.caregiver_id === auth.userId;
+    const isBoundPatient =
+      auth.role === 'patient' && recipient.patient_user_id === auth.userId;
+    if (!isCaregiverOwner && !isBoundPatient) {
       return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此被照護者');
     }
 
@@ -82,12 +91,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Check consecutive abnormal and notify if needed
+    // Check consecutive abnormal and notify if needed.
+    // `caregiverUserId` is the notification recipient — must be the actual
+    // caregiver (from recipient.caregiver_id), NOT the submitter. When a
+    // patient self-reports an abnormal reading, the caregiver is the one
+    // who needs to know; notifying the patient about their own reading
+    // would be useless noise.
     if (isAbnormal) {
       await checkAndNotifyAbnormal({
         recipientId: data.recipient_id,
         recipientName: recipient.name,
-        caregiverUserId: auth.userId,
+        caregiverUserId: recipient.caregiver_id,
         measurementId: measurement.id,
         measurementType: data.type,
       });

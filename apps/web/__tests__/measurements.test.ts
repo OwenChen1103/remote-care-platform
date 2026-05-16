@@ -214,6 +214,89 @@ describe('POST /api/v1/measurements', () => {
     expect(body.error.code).toBe('RESOURCE_OWNERSHIP_DENIED');
   });
 
+  // Section 1.7 patient self-input — patient can record measurements
+  // for the recipient they are bound to. Data writes to the same table
+  // caregiver writes to, so both sides share one source of truth.
+  it('bound patient can self-record a measurement', async () => {
+    const patientId = '00000000-0000-4000-a000-000000000099';
+    mockPrisma.recipient.findFirst.mockResolvedValue({
+      ...mockRecipient,
+      patient_user_id: patientId,
+    });
+    mockPrisma.measurement.create.mockResolvedValue(mockBpMeasurement);
+    mockPrisma.measurement.findMany.mockResolvedValue([]);
+
+    const request = createRequest('POST', validBpData, {
+      Authorization: `Bearer ${signJwt({ userId: patientId, role: 'patient' })}`,
+    });
+    const response = await createHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.success).toBe(true);
+  });
+
+  it('unbound patient cannot post to someone else\'s recipient', async () => {
+    mockPrisma.recipient.findFirst.mockResolvedValue({
+      ...mockRecipient,
+      patient_user_id: '00000000-0000-4000-a000-000000000099',
+    });
+
+    // A different patient (not bound) tries to post.
+    const request = createRequest('POST', validBpData, {
+      Authorization: `Bearer ${signJwt({ userId: '00000000-0000-4000-a000-0000000000aa', role: 'patient' })}`,
+    });
+    const response = await createHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe('RESOURCE_OWNERSHIP_DENIED');
+  });
+
+  it('rejects provider role from POSTing measurements', async () => {
+    const request = createRequest('POST', validBpData, {
+      Authorization: `Bearer ${signJwt({ userId: '00000000-0000-4000-a000-0000000000bb', role: 'provider' })}`,
+    });
+    const response = await createHandler(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe('AUTH_FORBIDDEN');
+  });
+
+  // Regression: when a patient self-reports an abnormal measurement, the
+  // abnormal-alert notification must go to the caregiver (recipient.caregiver_id),
+  // NOT the submitter — otherwise the patient gets noise about their own reading.
+  it('patient self-report of abnormal value notifies caregiver, not patient', async () => {
+    const patientId = '00000000-0000-4000-a000-000000000099';
+    const caregiverId = mockRecipient.caregiver_id;
+    mockPrisma.recipient.findFirst.mockResolvedValue({
+      ...mockRecipient,
+      patient_user_id: patientId,
+    });
+    mockPrisma.measurement.create.mockResolvedValue(mockAbnormalBpMeasurement);
+    // Trip the abnormal-threshold check by mocking 2 recent abnormal readings.
+    mockPrisma.measurement.findMany.mockResolvedValue([
+      { is_abnormal: true },
+      { is_abnormal: true },
+    ]);
+    mockPrisma.notification.findFirst.mockResolvedValue(null);
+    mockPrisma.notification.create.mockResolvedValue({});
+
+    const request = createRequest('POST', { ...validBpData, systolic: 145, diastolic: 92 }, {
+      Authorization: `Bearer ${signJwt({ userId: patientId, role: 'patient' })}`,
+    });
+    const response = await createHandler(request);
+    expect(response.status).toBe(201);
+
+    // Notification must target the caregiver (not the submitter patient).
+    expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ user_id: caregiverId }),
+      }),
+    );
+  });
+
   it('should return VALIDATION_ERROR for systolic=500', async () => {
     mockPrisma.recipient.findFirst.mockResolvedValue(mockRecipient);
 
