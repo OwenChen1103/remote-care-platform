@@ -71,7 +71,18 @@ export async function GET(
           where: { user_id: auth.userId, deleted_at: null },
           select: { id: true },
         });
-        if (!provider || serviceRequest.assigned_provider_id !== provider.id) {
+        // Two ownership paths (mirrors /provider/tasks/[id]):
+        //   - candidate: candidate_proposed + caregiver_confirmed states — provider
+        //     sits in `candidate_provider_id` until they accept; `assigned_provider_id`
+        //     is null. Without this branch the provider gets 403 the moment caregiver
+        //     confirms, which is the exact window they're being asked to act.
+        //   - assigned: every state after the provider accepts (arranged onward, plus
+        //     cancelled archive).
+        const isCandidate = !!provider &&
+          (serviceRequest.status === 'candidate_proposed' || serviceRequest.status === 'caregiver_confirmed') &&
+          serviceRequest.candidate_provider_id === provider.id;
+        const isAssigned = !!provider && serviceRequest.assigned_provider_id === provider.id;
+        if (!isCandidate && !isAssigned) {
           return errorResponse('RESOURCE_OWNERSHIP_DENIED', '無權存取此服務需求');
         }
         break;

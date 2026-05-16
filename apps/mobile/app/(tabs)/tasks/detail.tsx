@@ -308,8 +308,18 @@ export default function ProviderTaskDetailScreen() {
               { text: '確定', onPress: () => void fetchDetail() },
             ]);
           } catch (e) {
-            if (e instanceof ApiError) Alert.alert('錯誤', e.message);
-            else Alert.alert('錯誤', '操作失敗');
+            if (e instanceof ApiError) {
+              // Surface VALIDATION_ERROR field-level details so the provider
+              // sees WHICH field failed (e.g. "blood_oxygen: 數值需介於 50-100"),
+              // not just the generic top-line message.
+              const details = e.details as Array<{ path: string; message: string }> | undefined;
+              const detailLines = (details ?? [])
+                .map((d) => `• ${d.path}: ${d.message}`)
+                .join('\n');
+              Alert.alert('錯誤', detailLines ? `${e.message}\n\n${detailLines}` : e.message);
+            } else {
+              Alert.alert('錯誤', '操作失敗');
+            }
           } finally {
             setSubmitting(false);
           }

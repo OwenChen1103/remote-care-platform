@@ -227,7 +227,10 @@ describe('GET /api/v1/service-requests', () => {
     expect(json.meta.total).toBe(0);
   });
 
-  it('provider with profile filters by assigned_provider_id', async () => {
+  it('provider with profile sees candidate OR assigned requests', async () => {
+    // Regression: pre-fix this filter was `assigned_provider_id` only, which
+    // hid requests in candidate_proposed/caregiver_confirmed states from the
+    // very provider being asked to act on them.
     mockPrisma.provider.findFirst.mockResolvedValue({ id: IDS.providerId });
     mockPrisma.serviceRequest.findMany.mockResolvedValue([]);
     mockPrisma.serviceRequest.count.mockResolvedValue(0);
@@ -240,7 +243,15 @@ describe('GET /api/v1/service-requests', () => {
 
     expect(mockPrisma.serviceRequest.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ assigned_provider_id: IDS.providerId }),
+        where: expect.objectContaining({
+          OR: [
+            {
+              status: { in: ['candidate_proposed', 'caregiver_confirmed'] },
+              candidate_provider_id: IDS.providerId,
+            },
+            { assigned_provider_id: IDS.providerId },
+          ],
+        }),
       }),
     );
   });
@@ -336,6 +347,59 @@ describe('GET /api/v1/service-requests/:id', () => {
     const res = await getDetail(req, { params });
 
     expect(res.status).toBe(404);
+  });
+
+  // Regression: provider was returned 403 for their own request during the
+  // caregiver_confirmed window (assigned_provider_id is still null at that
+  // state — the provider sits in candidate_provider_id awaiting acceptance).
+  it('provider candidate can view caregiver_confirmed request', async () => {
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      ...mockServiceRequest,
+      status: 'caregiver_confirmed',
+      candidate_provider_id: IDS.providerId,
+      assigned_provider_id: null,
+    });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: IDS.providerId });
+
+    const req = createRequest('GET', undefined, {
+      Authorization: `Bearer ${token(IDS.provider, 'provider')}`,
+    }, `http://localhost:3000/api/v1/service-requests/${IDS.request}`);
+    const res = await getDetail(req, { params });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('provider assigned can view arranged request', async () => {
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      ...mockServiceRequest,
+      status: 'arranged',
+      assigned_provider_id: IDS.providerId,
+    });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: IDS.providerId });
+
+    const req = createRequest('GET', undefined, {
+      Authorization: `Bearer ${token(IDS.provider, 'provider')}`,
+    }, `http://localhost:3000/api/v1/service-requests/${IDS.request}`);
+    const res = await getDetail(req, { params });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects unrelated provider (not candidate, not assigned)', async () => {
+    mockPrisma.serviceRequest.findUnique.mockResolvedValue({
+      ...mockServiceRequest,
+      status: 'caregiver_confirmed',
+      candidate_provider_id: '00000000-0000-4000-a000-0000000000ff', // some other provider
+      assigned_provider_id: null,
+    });
+    mockPrisma.provider.findFirst.mockResolvedValue({ id: IDS.providerId });
+
+    const req = createRequest('GET', undefined, {
+      Authorization: `Bearer ${token(IDS.provider, 'provider')}`,
+    }, `http://localhost:3000/api/v1/service-requests/${IDS.request}`);
+    const res = await getDetail(req, { params });
+
+    expect(res.status).toBe(403);
   });
 });
 

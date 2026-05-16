@@ -160,7 +160,12 @@ export async function GET(request: NextRequest) {
       }
 
       case 'provider': {
-        // Provider sees only requests assigned to them
+        // Provider sees requests where they are EITHER the candidate (during
+        // `candidate_proposed`/`caregiver_confirmed`) OR the assigned provider
+        // (every later state). Mirrors /provider/tasks ownership semantics —
+        // without the candidate arm, requests disappear from a provider's view
+        // the moment caregiver confirms, which is the exact window they should
+        // be acting on.
         const provider = await prisma.provider.findFirst({
           where: { user_id: auth.userId, deleted_at: null },
           select: { id: true },
@@ -169,7 +174,13 @@ export async function GET(request: NextRequest) {
           // No provider profile → empty result, no error
           return paginatedResponse([], { page, limit, total: 0 });
         }
-        where.assigned_provider_id = provider.id;
+        where.OR = [
+          {
+            status: { in: ['candidate_proposed', 'caregiver_confirmed'] },
+            candidate_provider_id: provider.id,
+          },
+          { assigned_provider_id: provider.id },
+        ];
         break;
       }
 

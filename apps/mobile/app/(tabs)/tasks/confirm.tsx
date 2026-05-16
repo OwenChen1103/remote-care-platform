@@ -148,7 +148,11 @@ export default function ProviderConfirmScreen() {
     setLoading(true);
     setError('');
     try {
-      const result = await api.get<ServiceRequestDetail>(`/service-requests/${requestId}`);
+      // Provider-specific GET — must use `/provider/tasks/[id]` (allows candidate
+      // OR assigned). The generic `/service-requests/[id]` only allows
+      // `assigned_provider_id`, so at `caregiver_confirmed` status the provider
+      // (still in `candidate_provider_id`) hits 403 "無權存取此服務需求".
+      const result = await api.get<ServiceRequestDetail>(`/provider/tasks/${requestId}`);
       setRequest(result);
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
