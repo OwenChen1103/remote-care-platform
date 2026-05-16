@@ -10,6 +10,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -128,13 +129,49 @@ function getScoreRingColor(level: string): string {
   }
 }
 
-function getScoreSummary(level: string): string {
-  switch (level) {
-    case 'excellent': return '您近期的身體狀況很好，繼續保持！';
-    case 'good':      return '整體狀況不錯，請繼續規律量測。';
-    case 'fair':      return '近期有些數值需要留意，請多休息。';
-    default:          return '請聯繫您的照護人員，多加關心健康。';
+// Compact, single-line action hint surfaced in the redesigned hero. The
+// goal is to give the patient ONE clear takeaway when they open the app:
+// "do I need to do something today?" Not a static summary.
+function getTodayActionHint(
+  latestBP: Measurement | undefined,
+  latestBG: Measurement | undefined,
+  level: string | null,
+): string {
+  if (!latestBP && !latestBG) {
+    return '點下方記錄您的第一筆量測，開始追蹤健康狀態';
   }
+  const today = new Date().toDateString();
+  const bpToday = latestBP ? new Date(latestBP.measured_at).toDateString() === today : false;
+  const bgToday = latestBG ? new Date(latestBG.measured_at).toDateString() === today : false;
+  // Concerning health overrides the "good day" copy — surface attention first.
+  if (level === 'poor' || level === 'fair') {
+    return '近期數值需要留意，記得多休息';
+  }
+  if (!bpToday && !bgToday) {
+    return '今天還沒記錄量測，記得補上喔';
+  }
+  return '今天健康狀況看起來不錯，繼續保持';
+}
+
+// Short relative time label for the latest measurement, displayed under the
+// vital reading so the patient knows whether the number they're looking at
+// is fresh ("今天 09:30") or stale ("3 天前").
+function formatMeasurementTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = now.toDateString();
+  const measured = d.toDateString();
+  if (today === measured) {
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `今天 ${hh}:${mm}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (yesterday.toDateString() === measured) return '昨天';
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) return `${diffDays} 天前`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 // ─── SVG Icons (stroke style) ─────────────────────────────────
@@ -291,6 +328,7 @@ function NotificationIcon({ type }: { type: string }) {
 export default function PatientSummaryScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [menuVisible, setMenuVisible] = useState(false);
 
   const [recipient, setRecipient] = useState<Recipient | null>(null);
@@ -376,7 +414,7 @@ export default function PatientSummaryScreen() {
 
   if (error) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top }]}>
         <Text style={s.errorText}>{error}</Text>
       </View>
     );
@@ -387,6 +425,7 @@ export default function PatientSummaryScreen() {
   if (!recipient) {
     return (
       <ScrollView
+        style={{ paddingTop: insets.top }}
         contentContainerStyle={s.emptyStateWrap}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
@@ -432,7 +471,7 @@ export default function PatientSummaryScreen() {
 
   // ── Render ────────────────────────────────────────────────
   return (
-    <View style={s.screen}>
+    <View style={[s.screen, { paddingTop: insets.top }]}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.content}
@@ -459,7 +498,7 @@ export default function PatientSummaryScreen() {
           <View style={s.topRight}>
             <TouchableOpacity
               style={s.iconBtn}
-              onPress={() => router.push('/(tabs)/home/notifications')}
+              onPress={() => router.push('/(tabs)/notifications')}
               accessibilityLabel="通知"
             >
               <IconBell size={20} color={colors.textTertiary} />
@@ -470,7 +509,14 @@ export default function PatientSummaryScreen() {
           </View>
         </View>
 
-        {/* ── Glass Hero (health score + summary) ──────────── */}
+        {/* ── Compact Hero: score ring + today's action hint ──
+            Redesigned to give one clear takeaway on open:
+              • Has data → small score ring + level badge + dynamic hint
+              • No data → empty state pointing the patient to the record
+                CTA below (which is now visually prominent).
+            Removed the verbose "HEALTH STATUS / 今日健康狀態 / score summary
+            / caption" stack — those are all decoration, the level badge +
+            single hint line carry the same meaning. */}
         <View style={s.hero}>
           <LinearGradient
             colors={['#E5F2FB', '#EDF7E8', '#F8FAFC']}
@@ -483,45 +529,43 @@ export default function PatientSummaryScreen() {
           <View style={s.heroHaloBottomLeft} />
           <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
 
-          <View style={s.heroContent}>
-            <Text style={s.heroTagline}>HEALTH STATUS</Text>
-            <Text style={s.heroSubtitle}>今日健康狀態</Text>
-
-            {healthResult ? (
-              <View style={s.heroBody}>
-                <View style={s.ringWrap}>
-                  <HealthScoreRing score={score} level={level} />
-                  <View style={s.ringCenter}>
-                    <Text style={[s.ringScore, { color: ringColor }]}>{score}</Text>
-                    <Text style={s.ringScoreUnit}>分</Text>
-                  </View>
-                </View>
-                <View style={s.heroText}>
-                  <View style={[s.levelBadge, { backgroundColor: ringColor + '22', borderColor: ringColor + '55' }]}>
-                    <View style={[s.levelDot, { backgroundColor: ringColor }]} />
-                    <Text style={[s.levelLabel, { color: ringColor }]}>
-                      {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
-                    </Text>
-                  </View>
-                  <Text style={s.heroSummary}>{getScoreSummary(level)}</Text>
-                  <Text style={s.heroCaption}>近 7 天量測數據</Text>
+          {healthResult ? (
+            <View style={s.heroBody}>
+              <View style={s.ringWrap}>
+                <HealthScoreRing score={score} level={level} />
+                <View style={s.ringCenter}>
+                  <Text style={[s.ringScore, { color: ringColor }]}>{score}</Text>
+                  <Text style={s.ringScoreUnit}>分</Text>
                 </View>
               </View>
-            ) : (
-              // Empty state — bound patient before any measurement is recorded.
-              // calculateHealthScore returns null when both bpStats + bgStats counts are 0.
-              <View style={s.heroEmptyBody}>
-                <Text style={s.heroEmptyTitle}>尚無量測資料</Text>
-                <Text style={s.heroEmptySubtitle}>請家屬協助記錄第一筆量測，就能看到健康狀態分數。</Text>
+              <View style={s.heroText}>
+                <View style={[s.levelBadge, { backgroundColor: ringColor + '22', borderColor: ringColor + '55' }]}>
+                  <View style={[s.levelDot, { backgroundColor: ringColor }]} />
+                  <Text style={[s.levelLabel, { color: ringColor }]}>
+                    {HEALTH_LEVEL_LABELS[level as keyof typeof HEALTH_LEVEL_LABELS]}
+                  </Text>
+                </View>
+                <Text style={s.heroHint}>{getTodayActionHint(latestBP, latestBG, level)}</Text>
               </View>
-            )}
-          </View>
+            </View>
+          ) : (
+            <View style={s.heroEmptyBody}>
+              <Text style={s.heroEmptyTitle}>歡迎使用</Text>
+              <Text style={s.heroEmptySubtitle}>{getTodayActionHint(latestBP, latestBG, null)}</Text>
+            </View>
+          )}
         </View>
 
-        {/* ── Vital Signs (corrected colors) ───────────────── */}
-        <View style={s.vitalsRow}>
-          <View style={s.vitalCard}>
-            <View style={s.vitalHeader}>
+        {/* ── Combined vital + record cards ─────────────────
+            Each card pairs the latest reading with the self-record CTA:
+            display + action live together so the patient doesn't scroll
+            between "what's my number" and "how do I add one". Two cards
+            (BP / BG) side by side, half-width — replaces the previous
+            split layout of read-only vitals row + separate record row. */}
+        <View style={s.combinedRow}>
+          {/* Blood Pressure */}
+          <View style={s.combinedCard}>
+            <View style={s.combinedHeader}>
               <View style={[s.vitalIconWrap, { backgroundColor: colors.dangerLight }]}>
                 <IconHeart size={16} />
               </View>
@@ -537,30 +581,36 @@ export default function PatientSummaryScreen() {
                   </Text>
                   <Text style={s.vitalUnit}>mmHg</Text>
                 </View>
-                <View style={s.vitalStatusRow}>
+                <View style={s.combinedMeta}>
                   <View
                     style={[
                       s.vitalStatusDot,
                       { backgroundColor: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh ? colors.danger : colors.success },
                     ]}
                   />
-                  <Text
-                    style={[
-                      s.vitalStatusText,
-                      { color: getBPStatus(latestBP.systolic, latestBP.diastolic).isHigh ? colors.danger : colors.success },
-                    ]}
-                  >
-                    {getBPStatus(latestBP.systolic, latestBP.diastolic).label}
+                  <Text style={s.combinedMetaText} numberOfLines={1}>
+                    {getBPStatus(latestBP.systolic, latestBP.diastolic).label} · {formatMeasurementTime(latestBP.measured_at)}
                   </Text>
                 </View>
               </>
             ) : (
-              <Text style={s.vitalEmpty}>--</Text>
+              <View style={s.combinedEmptyWrap}>
+                <Text style={s.combinedEmpty}>尚未記錄</Text>
+              </View>
             )}
+            <TouchableOpacity
+              style={[s.combinedRecordBtn, { backgroundColor: colors.danger }]}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipient.id}&type=blood_pressure`)}
+              activeOpacity={0.8}
+              accessibilityLabel="記錄新的血壓"
+            >
+              <Text style={s.combinedRecordBtnText}>＋ 記錄</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={s.vitalCard}>
-            <View style={s.vitalHeader}>
+          {/* Blood Glucose */}
+          <View style={s.combinedCard}>
+            <View style={s.combinedHeader}>
               <View style={[s.vitalIconWrap, { backgroundColor: colors.warningLight }]}>
                 <IconDrop size={16} />
               </View>
@@ -572,26 +622,31 @@ export default function PatientSummaryScreen() {
                   <Text style={s.vitalValue}>{latestBG.glucose_value}</Text>
                   <Text style={s.vitalUnit}>mg/dL</Text>
                 </View>
-                <View style={s.vitalStatusRow}>
+                <View style={s.combinedMeta}>
                   <View
                     style={[
                       s.vitalStatusDot,
                       { backgroundColor: getBGStatus(latestBG.glucose_value).isHigh ? colors.danger : colors.success },
                     ]}
                   />
-                  <Text
-                    style={[
-                      s.vitalStatusText,
-                      { color: getBGStatus(latestBG.glucose_value).isHigh ? colors.danger : colors.success },
-                    ]}
-                  >
-                    {getBGStatus(latestBG.glucose_value).label}
+                  <Text style={s.combinedMetaText} numberOfLines={1}>
+                    {getBGStatus(latestBG.glucose_value).label} · {formatMeasurementTime(latestBG.measured_at)}
                   </Text>
                 </View>
               </>
             ) : (
-              <Text style={s.vitalEmpty}>--</Text>
+              <View style={s.combinedEmptyWrap}>
+                <Text style={s.combinedEmpty}>尚未記錄</Text>
+              </View>
             )}
+            <TouchableOpacity
+              style={[s.combinedRecordBtn, { backgroundColor: colors.warning }]}
+              onPress={() => router.push(`/(tabs)/health/add-measurement?recipientId=${recipient.id}&type=blood_glucose`)}
+              activeOpacity={0.8}
+              accessibilityLabel="記錄新的血糖"
+            >
+              <Text style={s.combinedRecordBtnText}>＋ 記錄</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -678,7 +733,7 @@ export default function PatientSummaryScreen() {
           <Text style={s.sectionTitle}>最近通知</Text>
           {notifications.length > 0 && (
             <TouchableOpacity
-              onPress={() => router.push('/(tabs)/patient/schedule')}
+              onPress={() => router.push('/(tabs)/schedule')}
               activeOpacity={0.7}
               style={s.sectionLink}
             >
@@ -750,7 +805,7 @@ export default function PatientSummaryScreen() {
               <View style={s.menuItemDivider} />
               <TouchableOpacity
                 style={s.menuRow}
-                onPress={() => { setMenuVisible(false); router.push('/(tabs)/home/notifications'); }}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/notifications'); }}
                 activeOpacity={0.7}
               >
                 <View style={[s.menuIconWrap, { backgroundColor: colors.primaryLight }]}>
@@ -762,7 +817,7 @@ export default function PatientSummaryScreen() {
               <View style={s.menuItemDivider} />
               <TouchableOpacity
                 style={s.menuRow}
-                onPress={() => { setMenuVisible(false); router.push('/(tabs)/patient/schedule'); }}
+                onPress={() => { setMenuVisible(false); router.push('/(tabs)/schedule'); }}
                 activeOpacity={0.7}
               >
                 <View style={[s.menuIconWrap, { backgroundColor: colors.accentLight }]}>
@@ -981,32 +1036,24 @@ const s = StyleSheet.create({
     width: 160, height: 160, borderRadius: 80,
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
-  heroContent: {
-    paddingVertical: spacing.lg + 2,
-    paddingHorizontal: spacing.lg,
-  },
-  heroTagline: {
-    fontSize: 10, fontWeight: '700',
-    color: colors.primary, letterSpacing: 2,
-  },
-  heroSubtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginTop: spacing.xxs,
-  },
+  // heroContent / heroTagline / heroSubtitle / heroSummary / heroCaption
+  // were removed in the Section 1.7 hero compaction — the redesigned hero
+  // surfaces just the ring + level badge + one action hint, so the verbose
+  // wrappers/tagline are gone. heroBody/heroEmptyBody now own their own
+  // padding (previously inherited from heroContent).
   heroBody: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
-    marginTop: spacing.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
   // Empty-data hero variant — shown when calculateHealthScore returns null
   // (no measurements yet). Centred text only, no ring.
   heroEmptyBody: {
     alignItems: 'center',
-    paddingVertical: spacing.lg,
-    marginTop: spacing.md,
+    paddingVertical: spacing.lg + 4,
+    paddingHorizontal: spacing.lg,
   },
   heroEmptyTitle: {
     fontSize: typography.headingSm.fontSize,
@@ -1053,37 +1100,21 @@ const s = StyleSheet.create({
     fontSize: typography.captionSm.fontSize,
     fontWeight: '700',
   },
-  heroSummary: {
+  // Single-line action hint replacing the previous heroSummary + heroCaption.
+  // Surfaces a contextual takeaway ("今天還沒記錄量測,記得補上") rather than
+  // a static level description.
+  heroHint: {
     fontSize: typography.bodySm.fontSize,
     color: colors.textPrimary,
     lineHeight: 20,
   },
-  heroCaption: {
-    fontSize: typography.captionSm.fontSize,
-    color: colors.textTertiary,
-  },
 
-  // ── Vitals ────────────────────────────────────────────────
-  vitalsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  vitalCard: {
-    flex: 1,
-    backgroundColor: colors.bgSurface,
-    borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.borderDefault,
-    paddingVertical: spacing.md + 2,
-    paddingHorizontal: spacing.md + 2,
-    gap: spacing.sm,
-  },
-  vitalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs + 2,
-  },
+  // ── Vital sub-styles (shared between combined cards) ───
+  // Note: the old read-only `vitalCard` / `vitalsRow` / `vitalHeader` /
+  // `vitalStatusRow` / `vitalStatusText` / `vitalEmpty` styles were removed
+  // when read-only vitals + record CTAs collapsed into the combined card
+  // below. Only the leaf-level styles (icon wrap, label, value text, status
+  // dot) are still reused.
   vitalIconWrap: {
     width: 28, height: 28, borderRadius: 9,
     alignItems: 'center', justifyContent: 'center',
@@ -1113,21 +1144,62 @@ const s = StyleSheet.create({
     fontSize: typography.captionSm.fontSize,
     color: colors.textTertiary,
   },
-  vitalStatusRow: {
+  vitalStatusDot: { width: 6, height: 6, borderRadius: 3 },
+
+  // ── Combined vital + record cards (Section 1.7 redesign) ──
+  // Two cards side by side, each pairing the latest reading with a
+  // self-record CTA. Replaces both the old read-only vitalsRow and the
+  // standalone "記錄我的量測" recordRow that previously stacked below.
+  combinedRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  combinedCard: {
+    flex: 1,
+    backgroundColor: colors.bgSurface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderDefault,
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.md + 2,
+    gap: spacing.sm,
+  },
+  combinedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+  },
+  combinedMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
   },
-  vitalStatusDot: { width: 6, height: 6, borderRadius: 3 },
-  vitalStatusText: {
+  combinedMetaText: {
     fontSize: typography.captionSm.fontSize,
-    fontWeight: '700',
+    color: colors.textTertiary,
+    flex: 1,
   },
-  vitalEmpty: {
-    fontSize: 26,
-    fontWeight: '700',
+  combinedEmptyWrap: {
+    minHeight: 50, // matches value+status height so card heights align with-data vs without-data
+    justifyContent: 'center',
+  },
+  combinedEmpty: {
+    fontSize: typography.bodySm.fontSize,
     color: colors.textDisabled,
-    lineHeight: 32,
+    fontWeight: '500',
+  },
+  combinedRecordBtn: {
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  combinedRecordBtnText: {
+    color: colors.bgSurface,
+    fontWeight: '700',
+    fontSize: typography.bodySm.fontSize,
   },
 
   // ── Medical Tags ──────────────────────────────────────────
