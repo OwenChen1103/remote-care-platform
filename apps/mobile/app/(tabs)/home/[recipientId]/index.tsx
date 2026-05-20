@@ -158,49 +158,35 @@ export default function RecipientDetailScreen() {
     setLoading(true);
     setError('');
     try {
+      // Recipient itself is the gate — if this fails (404/403) we surface
+      // the error and skip the rest. Once we have the recipient, the 6
+      // secondary reads run in parallel and each catches its own error,
+      // matching the previous "best-effort, partial data is fine" semantic.
+      // Cold-start latency for the secondary calls drops from 6× to 1×.
       const data = await api.get<Recipient>(`/recipients/${recipientId}`);
       setRecipient(data);
-      try {
-        const measurements = await api.get<RecentMeasurement[]>(
-          `/measurements?recipient_id=${recipientId}&limit=5`,
-        );
-        setRecentMeasurements(measurements);
-      } catch {
-        // Non-critical
-      }
-      // Fetch health overview data (non-critical)
-      try {
-        const reports = await api.get<LatestReport[]>(
-          `/ai/reports?recipient_id=${recipientId}&report_type=health_summary&limit=1`,
-        );
-        if (reports[0]) setLatestReport(reports[0]);
-      } catch { /* Non-critical */ }
-      try {
-        const bp = await api.get<MeasurementStats>(
-          `/measurements/stats?recipient_id=${recipientId}&type=blood_pressure&period=7d`,
-        );
-        setBpStats(bp);
-      } catch { /* Non-critical */ }
-      try {
-        const bg = await api.get<MeasurementStats>(
-          `/measurements/stats?recipient_id=${recipientId}&type=blood_glucose&period=7d`,
-        );
-        setBgStats(bg);
-      } catch { /* Non-critical */ }
-      try {
-        const appts = await api.get<Appointment[]>(
-          `/appointments?recipient_id=${recipientId}&limit=2`,
-        );
-        setUpcomingAppointments(appts);
-      } catch {
-        // Non-critical
-      }
-      try {
-        const reminderData = await api.get<Reminder[]>(`/recipients/${recipientId}/reminders`);
-        setReminders(reminderData);
-      } catch {
-        // Non-critical
-      }
+
+      const [measurements, reports, bp, bg, appts, reminderData] = await Promise.all([
+        api.get<RecentMeasurement[]>(`/measurements?recipient_id=${recipientId}&limit=5`)
+          .catch(() => undefined),
+        api.get<LatestReport[]>(`/ai/reports?recipient_id=${recipientId}&report_type=health_summary&limit=1`)
+          .catch(() => undefined),
+        api.get<MeasurementStats>(`/measurements/stats?recipient_id=${recipientId}&type=blood_pressure&period=7d`)
+          .catch(() => undefined),
+        api.get<MeasurementStats>(`/measurements/stats?recipient_id=${recipientId}&type=blood_glucose&period=7d`)
+          .catch(() => undefined),
+        api.get<Appointment[]>(`/appointments?recipient_id=${recipientId}&limit=2`)
+          .catch(() => undefined),
+        api.get<Reminder[]>(`/recipients/${recipientId}/reminders`)
+          .catch(() => undefined),
+      ]);
+
+      if (measurements) setRecentMeasurements(measurements);
+      if (reports?.[0]) setLatestReport(reports[0]);
+      if (bp) setBpStats(bp);
+      if (bg) setBgStats(bg);
+      if (appts) setUpcomingAppointments(appts);
+      if (reminderData) setReminders(reminderData);
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.message);

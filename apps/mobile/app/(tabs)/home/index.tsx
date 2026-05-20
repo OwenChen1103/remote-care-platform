@@ -306,26 +306,26 @@ export default function HomeScreen() {
 
     await Promise.all(
       recipientList.map(async (r) => {
-        // Reports
-        try {
-          const reps = await api.get<LatestReport[]>(`/ai/reports?recipient_id=${r.id}&report_type=health_summary&limit=1`);
-          if (reps[0]) reports[r.id] = reps[0];
-        } catch { /* non-critical */ }
-        // BP stats
-        try {
-          const bp = await api.get<MeasurementStats>(`/measurements/stats?recipient_id=${r.id}&type=blood_pressure&period=7d`);
-          bps[r.id] = bp;
-        } catch { /* non-critical */ }
-        // BG stats
-        try {
-          const bg = await api.get<MeasurementStats>(`/measurements/stats?recipient_id=${r.id}&type=blood_glucose&period=7d`);
-          bgs[r.id] = bg;
-        } catch { /* non-critical */ }
-        // Appointments
-        try {
-          const appts = await api.get<Appointment[]>(`/appointments?recipient_id=${r.id}&limit=3`);
+        // Per-recipient: 4 reads run in parallel (was serial). Each individually
+        // catches its own error so a slow/failing endpoint can't stall the
+        // others — preserves the prior "best-effort, partial data is fine"
+        // semantic. Cold-start latency per recipient drops from 4× to 1×.
+        const [reps, bp, bg, appts] = await Promise.all([
+          api.get<LatestReport[]>(`/ai/reports?recipient_id=${r.id}&report_type=health_summary&limit=1`)
+            .catch(() => undefined),
+          api.get<MeasurementStats>(`/measurements/stats?recipient_id=${r.id}&type=blood_pressure&period=7d`)
+            .catch(() => undefined),
+          api.get<MeasurementStats>(`/measurements/stats?recipient_id=${r.id}&type=blood_glucose&period=7d`)
+            .catch(() => undefined),
+          api.get<Appointment[]>(`/appointments?recipient_id=${r.id}&limit=3`)
+            .catch(() => undefined),
+        ]);
+        if (reps?.[0]) reports[r.id] = reps[0];
+        if (bp) bps[r.id] = bp;
+        if (bg) bgs[r.id] = bg;
+        if (appts) {
           for (const a of appts) allAppts.push({ ...a, recipientName: r.name, recipientRelationship: r.relationship });
-        } catch { /* non-critical */ }
+        }
       }),
     );
 

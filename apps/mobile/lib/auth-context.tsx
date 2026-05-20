@@ -48,7 +48,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const stored = await SecureStore.getItemAsync('auth_token');
       if (stored) {
         setToken(stored);
-        const userData = await api.get<User>('/auth/me');
+        // 6-second timeout safety net: if /auth/me hangs (Vercel free tier
+        // cold start can pause 10s+ on the first request after idle), we
+        // treat it the same as any other auth failure — clear local auth
+        // state and let the user re-login. Without this, the app freezes
+        // on the splash / ActivityIndicator forever waiting for the verify
+        // call to come back. The lost fetch promise resolves in the
+        // background after we've moved on; nothing listens, GC eats it.
+        const userData = await Promise.race([
+          api.get<User>('/auth/me'),
+          new Promise<User>((_, reject) =>
+            setTimeout(() => reject(new Error('AUTH_VERIFY_TIMEOUT')), 6000),
+          ),
+        ]);
         setUser(userData);
       }
     } catch {
